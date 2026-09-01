@@ -62,6 +62,8 @@ jobs:
     uses: ./.github/workflows/build-patched-codex-target.yml
     with:
       artifact_filename: ${{ needs.plan.outputs.artifact_filename }}
+      compiler_cache: true
+      compiler_cache_save: false
       compat_id: ${{ needs.plan.outputs.compat_id }}
       manifest_path: ${{ needs.plan.outputs.manifest_path }}
       runner: windows-2025

@@ -20,6 +20,7 @@ from verify_patch_payload import VerificationError, _load_payload, _payload_file
 ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]*\Z")
 FLAKY_TUI_BACKGROUND_EXIT_STEP = "TUI background exit isolation"
 FAILURE_OUTPUT_TAIL_BYTES = 256 * 1024
+MBX_CARGO_SUBCOMMANDS = {"build", "clippy", "test"}
 
 
 class ContractError(RuntimeError):
@@ -30,6 +31,16 @@ def cross_windows_build_argv(argv: list[str]) -> list[str]:
     if len(argv) < 2 or argv[:2] != ["cargo", "build"]:
         raise ContractError("cross-Windows build step must start with cargo build")
     return ["cargo", "xwin", *argv[1:]]
+
+
+def cargo_frontend_argv(argv: list[str], cargo_frontend: str) -> list[str]:
+    if cargo_frontend not in {"cargo", "mbx"}:
+        raise ContractError(f"unsupported Cargo frontend: {cargo_frontend}")
+    if not argv or argv[0] != "cargo":
+        raise ContractError("Cargo frontend input must start with cargo")
+    if cargo_frontend == "mbx" and len(argv) > 1 and argv[1] in MBX_CARGO_SUBCOMMANDS:
+        return ["mbx", *argv[1:]]
+    return list(argv)
 
 
 def cross_windows_build_env(env: dict[str, Any]) -> dict[str, Any]:
@@ -94,6 +105,7 @@ def run_step(
     common_env: dict[str, Any],
     source: Path,
     cargo_target: Path,
+    cargo_frontend: str,
 ) -> dict[str, Any]:
     allowed = {"name", "argv", "env", "output"}
     if not isinstance(step, dict) or set(step) - allowed or not {"name", "argv"} <= set(step):
@@ -111,6 +123,7 @@ def run_step(
     if not isinstance(output, str) or output not in {"live", "failure-only"}:
         raise ContractError(f"invalid {kind} output policy")
     expanded = [expand(value, source, cargo_target) for value in argv]
+    runner_argv = cargo_frontend_argv(expanded, cargo_frontend)
     attempts = 2 if step["name"] == FLAKY_TUI_BACKGROUND_EXIT_STEP else 1
     print(f"{kind} step started: {step['name']}", flush=True)
     for attempt in range(1, attempts + 1):
@@ -122,7 +135,7 @@ def run_step(
         if output == "failure-only":
             with tempfile.TemporaryFile() as captured_stdout:
                 result = subprocess.run(
-                    expanded,
+                    runner_argv,
                     **options,
                     stdout=captured_stdout,
                 )
@@ -138,7 +151,7 @@ def run_step(
                     sys.stderr.write(captured_stdout.read().decode("utf-8", errors="replace"))
                     sys.stderr.flush()
         else:
-            result = subprocess.run(expanded, **options)
+            result = subprocess.run(runner_argv, **options)
         if not result.returncode or attempt == attempts:
             break
         print(
@@ -148,7 +161,10 @@ def run_step(
     if result.returncode:
         raise ContractError(f"{kind} step failed ({result.returncode}): {step['name']}")
     print(f"{kind} step passed: {step['name']}", flush=True)
-    return {"kind": kind, "name": step["name"], "argv": expanded, "exit_code": 0}
+    record = {"kind": kind, "name": step["name"], "argv": expanded, "exit_code": 0}
+    if runner_argv != expanded:
+        record["runner_argv"] = runner_argv
+    return record
 
 
 def digest(path: Path) -> str:
@@ -235,6 +251,7 @@ def run_contract(
     portable_evidence: bool = False,
     phase: str = "all",
     resume: Path | None = None,
+    cargo_frontend: str = "cargo",
 ) -> dict[str, Any]:
     for path, label in (
         (manifest_path, "manifest"),
@@ -246,6 +263,8 @@ def run_contract(
             raise ContractError(f"{label} path must be absolute")
     if phase not in {"all", "tests", "build", "release"}:
         raise ContractError(f"unsupported contract phase: {phase}")
+    if cargo_frontend not in {"cargo", "mbx"}:
+        raise ContractError(f"unsupported Cargo frontend: {cargo_frontend}")
     if resume is not None and not resume.is_absolute():
         raise ContractError("resume path must be absolute")
     if phase == "build" and resume is None:
@@ -316,11 +335,20 @@ def run_contract(
                         contract["common_env"],
                         source,
                         cargo_target,
+                        cargo_frontend,
                     )
                 )
             for step in contract["tests"]:
                 steps.append(
-                    run_step(step, "test", cwd, contract["common_env"], source, cargo_target)
+                    run_step(
+                        step,
+                        "test",
+                        cwd,
+                        contract["common_env"],
+                        source,
+                        cargo_target,
+                        cargo_frontend,
+                    )
                 )
             if phase == "tests":
                 report = {
@@ -342,7 +370,17 @@ def run_contract(
     )
     build_env = cross_windows_build_env(build["env"]) if cross_windows_msvc else build["env"]
     build_step = {"name": "release build", "argv": build_argv, "env": build_env}
-    steps.append(run_step(build_step, "build", cwd, contract["common_env"], source, cargo_target))
+    steps.append(
+        run_step(
+            build_step,
+            "build",
+            cwd,
+            contract["common_env"],
+            source,
+            cargo_target,
+            cargo_frontend,
+        )
+    )
     artifact_path = Path(expand(build["artifact"], source, cargo_target)).resolve(strict=True)
     artifact = manifest["artifacts"][manifest["build_target"]]
     expected_version = f"codex-cli {manifest['codex_version']}"
@@ -391,6 +429,7 @@ def parse_args() -> argparse.Namespace:
         "--phase", choices=("all", "tests", "build", "release"), default="all"
     )
     parser.add_argument("--resume", type=Path)
+    parser.add_argument("--cargo-frontend", choices=("cargo", "mbx"), default="cargo")
     return parser.parse_args()
 
 
@@ -406,6 +445,7 @@ def main() -> int:
             args.portable_evidence,
             args.phase,
             args.resume,
+            args.cargo_frontend,
         )
     except (ContractError, OSError, VerificationError) as error:
         print(json.dumps({"schema": 1, "error": str(error)}, indent=2), file=sys.stderr)

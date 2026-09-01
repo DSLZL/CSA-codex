@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from compat_catalog import resolve
-from run_patch_contract import load_contract
+from run_patch_contract import cargo_frontend_argv, load_contract
 from validation_evidence import (
     EvidenceError,
     WORKFLOW_PATH,
@@ -37,14 +37,23 @@ def git_head() -> str:
 def passed_report(resolution: dict[str, object]) -> dict[str, object]:
     payload = _load_payload((REPOSITORY / str(resolution["manifest_path"])).resolve())
     contract = load_contract(_payload_file(payload, "test-contract.json"), str(resolution["compat_id"]))
-    steps = [
-        {"kind": kind, "name": step["name"], "argv": step["argv"], "exit_code": 0}
-        for kind, contract_steps in (
-            ("generation", contract["generation"]),
-            ("test", contract["tests"]),
-        )
-        for step in contract_steps
-    ]
+    steps = []
+    for kind, contract_steps in (
+        ("generation", contract["generation"]),
+        ("test", contract["tests"]),
+    ):
+        for step in contract_steps:
+            logical_argv = step["argv"]
+            runner_argv = cargo_frontend_argv(logical_argv, "mbx")
+            record = {
+                "kind": kind,
+                "name": step["name"],
+                "argv": logical_argv,
+                "exit_code": 0,
+            }
+            if runner_argv != logical_argv:
+                record["runner_argv"] = runner_argv
+            steps.append(record)
     return {
         "schema": 1,
         "result": "pass",
@@ -80,6 +89,7 @@ def main() -> None:
             2,
         )
         assert created["validation"]["clippy"] == "passed"
+        assert created["validation"]["cargo_frontend"] == "mbx"
         assert created["payload"]["test_contract_sha256"]
         verified = verify_evidence(
             REPOSITORY,
@@ -91,6 +101,28 @@ def main() -> None:
             2,
         )
         assert verified["status"] == "pass"
+
+        mixed_report = passed_report(resolution)
+        for step in mixed_report["steps"]:
+            if "runner_argv" in step:
+                del step["runner_argv"]
+                break
+        mixed_report_path = root / "mixed-test-report.json"
+        mixed_report_path.write_text(json.dumps(mixed_report), encoding="utf-8")
+        try:
+            create_evidence(
+                REPOSITORY,
+                resolution_path,
+                mixed_report_path,
+                root / "mixed-validation-result.json",
+                git_head(),
+                123,
+                2,
+            )
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("mixed Cargo frontends were accepted")
 
         tampered = json.loads(evidence_path.read_text(encoding="utf-8"))
         tampered["payload"]["tree_sha256"] = "0" * 64

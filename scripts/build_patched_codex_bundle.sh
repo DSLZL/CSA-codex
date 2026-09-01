@@ -25,7 +25,6 @@ test_stats_output="${stats_output%.json}-tests.json"
 
 : "${CARGO_HOME:?CARGO_HOME must name an absolute cache directory}"
 : "${RUSTUP_HOME:?RUSTUP_HOME must name an absolute cache directory}"
-: "${SCCACHE_DIR:?SCCACHE_DIR must name an absolute cache directory}"
 : "${XWIN_CACHE_DIR:?XWIN_CACHE_DIR must name an absolute cache directory}"
 : "${CSA_TOOL_BIN:?CSA_TOOL_BIN must name an absolute disposable tool directory}"
 : "${CSA_TOOL_CACHE:?CSA_TOOL_CACHE must name an absolute cache directory}"
@@ -34,7 +33,7 @@ test_stats_output="${stats_output%.json}-tests.json"
 
 for path in \
   "$resolution" "$source_root" "$cargo_target" "$output" "$stats_output" \
-  "$CARGO_HOME" "$RUSTUP_HOME" "$SCCACHE_DIR" "$XWIN_CACHE_DIR" \
+  "$CARGO_HOME" "$RUSTUP_HOME" "$XWIN_CACHE_DIR" \
   "$CSA_TOOL_BIN" "$CSA_TOOL_CACHE" "$CSA_RUNTIME_CACHE" "$TMPDIR"; do
   [[ "$path" = /* ]] || { echo "all paths must be absolute: $path" >&2; exit 2; }
 done
@@ -61,13 +60,12 @@ case "$phase" in
 esac
 
 mkdir -p \
-  "$CARGO_HOME" "$RUSTUP_HOME" "$SCCACHE_DIR" "$XWIN_CACHE_DIR" \
+  "$CARGO_HOME" "$RUSTUP_HOME" "$XWIN_CACHE_DIR" \
   "$CSA_TOOL_BIN" "$CSA_TOOL_CACHE" "$CSA_RUNTIME_CACHE" "$TMPDIR"
 chmod 0700 "$TMPDIR"
 
 temp_root="$(mktemp -d "$TMPDIR/csa-cross-build.XXXXXXXX")"
 cleanup() {
-  [[ ! -x "$CSA_TOOL_BIN/sccache" ]] || "$CSA_TOOL_BIN/sccache" --stop-server >/dev/null 2>&1 || true
   rm -rf "$temp_root"
 }
 trap cleanup EXIT
@@ -106,7 +104,6 @@ values = {
     "CARGO_BIN": profile["product"]["cargo_bin"],
     "CARGO_BUILD_JOBS_PROFILE": profile["build"]["cargo_build_jobs"],
     "CARGO_INCREMENTAL_PROFILE": profile["build"]["cargo_incremental"],
-    "SCCACHE_CACHE_SIZE_PROFILE": profile["build"]["sccache_cache_size"],
     "RUSTUP_VERSION": profile["rust"]["rustup_init"]["version"],
     "RUSTUP_URL": profile["rust"]["rustup_init"]["url"],
     "RUSTUP_SHA256": profile["rust"]["rustup_init"]["sha256"],
@@ -114,10 +111,6 @@ values = {
     "CARGO_XWIN_URL": profile["tools"]["cargo_xwin"]["url"],
     "CARGO_XWIN_SHA256": profile["tools"]["cargo_xwin"]["sha256"],
     "CARGO_XWIN_MEMBER": profile["tools"]["cargo_xwin"]["archive_member"],
-    "SCCACHE_VERSION": profile["tools"]["sccache"]["version"],
-    "SCCACHE_URL": profile["tools"]["sccache"]["url"],
-    "SCCACHE_SHA256": profile["tools"]["sccache"]["sha256"],
-    "SCCACHE_MEMBER": profile["tools"]["sccache"]["archive_member"],
     "XWIN_VERSION_PROFILE": profile["xwin"]["version"],
     "XWIN_ARCH_PROFILE": profile["xwin"]["arch"],
     "XWIN_VARIANT_PROFILE": profile["xwin"]["variant"],
@@ -135,6 +128,13 @@ PY
 # shellcheck disable=SC1090
 source "$env_file"
 
+CARGO_FRONTEND=mbx
+if [[ "$phase" == release ]]; then
+  CARGO_FRONTEND=cargo
+fi
+MBX_IDENTITY=disabled
+export CARGO_FRONTEND
+
 [[ "$(git -C "$source_root" rev-parse HEAD)" == "$UPSTREAM_COMMIT" ]] || {
   echo "source HEAD differs from the resolved upstream commit" >&2
   exit 1
@@ -151,9 +151,6 @@ fi
 export PATH="$CARGO_HOME/bin:$CSA_TOOL_BIN:/usr/lib/llvm-$LLVM_MAJOR/bin:$PATH"
 export CARGO_BUILD_JOBS="$CARGO_BUILD_JOBS_PROFILE"
 export CARGO_INCREMENTAL="$CARGO_INCREMENTAL_PROFILE"
-export RUSTC_WRAPPER="$CSA_TOOL_BIN/sccache"
-export SCCACHE_CACHE_SIZE="${CSA_SCCACHE_CACHE_SIZE:-$SCCACHE_CACHE_SIZE_PROFILE}"
-export SCCACHE_IDLE_TIMEOUT=0
 export XWIN_ACCEPT_LICENSE=1
 export XWIN_ARCH="$XWIN_ARCH_PROFILE"
 export XWIN_VARIANT="$XWIN_VARIANT_PROFILE"
@@ -234,12 +231,9 @@ install_pinned_tools() {
   printf 'ci_stage=tools status=started\n'
   install_release_tool \
     cargo-xwin "$CARGO_XWIN_URL" "$CARGO_XWIN_SHA256" "$CARGO_XWIN_MEMBER"
-  install_release_tool \
-    sccache "$SCCACHE_URL" "$SCCACHE_SHA256" "$SCCACHE_MEMBER"
   install_release_binary \
     rustup-init "$RUSTUP_URL" "$RUSTUP_SHA256"
   require_exact_identity cargo-xwin "cargo-xwin $CARGO_XWIN_VERSION" "$(cargo-xwin --version)"
-  require_exact_identity sccache "sccache $SCCACHE_VERSION" "$(sccache --version)"
   printf 'ci_stage=tools status=completed\n'
 }
 
@@ -303,9 +297,16 @@ prepare_llvm() {
 verify_build_toolchain() {
   require_identity_contains rustc "commit-hash: $RUSTC_COMMIT" "$(rustc -Vv)"
   require_exact_identity cargo-xwin "cargo-xwin $CARGO_XWIN_VERSION" "$(cargo-xwin --version)"
-  require_exact_identity sccache "sccache $SCCACHE_VERSION" "$(sccache --version)"
   require_identity_contains clang-cl "$LLVM_VERSION" "$(clang-cl --version)"
   require_identity_contains lld-link "$LLVM_VERSION" "$(lld-link --version)"
+  if [[ "$CARGO_FRONTEND" == mbx ]]; then
+    command -v mbx >/dev/null 2>&1 || {
+      echo "Mr. Boxington must be provided by the cache-enabled runner" >&2
+      exit 1
+    }
+    MBX_IDENTITY="$(mbx --version)"
+    mbx doctor
+  fi
 }
 
 verify_runtime_integrity() {
@@ -373,36 +374,18 @@ PY
   printf 'ci_stage=official_runtime status=completed\n'
 }
 
-start_sccache() {
-  sccache --start-server
-  sccache --zero-stats || true
-}
-
-report_sccache() {
+report_compiler_cache() {
   local destination="$1"
   mkdir -p "$(dirname "$destination")"
-  if sccache --show-stats --stats-format json > "$destination"; then
-    local stats_args=(--stats "$destination")
-    if [[ -n "${CSA_MINIMUM_RUST_HIT_RATE:-}" ]]; then
-      stats_args+=(--minimum-rust-hit-rate "$CSA_MINIMUM_RUST_HIT_RATE")
-    fi
-    if [[ -n "${CSA_SCCACHE_PROFILE:-}" ]]; then
-      stats_args+=(--profile "$CSA_SCCACHE_PROFILE")
-    fi
-    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-      stats_args+=(--github-step-summary "$GITHUB_STEP_SUMMARY")
-    fi
-    python3 "$repository/scripts/check_sccache_stats.py" "${stats_args[@]}" || true
-  else
-    echo "warning: sccache statistics are unavailable" >&2
+  if [[ "$CARGO_FRONTEND" == cargo ]]; then
+    printf '{"cargo_frontend":"cargo","remote_compiler_cache":"disabled","schema":1}\n' > "$destination"
+  elif ! mbx cache stats --json > "$destination"; then
+    echo "warning: Mr. Boxington cache statistics are unavailable" >&2
   fi
-  sccache --show-stats || true
-  sccache --stop-server || true
 }
 
 run_tests() {
   verify_build_toolchain
-  start_sccache
   local started finished
   started="$(date +%s)"
   python3 "$repository/scripts/run_patch_contract.py" \
@@ -412,15 +395,15 @@ run_tests() {
     --output "$test_report" \
     --cross-windows-msvc \
     --portable-evidence \
+    --cargo-frontend "$CARGO_FRONTEND" \
     --phase tests
   finished="$(date +%s)"
   echo "contract_tests_seconds=$((finished - started))"
-  report_sccache "$test_stats_output" || true
+  report_compiler_cache "$test_stats_output" || true
 }
 
 run_build() {
   verify_build_toolchain
-  start_sccache
   local contract_result="$temp_root/contract-result.json"
   local build_started build_finished
   build_started="$(date +%s)"
@@ -435,8 +418,23 @@ run_build() {
     --output "$contract_result" \
     --cross-windows-msvc \
     --portable-evidence \
+    --cargo-frontend "$CARGO_FRONTEND" \
     "${contract_phase[@]}"
   build_finished="$(date +%s)"
+  local build_frontend
+  build_frontend="$(python3 - "$contract_result" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+step = report["steps"][-1]
+runner = step.get("runner_argv", step["argv"])
+if not isinstance(runner, list) or not runner or runner[0] not in {"cargo", "mbx"}:
+    raise SystemExit("contract result has no recognized build frontend")
+print(runner[0])
+PY
+)"
 
   local artifact="$cargo_target/$BUILD_TARGET/release/$ARTIFACT_FILENAME"
   [[ -f "$artifact" ]] || { echo "expected CLI artifact is missing: $artifact" >&2; exit 1; }
@@ -458,7 +456,9 @@ upstream_commit=$UPSTREAM_COMMIT
 rust_toolchain=$RUST_TOOLCHAIN
 rustc_commit=$RUSTC_COMMIT
 cargo_xwin=$CARGO_XWIN_VERSION
-sccache=$SCCACHE_VERSION
+cargo_frontend=$build_frontend
+cargo_frontend_requested=$CARGO_FRONTEND
+cargo_frontend_identity=$MBX_IDENTITY
 msvc=$XWIN_VERSION_PROFILE
 llvm=$LLVM_VERSION
 build_target=$BUILD_TARGET
@@ -495,7 +495,7 @@ if actual != expected:
         f"canonical bundle mismatch; missing={sorted(expected-actual)}, unknown={sorted(actual-expected)}"
     )
 PY
-  report_sccache "$stats_output" || true
+  report_compiler_cache "$stats_output" || true
 }
 
 case "$phase" in

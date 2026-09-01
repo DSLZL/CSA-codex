@@ -227,6 +227,7 @@ jobs:
       contents: read
     uses: ./.github/workflows/validate-patched-codex.yml
     with:
+      compiler_cache: ${{ needs.plan.outputs.publish_requested != 'true' }}
       compat_selector: ${{ needs.plan.outputs.compat_id }}
       source_commit: ${{ needs.plan.outputs.source_commit }}
       target: ${{ needs.plan.outputs.build_target }}
@@ -244,6 +245,8 @@ jobs:
     uses: ./.github/workflows/build-patched-codex-target.yml
     with:
       artifact_filename: ${{ matrix.artifact_filename }}
+      compiler_cache: ${{ needs.plan.outputs.publish_requested != 'true' }}
+      compiler_cache_save: ${{ needs.plan.outputs.publish_requested != 'true' }}
       compat_id: ${{ needs.plan.outputs.compat_id }}
       manifest_path: ${{ needs.plan.outputs.manifest_path }}
       runner: ${{ matrix.runner }}

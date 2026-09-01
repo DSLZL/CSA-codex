@@ -21,7 +21,7 @@ from compat_release import finalize, pack, release_matrix  # noqa: E402
 from compatibility_audit import AuditError, check_immutability  # noqa: E402
 from generate_release_notes import ReleaseNotesError, generate  # noqa: E402
 from patch_family import verify_family  # noqa: E402
-from run_patch_contract import load_contract  # noqa: E402
+from run_patch_contract import ContractError, cargo_frontend_argv, load_contract  # noqa: E402
 
 
 PRODUCER_REPOSITORY = "DSLZL/CSA-codex"
@@ -119,6 +119,41 @@ def test_payload_and_contract_authority(root: Path) -> None:
     contract = load_contract(P10_MANIFEST.with_name("test-contract.json"), P10_MANIFEST.parent.name)
     assert contract["schema"] == 1
     assert contract["build"]["artifact"].endswith("/release/codex.exe")
+
+
+def test_cargo_frontend_routing() -> None:
+    assert cargo_frontend_argv(["cargo", "test", "-p", "codex-core"], "mbx") == [
+        "mbx",
+        "test",
+        "-p",
+        "codex-core",
+    ]
+    assert cargo_frontend_argv(["cargo", "clippy", "--workspace"], "mbx") == [
+        "mbx",
+        "clippy",
+        "--workspace",
+    ]
+    assert cargo_frontend_argv(["cargo", "build", "--release"], "mbx") == [
+        "mbx",
+        "build",
+        "--release",
+    ]
+    assert cargo_frontend_argv(["cargo", "build", "--release"], "cargo") == [
+        "cargo",
+        "build",
+        "--release",
+    ]
+    assert cargo_frontend_argv(["cargo", "fmt", "--check"], "mbx") == [
+        "cargo",
+        "fmt",
+        "--check",
+    ]
+    assert cargo_frontend_argv(["cargo", "xwin", "build"], "mbx") == [
+        "cargo",
+        "xwin",
+        "build",
+    ]
+    expect_error(lambda: cargo_frontend_argv(["rustc", "--version"], "mbx"), ContractError)
 
 
 def test_release_matrix_and_pack(root: Path) -> None:
@@ -257,8 +292,15 @@ def test_workflow_contracts() -> None:
     release = workflows["release-patched-codex.yml"]
     target = workflows["build-patched-codex-target.yml"]
     validation = workflows["validate-patched-codex.yml"]
+    windows = workflows["build-patched-codex-windows.yml"]
     watcher = workflows["watch-codex-release.yml"]
     ci = workflows["ci.yml"]
+    cargo_cache = (REPOSITORY / ".github/actions/setup-codex-rust-cache/action.yml").read_text(
+        encoding="utf-8"
+    )
+    bundle_builder = (REPOSITORY / "scripts/build_patched_codex_bundle.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert 'cron: "0 * * * *"' in watcher
     assert "compat_release.py finalize" not in watcher
@@ -272,6 +314,41 @@ def test_workflow_contracts() -> None:
     assert "--stream manager" not in release and "--stream compat" not in release
     assert "scripts/generate_release_notes.py" in release
     assert "release-csa.yml" not in workflows and "publish-npm.yml" not in workflows
+    mbx_action = (
+        "jdx/mr-boxington-action@4fd4eab077dde1d635a289366f62c80cf6f11e6f"
+    )
+    for owner in (validation, target):
+        assert mbx_action in owner
+        assert 'version: "1.3.1"' in owner
+        assert "mbx doctor" in owner and "mbx cache stats --json" in owner
+        assert "cache-generation: csa-patched-codex-v1-" in owner
+        assert owner.index("dtolnay/rust-toolchain@") < owner.index(mbx_action)
+        assert "uses: ./.github/actions/setup-codex-rust-cache" in owner
+        assert "minimum-rust-hit-rate" not in owner and "require-requests" not in owner
+        assert "max-size:" not in owner
+        assert "steps.mbx.outputs.cache-primary-key" in owner
+        assert "steps.mbx.outputs.mbx-version" in owner
+    for former_owner in (validation, target, cargo_cache, bundle_builder):
+        assert "sccache" not in former_owner.lower()
+        assert "RUSTC_WRAPPER" not in former_owner and "SCCACHE_" not in former_owner
+    assert not (REPOSITORY / "scripts/check_sccache_stats.py").exists()
+    assert 'save-on-workflow-dispatch: "true"' in validation
+    assert "save-on-workflow-dispatch: ${{ inputs.compiler_cache_save }}" in target
+    assert "Verify compiler-cache save authority" in target
+    assert "test \"$GITHUB_EVENT_NAME\" = workflow_dispatch" in target
+    assert target.count("inputs.target != 'x86_64-apple-darwin'") == 4
+    assert "Record Intel macOS Cargo fallback" in target
+    assert "MBX 1.3.1 does not publish an x86_64-apple-darwin binary" in target
+    assert "COMPILER_CACHE_ENABLED: ${{ inputs.compiler_cache }}" in validation
+    cache_policy = "compiler_cache: ${{ needs.plan.outputs.publish_requested != 'true' }}"
+    assert release.count(cache_policy) == 2
+    save_policy = "compiler_cache_save: ${{ needs.plan.outputs.publish_requested != 'true' }}"
+    assert save_policy in release
+    assert "compiler_cache: true" in windows and "compiler_cache_save: false" in windows
+    assert "--cargo-frontend $env:CARGO_FRONTEND" in validation
+    assert '"$CARGO_FRONTEND" build' in target
+    assert "registry/index" in cargo_cache and "registry/cache" in cargo_cache
+    assert "git/db" in cargo_cache and "cargo-target" not in cargo_cache
     for command in (
         "test_verify_patch_payload.py",
         "test_compat_catalog.py",
@@ -285,6 +362,7 @@ def test_workflow_contracts() -> None:
 
 def main() -> int:
     test_repository_boundary()
+    test_cargo_frontend_routing()
     with tempfile.TemporaryDirectory(prefix="csa-codex-producer-") as directory:
         root = Path(directory)
         test_payload_and_contract_authority(root / "payload")

@@ -6,6 +6,10 @@ on:
       compat_selector:
         required: true
         type: string
+      compiler_cache:
+        required: false
+        default: false
+        type: boolean
       retention_days:
         required: false
         default: 14
@@ -18,6 +22,11 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      compiler_cache:
+        description: Use Mr. Boxington for this trusted default-branch validation.
+        required: true
+        default: true
+        type: boolean
       compat_selector:
         description: "current or one exact compatibility ID from release/compatibility-index.json"
         required: true
@@ -39,13 +48,12 @@ permissions:
 env:
   CSA_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
   CARGO_INCREMENTAL: "0"
+  CARGO_FRONTEND: cargo
   CARGO_TERM_COLOR: always
+  COMPILER_CACHE_ENABLED: ${{ inputs.compiler_cache }}
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: core.autocrlf
   GIT_CONFIG_VALUE_0: "false"
-  SCCACHE_GHA_ENABLED: "on"
-  SCCACHE_GHA_RW_MODE: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && 'READ_WRITE' || 'READ_ONLY' }}
-  SCCACHE_GHA_VERSION: csa-patched-codex-v1
 
 jobs:
   validate:
@@ -69,13 +77,12 @@ jobs:
             CARGO_HOME = Join-Path $root 'cache/cargo-home'
             CSA_RUNTIME_CACHE = Join-Path $root 'cache/official-runtime'
             RUSTUP_HOME = Join-Path $root 'cache/rustup'
-            SCCACHE_DIR = Join-Path $env:RUNNER_TEMP 'csa-patched-codex-cache/sccache'
             TEMP = $tmp
             TMP = $tmp
             HOME = Join-Path $root 'home'
             CODEX_HOME = Join-Path $root 'codex-home'
             RESOLUTION_JSON = Join-Path $root 'resolution.json'
-            SCCACHE_STATS = Join-Path $root 'sccache-stats.json'
+            MBX_STATS = Join-Path $root 'mbx-stats.json'
             TEST_REPORT = Join-Path $root 'bundle.tests.json'
             EVIDENCE_ROOT = Join-Path $root 'evidence'
           }
@@ -99,10 +106,6 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
-
-      - uses: mozilla-actions/sccache-action@fd02668681acd5f960e1372061bee5e3e987195c # v0.0.11
-        with:
-          version: v0.16.0
 
       - id: resolve
         name: Resolve exact validation authority
@@ -164,36 +167,46 @@ jobs:
           targets: ${{ steps.resolve.outputs.build_target }}
           components: rustfmt, clippy
 
+      - name: Restore isolated Cargo downloads
+        uses: ./.github/actions/setup-codex-rust-cache
+        with:
+          cache-scope: ${{ steps.resolve.outputs.upstream_commit }}
+          toolchain: ${{ steps.resolve.outputs.rust_toolchain }}
+          cargo-home: ${{ runner.temp }}/csa-patched-codex-validation/cache/cargo-home
+
+      - id: mbx
+        name: Restore Mr. Boxington compiler closure
+        if: env.COMPILER_CACHE_ENABLED == 'true'
+        uses: jdx/mr-boxington-action@4fd4eab077dde1d635a289366f62c80cf6f11e6f # v1.1.0
+        with:
+          version: "1.3.1"
+          cache-generation: csa-patched-codex-v1-${{ steps.resolve.outputs.build_target }}
+          save-on-workflow-dispatch: "true"
+          toolchain: ${{ steps.resolve.outputs.rust_toolchain }}
+
       - name: Configure native MSVC environment
         shell: pwsh
         env:
           TARGET: ${{ steps.resolve.outputs.build_target }}
         run: '& "$env:SOURCE_ROOT/.github/actions/setup-msvc-env/setup-msvc-env.ps1" -Target "$env:TARGET"'
 
-      - name: Configure shared sccache and verify Rust identity
+      - name: Verify Rust identity
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $sccache = $env:SCCACHE_PATH
-          if (-not (Test-Path -LiteralPath $sccache -PathType Leaf) -and (Test-Path -LiteralPath "$sccache.exe" -PathType Leaf)) {
-            $sccache = "$sccache.exe"
-          }
-          if (-not (Test-Path -LiteralPath $sccache -PathType Leaf)) {
-            throw "sccache executable is missing: $sccache"
-          }
-          $sccacheVersion = (& $sccache --version).Trim()
-          if ($LASTEXITCODE -ne 0 -or $sccacheVersion -ne 'sccache ${{ steps.resolve.outputs.sccache_version }}') {
-            throw "sccache identity mismatch: $sccacheVersion"
-          }
           $rustcIdentity = rustc -Vv | Out-String
           if ($LASTEXITCODE -ne 0 -or -not $rustcIdentity.Contains('commit-hash: ${{ steps.resolve.outputs.rustc_commit }}')) {
             throw 'Rust compiler commit does not match the compatibility manifest.'
           }
-          "SCCACHE_PATH=$sccache" >> $env:GITHUB_ENV
-          "RUSTC_WRAPPER=$sccache" >> $env:GITHUB_ENV
-          & $sccache --start-server
+
+      - name: Verify Mr. Boxington compiler frontend
+        if: env.COMPILER_CACHE_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          mbx doctor
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $sccache --zero-stats
+          "CARGO_FRONTEND=mbx" >> $env:GITHUB_ENV
 
       - name: Verify exact official runtime archive
         shell: pwsh
@@ -243,35 +256,38 @@ jobs:
             --manifest $manifest `
             --source $env:SOURCE_ROOT `
             --cargo-target $env:CARGO_TARGET_DIR `
+            --cargo-frontend $env:CARGO_FRONTEND `
             --output $env:TEST_REPORT `
             --portable-evidence `
             --phase tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Report shared sccache use
+      - name: Report Mr. Boxington cache observations
+        if: always() && env.COMPILER_CACHE_ENABLED == 'true'
+        continue-on-error: true
         shell: pwsh
         env:
-          CSA_SCCACHE_PROFILE: test
-          CSA_MINIMUM_RUST_HIT_RATE: 95
+          MBX_ACTION_CACHE_HIT: ${{ steps.mbx.outputs.cache-hit }}
+          MBX_ACTION_KEY: ${{ steps.mbx.outputs.cache-primary-key }}
+          MBX_ACTION_VERSION: ${{ steps.mbx.outputs.mbx-version }}
         run: |
           $ErrorActionPreference = 'Continue'
-          $stats = & $env:SCCACHE_PATH --show-stats --stats-format json
-          if ($LASTEXITCODE -eq 0) {
-            [IO.File]::WriteAllLines(
-              $env:SCCACHE_STATS,
-              $stats,
-              [Text.UTF8Encoding]::new($false)
-            )
-            python scripts/check_sccache_stats.py `
-              --stats $env:SCCACHE_STATS `
-              --minimum-rust-hit-rate $env:CSA_MINIMUM_RUST_HIT_RATE `
-              --profile $env:CSA_SCCACHE_PROFILE `
-              --github-step-summary $env:GITHUB_STEP_SUMMARY
-            if ($LASTEXITCODE -ne 0) { Write-Warning 'sccache statistics did not meet the advisory threshold.' }
+          $stats = (& mbx cache stats --json 2>&1 | Out-String).Trim()
+          $statsExitCode = $LASTEXITCODE
+          @(
+            '### Mr. Boxington cache observation'
+            ''
+            "- action version: ``$env:MBX_ACTION_VERSION``"
+            "- action key: ``$env:MBX_ACTION_KEY``"
+            "- restored closure: ``$env:MBX_ACTION_CACHE_HIT``"
+          ) | Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          if ($statsExitCode -eq 0 -and $stats) {
+            [IO.File]::WriteAllText($env:MBX_STATS, $stats + "`n", [Text.UTF8Encoding]::new($false))
+            @('', '```json', $stats, '```') |
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
           } else {
-            Write-Warning 'sccache statistics are unavailable.'
+            Write-Warning 'Mr. Boxington cache statistics are unavailable.'
           }
-          & $env:SCCACHE_PATH --show-stats
 
       - name: Create exact validation evidence
         shell: pwsh
