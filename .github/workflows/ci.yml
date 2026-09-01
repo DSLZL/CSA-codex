@@ -1,0 +1,35 @@
+name: Producer CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csa-codex-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - name: Compile Python tooling
+        run: python -m compileall -q scripts
+      - name: Run producer contracts
+        run: |
+          python scripts/test_verify_patch_payload.py
+          python scripts/test_compat_catalog.py
+          python scripts/test_validation_evidence.py
+          python scripts/test_verify_release_asset_set.py
+          python scripts/test_producer_tools.py
+          python scripts/compat_catalog.py validate --repository .
+          python scripts/compat_catalog.py guard-workflows .github/workflows/*.yml .github/actions/setup-codex-rust-cache/action.yml

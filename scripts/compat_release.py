@@ -32,7 +32,7 @@ from verify_patch_payload import (
 
 
 OPENAI_REPOSITORY = "openai/codex"
-CSA_REPOSITORY = "dslzl/CSA"
+PRODUCER_REPOSITORY = "DSLZL/CSA-codex"
 BUILD_TARGET = "x86_64-pc-windows-msvc"
 DESCRIPTOR_NAME = "compatibility-release.json"
 CHECKSUMS_NAME = "SHA256SUMS"
@@ -239,7 +239,7 @@ def detect(repository: Path, api: GitHubApi) -> dict[str, Any]:
         else compatibility_id(version, base["patch_set_version"])
     )
     release_tag = f"compat-{compat_id}"
-    release = api.get(f"/repos/{CSA_REPOSITORY}/releases/tags/{release_tag}", optional=True)
+    release = api.get(f"/repos/{PRODUCER_REPOSITORY}/releases/tags/{release_tag}", optional=True)
     if release is not None:
         if (
             not isinstance(release, dict)
@@ -248,16 +248,16 @@ def detect(repository: Path, api: GitHubApi) -> dict[str, Any]:
             or release.get("prerelease") is not False
         ):
             raise CompatibilityReleaseError("existing compatibility release is not formal or exact")
-        api.peel_tag(CSA_REPOSITORY, release_tag)
+        api.peel_tag(PRODUCER_REPOSITORY, release_tag)
         action = "released"
         issue_number = None
         issue_needs_update = False
     else:
         existing_tag = api.get(
-            f"/repos/{CSA_REPOSITORY}/git/ref/tags/{release_tag}", optional=True
+            f"/repos/{PRODUCER_REPOSITORY}/git/ref/tags/{release_tag}", optional=True
         )
         if existing_tag is not None:
-            tag_commit = api.peel_tag(CSA_REPOSITORY, release_tag)
+            tag_commit = api.peel_tag(PRODUCER_REPOSITORY, release_tag)
             repository_head = _run(["git", "rev-parse", "HEAD"], repository).stdout.decode().strip()
             if tag_commit != repository_head:
                 raise CompatibilityReleaseError(
@@ -269,7 +269,7 @@ def detect(repository: Path, api: GitHubApi) -> dict[str, Any]:
                 "an unpublished compatibility tag exists without its reviewed default-branch payload"
             )
         issues = api.get(
-            f"/repos/{CSA_REPOSITORY}/issues?state=open&labels={BLOCKER_LABEL}&per_page=100"
+            f"/repos/{PRODUCER_REPOSITORY}/issues?state=open&labels={BLOCKER_LABEL}&per_page=100"
         )
         if not isinstance(issues, list):
             raise CompatibilityReleaseError("GitHub blocker query did not return an array")
@@ -294,7 +294,7 @@ def detect(repository: Path, api: GitHubApi) -> dict[str, Any]:
         else:
             branch = f"automation/compat-{compat_id}"
             head = urllib.parse.quote(f"dslzl:{branch}", safe="")
-            pulls = api.get(f"/repos/{CSA_REPOSITORY}/pulls?state=open&head={head}&per_page=100")
+            pulls = api.get(f"/repos/{PRODUCER_REPOSITORY}/pulls?state=open&head={head}&per_page=100")
             if not isinstance(pulls, list):
                 raise CompatibilityReleaseError("GitHub candidate PR query did not return an array")
             candidate_open = any(
@@ -554,7 +554,7 @@ def port(base_manifest: Path, source: Path, tag: str, commit: str, output: Path)
             artifact["sha256"] = "0" * 64
             artifact["size"] = 1
             artifact["url"] = (
-                f"https://github.com/{CSA_REPOSITORY}/releases/download/compat-{compat_id}/"
+                f"https://github.com/{PRODUCER_REPOSITORY}/releases/download/compat-{compat_id}/"
                 f"{artifact_asset_name(compat_id, target, artifact['filename'], multi)}"
             )
         if payload.source_schema == 2:
@@ -650,7 +650,7 @@ def finalize(manifest_path: Path, artifact_paths: Path | dict[str, Path]) -> dic
         artifact["size"] = artifact_path.stat().st_size
         artifact["sha256"] = file_digest(artifact_path)
         artifact["url"] = (
-            f"https://github.com/{CSA_REPOSITORY}/releases/download/compat-{manifest['compat_id']}/"
+            f"https://github.com/{PRODUCER_REPOSITORY}/releases/download/compat-{manifest['compat_id']}/"
             f"{artifact_asset_name(manifest['compat_id'], target, artifact['filename'], multi)}"
         )
     staged = manifest_path.with_name("manifest.toml.next")
@@ -795,7 +795,7 @@ def pack(
             }
         descriptor = {
             "schema": 2 if multi else 1,
-            "repository": CSA_REPOSITORY,
+            "repository": PRODUCER_REPOSITORY,
             "release_tag": f"compat-{compat_id}",
             "source_commit": source_commit,
             "compat_id": compat_id,

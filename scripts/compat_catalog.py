@@ -35,7 +35,8 @@ CODEX_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)\Z")
 PATCH_REVISION = re.compile(r"-p(\d+)\Z")
 INSTALL_CATALOG_NAME = "install-catalog-v1.json"
 INSTALL_CATALOG_MAX_ENTRIES = 1_000
-CSA_REPOSITORY = "DSLZL/CSA"
+PRODUCER_REPOSITORY = "DSLZL/CSA-codex"
+LEGACY_REPOSITORY = "DSLZL/CSA"
 OUTPUT_KEYS = (
     "compat_id",
     "release_tag",
@@ -694,7 +695,10 @@ def resolve(
     artifact_url = require_string(artifact.get("url"), "manifest.artifact.url")
     parsed_artifact_url = urlparse(artifact_url)
     release_tag = f"compat-{compat_id}"
-    expected_prefix = f"/dslzl/csa/releases/download/{release_tag}/"
+    expected_prefixes = tuple(
+        f"/{repository}/releases/download/{release_tag}/"
+        for repository in (PRODUCER_REPOSITORY, LEGACY_REPOSITORY)
+    )
     expected_unpublished = f"unpublished://csa/{compat_id}/{target}/{artifact_filename}"
     if artifact_url == expected_unpublished and not release_enabled:
         artifact_asset = f"{compat_id}--{artifact_filename}"
@@ -702,9 +706,12 @@ def resolve(
         if (
             parsed_artifact_url.scheme != "https"
             or parsed_artifact_url.hostname != "github.com"
-            or not parsed_artifact_url.path.lower().startswith(expected_prefix.lower())
+            or not any(
+                parsed_artifact_url.path.lower().startswith(prefix.lower())
+                for prefix in expected_prefixes
+            )
         ):
-            fail("manifest artifact URL is outside the exact CSA compatibility release")
+            fail("manifest artifact URL is outside the exact producer compatibility release")
         artifact_asset = PurePosixPath(parsed_artifact_url.path).name
     if not artifact_asset or not SAFE_ID.fullmatch(artifact_asset):
         fail("manifest artifact URL has an unsafe release asset name")
@@ -985,14 +992,14 @@ def build_install_catalog(
     catalog_entries.sort(key=_install_catalog_sort_key)
     catalog = {
         "schema": 2 if all_targets else 1,
-        "repository": CSA_REPOSITORY,
+        "repository": PRODUCER_REPOSITORY,
         "source_release_tag": current_release_tag,
         "source_commit": current_source_commit,
         "entries": catalog_entries,
     }
     return validate_install_catalog(
         catalog,
-        expected_repository=CSA_REPOSITORY,
+        expected_repository=PRODUCER_REPOSITORY,
         expected_source_release_tag=current_release_tag,
         expected_source_commit=current_source_commit,
     )

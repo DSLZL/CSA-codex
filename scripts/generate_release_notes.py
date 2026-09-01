@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Generate deterministic CSA Manager or patched Codex release notes."""
+"""Generate deterministic patched Codex compatibility release notes."""
 
 from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from functools import cmp_to_key
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -33,54 +32,21 @@ SAFE_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SKIP_TRAILER = re.compile(r"Changelog:\s*skip\Z", re.IGNORECASE)
-REPOSITORY_URL = "https://github.com/DSLZL/CSA"
+REPOSITORY_URL = "https://github.com/DSLZL/CSA-codex"
 
-MANAGER_PREFIXES = (
-    "src/",
-    "npm/",
-    "docs/",
-    ".github/actions/setup-codex-rust-cache/",
-)
-MANAGER_FILES = {
-    "Cargo.toml",
-    "Cargo.lock",
-    "rust-toolchain.toml",
-    "build.rs",
-    "README.md",
-    "README_ZH.md",
-    "release/support-matrix.json",
-    "release/release-inputs.schema.json",
-    ".github/release.yml",
-    ".github/workflows/ci.yml",
-    ".github/workflows/publish-npm.yml",
-    ".github/workflows/release-csa.yml",
-    "scripts/assemble_release_candidate.py",
-    "scripts/ci_release.py",
-    "scripts/generate_release_notes.py",
-    "scripts/stage_npm_packages.mjs",
-    "scripts/test_installed_launcher.mjs",
-    "scripts/test_npm_launcher.mjs",
-}
 COMPAT_FILES = {
     "release/compatibility-index.json",
+    "release/.gitattributes",
     ".github/release.yml",
-    ".github/workflows/build-patched-codex-target.yml",
-    ".github/workflows/build-patched-codex-windows.yml",
-    ".github/workflows/release-patched-codex.yml",
-    ".github/workflows/validate-patched-codex.yml",
-    ".github/workflows/watch-codex-release.yml",
-    "scripts/build_patched_codex_bundle.sh",
-    "scripts/check_sccache_stats.py",
-    "scripts/compat_catalog.py",
-    "scripts/compat_release.py",
-    "scripts/compatibility_audit.py",
-    "scripts/generate_release_notes.py",
-    "scripts/run_patch_contract.py",
-    "scripts/validation_evidence.py",
-    "scripts/verify_patch_payload.py",
-    "scripts/verify_release_asset_set.py",
 }
-COMPAT_PREFIXES = ("release/build-profiles/", "tests/ui/")
+COMPAT_PREFIXES = (
+    ".github/actions/",
+    ".github/workflows/",
+    "release/build-profiles/",
+    "release/patch-family/",
+    "scripts/",
+    "tests/ui/",
+)
 
 
 class ReleaseNotesError(RuntimeError):
@@ -119,26 +85,6 @@ def parse_version(value: str) -> Version:
     if parts and any(part.isdigit() and len(part) > 1 and part.startswith("0") for part in parts):
         raise ReleaseNotesError(f"numeric prerelease identifiers must not have leading zeroes: {value!r}")
     return Version(tuple(int(part) for part in match.groups()[:3]), parts)
-
-
-def compare_versions(left: Version, right: Version) -> int:
-    if left.core != right.core:
-        return (left.core > right.core) - (left.core < right.core)
-    if left.prerelease is None or right.prerelease is None:
-        return (left.prerelease is None) - (right.prerelease is None)
-    for left_part, right_part in zip(left.prerelease, right.prerelease):
-        if left_part == right_part:
-            continue
-        left_numeric = left_part.isdigit()
-        right_numeric = right_part.isdigit()
-        if left_numeric and right_numeric:
-            return (int(left_part) > int(right_part)) - (int(left_part) < int(right_part))
-        if left_numeric != right_numeric:
-            return -1 if left_numeric else 1
-        return (left_part > right_part) - (left_part < right_part)
-    return (len(left.prerelease) > len(right.prerelease)) - (
-        len(left.prerelease) < len(right.prerelease)
-    )
 
 
 def run_git(repository: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -202,34 +148,6 @@ def require_current_tag_identity(
         raise ReleaseNotesError(
             f"current release tag {current_tag} points to {existing}, not {current_commit}"
         )
-
-
-def previous_manager_tag(
-    repository: Path, current_commit: str, version_text: str
-) -> str | None:
-    current_version = parse_version(version_text)
-    current_tag = f"v{version_text}"
-    require_current_tag_identity(repository, current_tag, current_commit)
-    candidates: list[tuple[str, Version]] = []
-    for tag in merged_tags(repository, current_commit):
-        if not tag.startswith("v"):
-            continue
-        try:
-            version = parse_version(tag[1:])
-        except ReleaseNotesError:
-            continue
-        if compare_versions(version, current_version) < 0:
-            candidates.append((tag, version))
-    if not candidates:
-        return None
-    candidates.sort(
-        key=cmp_to_key(lambda left, right: compare_versions(left[1], right[1])),
-        reverse=True,
-    )
-    best = candidates[0]
-    if len(candidates) > 1 and compare_versions(best[1], candidates[1][1]) == 0:
-        raise ReleaseNotesError("multiple Manager tags have the same previous SemVer precedence")
-    return best[0]
 
 
 def parse_compat_id(compat_id: str) -> tuple[str, str, int]:
@@ -366,18 +284,13 @@ def load_compatibility_paths(
 def relevant_commits(
     repository: Path,
     commits: list[Commit],
-    stream: str,
     current_commit: str,
-    compat_id: str | None,
-    target: str | None,
+    compat_id: str,
+    target: str,
 ) -> list[Commit]:
-    if stream == "manager":
-        exact, prefixes = MANAGER_FILES, MANAGER_PREFIXES
-    else:
-        assert compat_id is not None and target is not None
-        exact, prefixes = load_compatibility_paths(
-            repository, current_commit, compat_id, target
-        )
+    exact, prefixes = load_compatibility_paths(
+        repository, current_commit, compat_id, target
+    )
     return [
         commit
         for commit in commits
@@ -423,11 +336,9 @@ def display_title(parsed: ParsedCommit) -> str:
     return markdown(title)
 
 
-def section_for(stream: str, parsed: ParsedCommit) -> str | None:
-    if stream == "manager" and parsed.scope == "cli":
-        return "CLI"
+def section_for(parsed: ParsedCommit) -> str | None:
     if parsed.kind == "feat":
-        return "New Features" if stream == "manager" else "Patch Changes"
+        return "Patch Changes"
     return {
         "fix": "Bug Fixes",
         "perf": "Improvements",
@@ -438,11 +349,10 @@ def section_for(stream: str, parsed: ParsedCommit) -> str | None:
     }.get(parsed.kind)
 
 
-def render_dynamic(stream: str, commits: list[Commit]) -> tuple[list[str], int]:
+def render_dynamic(commits: list[Commit]) -> tuple[list[str], int]:
     order = [
-        "New Features" if stream == "manager" else "Patch Changes",
+        "Patch Changes",
         "Bug Fixes",
-        "CLI",
         "Improvements",
         "Build & Release",
         "Documentation",
@@ -454,7 +364,7 @@ def render_dynamic(stream: str, commits: list[Commit]) -> tuple[list[str], int]:
         parsed = parse_commit(commit)
         if skipped(commit, parsed) or parsed is None:
             continue
-        section = section_for(stream, parsed)
+        section = section_for(parsed)
         if section is None:
             continue
         title = display_title(parsed)
@@ -474,13 +384,11 @@ def render_dynamic(stream: str, commits: list[Commit]) -> tuple[list[str], int]:
 
 
 def render_changelog(
-    stream: str,
     commits: list[Commit],
     previous_tag: str | None,
     current_tag: str,
 ) -> list[str]:
-    title = "Changelog" if stream == "manager" else "Full Changelog"
-    lines = [f"## {title}", ""]
+    lines = ["## Full Changelog", ""]
     if previous_tag:
         comparison = f"{previous_tag}...{current_tag}"
         lines.extend(
@@ -543,17 +451,15 @@ def write_atomic(path: Path, text: str) -> None:
 
 def generate(
     repository: Path,
-    stream: str,
     current_ref: str,
     output: Path,
     *,
-    version: str | None = None,
-    compat_id: str | None = None,
-    codex_version: str | None = None,
-    upstream_tag: str | None = None,
-    upstream_commit: str | None = None,
-    target: str | None = None,
-    artifact_sha256: str | None = None,
+    compat_id: str,
+    codex_version: str,
+    upstream_tag: str,
+    upstream_commit: str,
+    target: str,
+    artifact_sha256: str,
 ) -> dict[str, object]:
     repository = repository.resolve(strict=True)
     top = run_git(repository, "rev-parse", "--show-toplevel").stdout.strip()
@@ -561,63 +467,44 @@ def generate(
         raise ReleaseNotesError("--repository must be the Git worktree root")
     current_commit = resolve_commit(repository, current_ref)
 
-    if stream == "manager":
-        if version is None or any(
-            value is not None
-            for value in (compat_id, codex_version, upstream_tag, upstream_commit, target, artifact_sha256)
-        ):
-            raise ReleaseNotesError("Manager generation requires only --version")
-        previous_tag = previous_manager_tag(repository, current_commit, version)
-        current_tag = f"v{version}"
-        fixed: list[str] = []
-    elif stream == "compat":
-        if version is not None or any(
-            value is None
-            for value in (compat_id, codex_version, upstream_tag, upstream_commit, target, artifact_sha256)
-        ):
-            raise ReleaseNotesError("compatibility generation requires every compatibility argument")
-        assert compat_id and codex_version and upstream_tag and upstream_commit and target and artifact_sha256
-        compat_version, _, _ = parse_compat_id(compat_id)
-        parsed_codex = parse_version(codex_version)
-        if parsed_codex.prerelease is not None or compat_version != codex_version:
-            raise ReleaseNotesError("compatibility ID and stable Codex version differ")
-        if upstream_tag != f"rust-v{codex_version}":
-            raise ReleaseNotesError("upstream tag must equal rust-v<codex-version>")
-        if SHA1.fullmatch(upstream_commit) is None:
-            raise ReleaseNotesError("upstream commit must be lowercase 40-hex")
-        if SAFE_VALUE.fullmatch(target) is None:
-            raise ReleaseNotesError("target must be a safe non-empty identifier")
-        if SHA256.fullmatch(artifact_sha256) is None:
-            raise ReleaseNotesError("artifact SHA-256 must be lowercase 64-hex")
-        previous_tag = previous_compat_tag(repository, current_commit, compat_id)
-        current_tag = f"compat-{compat_id}"
-        fixed = compat_information(
-            compat_id,
-            codex_version,
-            upstream_tag,
-            upstream_commit,
-            target,
-            artifact_sha256,
-        )
-    else:
-        raise ReleaseNotesError(f"unsupported release stream: {stream!r}")
+    compat_version, _, _ = parse_compat_id(compat_id)
+    parsed_codex = parse_version(codex_version)
+    if parsed_codex.prerelease is not None or compat_version != codex_version:
+        raise ReleaseNotesError("compatibility ID and stable Codex version differ")
+    if upstream_tag != f"rust-v{codex_version}":
+        raise ReleaseNotesError("upstream tag must equal rust-v<codex-version>")
+    if SHA1.fullmatch(upstream_commit) is None:
+        raise ReleaseNotesError("upstream commit must be lowercase 40-hex")
+    if SAFE_VALUE.fullmatch(target) is None:
+        raise ReleaseNotesError("target must be a safe non-empty identifier")
+    if SHA256.fullmatch(artifact_sha256) is None:
+        raise ReleaseNotesError("artifact SHA-256 must be lowercase 64-hex")
+    previous_tag = previous_compat_tag(repository, current_commit, compat_id)
+    current_tag = f"compat-{compat_id}"
+    fixed = compat_information(
+        compat_id,
+        codex_version,
+        upstream_tag,
+        upstream_commit,
+        target,
+        artifact_sha256,
+    )
 
     if previous_tag:
         validate_ancestor(repository, previous_tag, current_commit)
     commits = relevant_commits(
         repository,
         read_commits(repository, previous_tag, current_commit),
-        stream,
         current_commit,
         compat_id,
         target,
     )
-    dynamic, visible = render_dynamic(stream, commits)
-    changelog = render_changelog(stream, commits, previous_tag, current_tag)
+    dynamic, visible = render_dynamic(commits)
+    changelog = render_changelog(commits, previous_tag, current_tag)
     text = "\n".join([*dynamic, *changelog, *fixed]).rstrip() + "\n"
     if "No user-facing changes in this release." not in text and visible == 0:
         raise ReleaseNotesError("release notes contain no categorized changes or explicit empty state")
-    if stream == "compat" and text.index("## Compatibility") <= text.index("## Full Changelog"):
+    if text.index("## Compatibility") <= text.index("## Full Changelog"):
         raise ReleaseNotesError("compatibility facts must follow dynamic history")
     if previous_tag:
         comparison = f"{previous_tag}...{current_tag}"
@@ -629,7 +516,7 @@ def generate(
     return {
         "schema": 1,
         "status": "written",
-        "stream": stream,
+        "stream": "compat",
         "current_commit": current_commit,
         "current_tag": current_tag,
         "previous_tag": previous_tag,
@@ -642,16 +529,14 @@ def generate(
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--repository", type=Path, default=Path("."))
-    result.add_argument("--stream", choices=("manager", "compat"), required=True)
     result.add_argument("--current-ref", required=True)
     result.add_argument("--output", type=Path, required=True)
-    result.add_argument("--version")
-    result.add_argument("--compat-id")
-    result.add_argument("--codex-version")
-    result.add_argument("--upstream-tag")
-    result.add_argument("--upstream-commit")
-    result.add_argument("--target")
-    result.add_argument("--artifact-sha256")
+    result.add_argument("--compat-id", required=True)
+    result.add_argument("--codex-version", required=True)
+    result.add_argument("--upstream-tag", required=True)
+    result.add_argument("--upstream-commit", required=True)
+    result.add_argument("--target", required=True)
+    result.add_argument("--artifact-sha256", required=True)
     return result
 
 
@@ -660,10 +545,8 @@ def main() -> int:
     try:
         result = generate(
             args.repository,
-            args.stream,
             args.current_ref,
             args.output,
-            version=args.version,
             compat_id=args.compat_id,
             codex_version=args.codex_version,
             upstream_tag=args.upstream_tag,

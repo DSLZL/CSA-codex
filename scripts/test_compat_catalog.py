@@ -123,7 +123,7 @@ url = "{url}"
             "9.9.9",
             ARTIFACT_SHA,
             ARTIFACT_SIZE,
-            f"https://github.com/dslzl/CSA/releases/download/compat-{COMPAT}/{COMPAT}--codex.exe",
+            f"https://github.com/DSLZL/CSA-codex/releases/download/compat-{COMPAT}/{COMPAT}--codex.exe",
         )
         legacy_manifest = write_manifest(
             LEGACY,
@@ -369,7 +369,7 @@ url = "{url}"
         manifest.write_text(
             manifest.read_text(encoding="utf-8").replace(
                 f"unpublished://csa/{LEGACY}/{TARGET}/codex.exe",
-                f"https://github.com/dslzl/CSA/releases/download/compat-{LEGACY}/{LEGACY}--codex.exe",
+                f"https://github.com/DSLZL/CSA-codex/releases/download/compat-{LEGACY}/{LEGACY}--codex.exe",
             ),
             encoding="utf-8",
         )
@@ -456,7 +456,7 @@ url = "{url}"
 filename = "codex"
 sha256 = "{'2' * 64}"
 size = 2
-url = "https://github.com/dslzl/CSA/releases/download/compat-{COMPAT}/{COMPAT}--aarch64-apple-darwin--codex"
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-{COMPAT}/{COMPAT}--aarch64-apple-darwin--codex"
 '''
             )
         acceptance_path = root / f"release/acceptance/{COMPAT}/{TARGET}.json"
@@ -542,7 +542,7 @@ url = "https://github.com/dslzl/CSA/releases/download/compat-{COMPAT}/{COMPAT}--
             )
         value = {
             "schema": 1,
-            "repository": "DSLZL/CSA",
+            "repository": "DSLZL/CSA-codex",
             "source_release_tag": entries[0]["release_tag"],
             "source_commit": entries[0]["release_commit"],
             "entries": entries,

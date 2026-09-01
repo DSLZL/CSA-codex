@@ -21,7 +21,7 @@ class ReleaseAssetSetTests(unittest.TestCase):
         root = Path(holder.name)
         (root / "codex.exe").write_bytes(b"codex")
         descriptor = {
-            "repository": "DSLZL/CSA",
+            "repository": "DSLZL/CSA-codex",
             "release_tag": "compat-rust-v9.9.9-native-join-p9",
             "source_commit": "a" * 40,
             "artifact": {
@@ -109,7 +109,7 @@ class ReleaseAssetSetTests(unittest.TestCase):
         self.addCleanup(holder.cleanup)
         catalog = {
             "schema": 1,
-            "repository": "DSLZL/CSA",
+            "repository": "DSLZL/CSA-codex",
             "source_release_tag": "compat-rust-v9.9.9-native-join-p9",
             "source_commit": "a" * 40,
             "entries": [

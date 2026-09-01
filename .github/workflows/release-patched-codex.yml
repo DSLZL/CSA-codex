@@ -539,7 +539,7 @@ jobs:
 
           if [[ "$repairing_published" != true ]]; then
             python scripts/generate_release_notes.py \
-              --repository . --stream compat --current-ref "$SOURCE_COMMIT" \
+              --repository . --current-ref "$SOURCE_COMMIT" \
               --compat-id "$COMPAT_ID" --codex-version "$CODEX_VERSION" \
               --upstream-tag "$UPSTREAM_TAG" --upstream-commit "$UPSTREAM_COMMIT" \
               --target "$TARGET" --artifact-sha256 "$PRODUCTION_CODEX_SHA256" --output "$notes"
