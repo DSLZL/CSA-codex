@@ -347,8 +347,12 @@ def test_workflow_contracts() -> None:
     assert "compiler_cache: true" in windows and "compiler_cache_save: false" in windows
     assert "--cargo-frontend $env:CARGO_FRONTEND" in validation
     assert '"$CARGO_FRONTEND" build' in target
+    assert target.count("--timings") == 2
     assert "registry/index" in cargo_cache and "registry/cache" in cargo_cache
     assert "git/db" in cargo_cache and "cargo-target" not in cargo_cache
+    all_workflows = "\n".join(workflows.values())
+    assert "spctl developer-mode" not in all_workflows
+    assert "DevToolsSecurity" not in all_workflows
     for command in (
         "test_verify_patch_payload.py",
         "test_compat_catalog.py",
