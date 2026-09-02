@@ -52,6 +52,8 @@ permissions:
 env:
   CSA_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
   CARGO_INCREMENTAL: "0"
+  CARGO_NEXTEST_VERSION: "0.9.143"
+  CARGO_NEXTEST_WINDOWS_X64_SHA256: c670ba18e8731fd2eff33a47af33a0fa53d1afa6d0678344e82dc6f8fc7344ac
   CARGO_TERM_COLOR: always
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: core.autocrlf
@@ -191,18 +193,40 @@ jobs:
           targets: ${{ steps.resolve.outputs.build_target }}
           components: rustfmt, clippy
 
-      - name: Install exact cargo-nextest runner
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
-        with:
-          tool: nextest@0.9.143
-
-      - name: Verify cargo-nextest identity
+      - name: Install and verify exact cargo-nextest runner
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $archiveName = "cargo-nextest-$env:CARGO_NEXTEST_VERSION-x86_64-pc-windows-msvc.zip"
+          $archive = Join-Path $env:RUNNER_TEMP $archiveName
+          $destination = Join-Path $env:RUNNER_TEMP "cargo-nextest-$env:CARGO_NEXTEST_VERSION"
+          $uri = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$env:CARGO_NEXTEST_VERSION/$archiveName"
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Invoke-WebRequest -Uri $uri -OutFile $archive -MaximumRedirection 5
+              break
+            } catch {
+              Remove-Item -Force -LiteralPath $archive -ErrorAction SilentlyContinue
+              if ($attempt -eq 3) { throw }
+              Start-Sleep -Seconds (5 * $attempt)
+            }
+          }
+          $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -cne $env:CARGO_NEXTEST_WINDOWS_X64_SHA256) {
+            throw "cargo-nextest archive digest differs: $actualHash"
+          }
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
+          $executable = Join-Path $destination 'cargo-nextest.exe'
+          if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            throw "cargo-nextest executable is missing: $executable"
+          }
+          $destination >> $env:GITHUB_PATH
+          $env:PATH = "$destination;$env:PATH"
           $identity = (cargo nextest --version | Out-String).Trim()
-          if ($LASTEXITCODE -ne 0 -or $identity -notmatch '^cargo-nextest 0\.9\.143(?:\s|$)') {
-            throw "cargo-nextest identity differs from 0.9.143: $identity"
+          $pattern = '^cargo-nextest ' + [Regex]::Escape($env:CARGO_NEXTEST_VERSION) + '(?:\s|$)'
+          if ($LASTEXITCODE -ne 0 -or $identity -notmatch $pattern) {
+            throw ("cargo-nextest identity differs from {0}: {1}" -f $env:CARGO_NEXTEST_VERSION, $identity)
           }
 
       - name: Configure shared sccache

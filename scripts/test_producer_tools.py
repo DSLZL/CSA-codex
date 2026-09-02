@@ -380,13 +380,17 @@ def test_workflow_contracts() -> None:
         assert "mr-boxington" not in owner.lower() and "MBX_" not in owner
         assert "RUSTFLAGS" not in owner and "CARGO_PROFILE_" not in owner
 
-    nextest_action = "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
-    assert nextest_action in validation
-    assert "tool: nextest@0.9.143" in validation
+    nextest_install = "Install and verify exact cargo-nextest runner"
+    assert nextest_install in validation
+    assert 'CARGO_NEXTEST_VERSION: "0.9.143"' in validation
+    assert "c670ba18e8731fd2eff33a47af33a0fa53d1afa6d0678344e82dc6f8fc7344ac" in validation
+    assert "nextest-rs/nextest/releases/download/cargo-nextest-" in validation
+    assert "Get-FileHash" in validation and "Expand-Archive" in validation
+    assert "taiki-e/install-action@" not in validation
     assert "cargo nextest --version" in validation
     assert "--test-runner nextest" in validation
-    assert validation.index("dtolnay/rust-toolchain@") < validation.index(nextest_action)
-    assert validation.index(nextest_action) < validation.index("--test-runner nextest")
+    assert validation.index("dtolnay/rust-toolchain@") < validation.index(nextest_install)
+    assert validation.index(nextest_install) < validation.index("--test-runner nextest")
     assert "nextest" not in target.lower()
     assert validation.count("timeout-minutes: 300") == 1
     assert target.count("timeout-minutes: 300") == 1
