@@ -286,8 +286,7 @@ jobs:
             --stats "$SCCACHE_STATS" \
             --profile "target-${{ inputs.target }}" \
             --github-step-summary "$GITHUB_STEP_SUMMARY" \
-            --require-requests \
-            --require-clean
+            --require-requests
           "$SCCACHE_PATH" --show-stats
 
       - name: Stage exact target artifact

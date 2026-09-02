@@ -33,13 +33,22 @@ class SccacheStatsTests(unittest.TestCase):
         self.assertEqual(result["cache_writes"], 1)
         self.assertEqual(result["warnings"], [])
 
-    def test_surfaces_cache_errors(self) -> None:
+    def test_surfaces_cache_errors_as_observational_warnings(self) -> None:
         document = stats(hits=1, misses=1, errors=1)
         document["stats"]["cache_read_errors"] = 2
+        document["stats"]["cache_write_errors"] = 3
         result = summarize(document)
         self.assertEqual(result["rust_errors"], 1)
         self.assertEqual(result["cache_read_errors"], 2)
-        self.assertTrue(result["warnings"])
+        self.assertEqual(result["cache_write_errors"], 3)
+        self.assertEqual(
+            result["warnings"],
+            [
+                "sccache recorded 1 Rust cache request errors",
+                "sccache recorded 2 cache read errors",
+                "sccache recorded 3 cache write errors",
+            ],
+        )
 
     def test_rejects_malformed_statistics(self) -> None:
         with self.assertRaises(StatsError):

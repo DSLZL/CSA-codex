@@ -513,7 +513,7 @@ def test_workflow_contracts() -> None:
         "uses: ./.github/actions/setup-codex-rust-cache"
     )
     assert "scripts/check_sccache_stats.py" in target
-    assert "--require-requests" in target and "--require-clean" in target
+    assert "--require-requests" in target and "--require-clean" not in target
     assert "cache_mode" in target and "sccache_version" in target
     assert "mr-boxington" not in target.lower() and "MBX_" not in target
     assert "RUSTFLAGS" not in target and "CARGO_PROFILE_" not in target

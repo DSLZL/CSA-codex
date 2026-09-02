@@ -62,8 +62,12 @@ def summarize(stats_document: object) -> dict[str, Any]:
     warnings = []
     if compile_requests == 0 or rust_requests == 0:
         warnings.append("Rust build recorded zero sccache compile requests")
-    if read_errors or write_errors or errors:
-        warnings.append("sccache recorded Rust or cache read/write errors")
+    if errors:
+        warnings.append(f"sccache recorded {errors} Rust cache request errors")
+    if read_errors:
+        warnings.append(f"sccache recorded {read_errors} cache read errors")
+    if write_errors:
+        warnings.append(f"sccache recorded {write_errors} cache write errors")
     return {
         "schema": 1,
         "result": "reported",
@@ -103,6 +107,8 @@ def append_github_summary(path: Path, profile: str, result: dict[str, Any]) -> N
                 f"| Rust errors | {result['rust_errors']} |",
                 f"| Rust hit rate | {result['rust_hit_rate']:.2f}% |",
                 f"| Cache writes | {result['cache_writes']} |",
+                f"| Cache read errors | {result['cache_read_errors']} |",
+                f"| Cache write errors | {result['cache_write_errors']} |",
                 f"| Reported cache size | {cache_size} |",
             ]
         )
