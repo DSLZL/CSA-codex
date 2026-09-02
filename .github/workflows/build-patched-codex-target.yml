@@ -56,7 +56,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - id: resolve
+      - id: authority
         name: Verify fixed builder and exact build authority
         shell: bash
         env:
@@ -87,10 +87,20 @@ jobs:
           python scripts/compat_catalog.py resolve \
             --repository . \
             --selector "$COMPAT_ID" \
-            --target "$TARGET" \
+            --target x86_64-pc-windows-msvc \
             --output "$RUNNER_TEMP/resolution.json" \
             --github-output "$GITHUB_OUTPUT"
           python scripts/compat_catalog.py validate --repository .
+
+      - id: target
+        name: Resolve the fixed native target from the manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/compat_release.py target \
+            --manifest "$GITHUB_WORKSPACE/${{ steps.authority.outputs.manifest_path }}" \
+            --target '${{ inputs.target }}' \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Configure isolated build roots
         shell: bash
@@ -115,36 +125,36 @@ jobs:
           for attempt in 1 2 3; do
             rm -rf "$SOURCE_ROOT"
             if git clone --filter=blob:none --no-checkout \
-              --branch '${{ steps.resolve.outputs.upstream_tag }}' --single-branch \
+              --branch '${{ steps.authority.outputs.upstream_tag }}' --single-branch \
               https://github.com/openai/codex.git "$SOURCE_ROOT"; then
               break
             fi
             [[ "$attempt" != 3 ]] || exit 1
             sleep $((attempt * 5))
           done
-          git -C "$SOURCE_ROOT" checkout --detach '${{ steps.resolve.outputs.upstream_commit }}'
-          test "$(git -C "$SOURCE_ROOT" rev-parse HEAD)" = '${{ steps.resolve.outputs.upstream_commit }}'
-          test "$(git -C "$SOURCE_ROOT" rev-parse 'refs/tags/${{ steps.resolve.outputs.upstream_tag }}^{commit}')" = '${{ steps.resolve.outputs.upstream_commit }}'
+          git -C "$SOURCE_ROOT" checkout --detach '${{ steps.authority.outputs.upstream_commit }}'
+          test "$(git -C "$SOURCE_ROOT" rev-parse HEAD)" = '${{ steps.authority.outputs.upstream_commit }}'
+          test "$(git -C "$SOURCE_ROOT" rev-parse 'refs/tags/${{ steps.authority.outputs.upstream_tag }}^{commit}')" = '${{ steps.authority.outputs.upstream_commit }}'
 
       - name: Apply exact reviewed patch payload
         shell: bash
         run: |
           set -euo pipefail
           python scripts/verify_patch_payload.py \
-            --manifest "$GITHUB_WORKSPACE/${{ steps.resolve.outputs.manifest_path }}" \
+            --manifest "$GITHUB_WORKSPACE/${{ steps.authority.outputs.manifest_path }}" \
             --source "$SOURCE_ROOT" --apply
 
       - name: Install exact compatibility Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
-          toolchain: ${{ steps.resolve.outputs.rust_toolchain }}
+          toolchain: ${{ steps.authority.outputs.rust_toolchain }}
           targets: ${{ inputs.target }}
 
       - name: Verify exact Rust compiler identity
         shell: bash
         run: |
           set -euo pipefail
-          rustc -Vv | grep -F 'commit-hash: ${{ steps.resolve.outputs.rustc_commit }}'
+          rustc -Vv | grep -F 'commit-hash: ${{ steps.authority.outputs.rustc_commit }}'
 
       - name: Verify compiler-cache mode and write authority
         shell: bash
@@ -170,7 +180,7 @@ jobs:
         with:
           cache_mode: ${{ inputs.cache_mode }}
           cargo_home: ${{ runner.temp }}/c/h
-          sccache_version: ${{ steps.resolve.outputs.sccache_version }}
+          sccache_version: ${{ steps.authority.outputs.sccache_version }}
           source_root: ${{ env.SOURCE_ROOT }}
 
       - name: Install Zig for musl
@@ -283,15 +293,15 @@ jobs:
       - name: Stage exact target artifact
         shell: bash
         env:
-          ARTIFACT_FILENAME: ${{ steps.resolve.outputs.artifact_filename }}
+          ARTIFACT_FILENAME: ${{ steps.target.outputs.artifact_filename }}
           BUILDER_REPOSITORY: ${{ inputs.builder_repository }}
           COMPAT_ID: ${{ inputs.compat_id }}
-          MANIFEST_SHA256: ${{ steps.resolve.outputs.manifest_sha256 }}
+          MANIFEST_SHA256: ${{ steps.authority.outputs.manifest_sha256 }}
           REQUEST_ID: ${{ inputs.request_id }}
           RUNNER_LABEL: ${{ inputs.runner }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
           TARGET: ${{ inputs.target }}
-          UPSTREAM_COMMIT: ${{ steps.resolve.outputs.upstream_commit }}
+          UPSTREAM_COMMIT: ${{ steps.authority.outputs.upstream_commit }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail

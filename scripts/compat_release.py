@@ -378,6 +378,13 @@ def release_matrix(manifest_path: Path) -> dict[str, Any]:
     return {"include": include}
 
 
+def release_target(manifest_path: Path, target: str) -> dict[str, Any]:
+    rows = [row for row in release_matrix(manifest_path)["include"] if row["target"] == target]
+    if len(rows) != 1:
+        raise CompatibilityReleaseError(f"manifest has no unique supported target: {target}")
+    return rows[0]
+
+
 def verify_builder_binding(
     repository: str,
     target: str,
@@ -1112,6 +1119,11 @@ def parse_args() -> argparse.Namespace:
     matrix_parser.add_argument("--manifest", type=Path, required=True)
     matrix_parser.add_argument("--github-output", type=Path)
 
+    target_parser = commands.add_parser("target")
+    target_parser.add_argument("--manifest", type=Path, required=True)
+    target_parser.add_argument("--target", required=True)
+    target_parser.add_argument("--github-output", type=Path)
+
     builder_parser = commands.add_parser("builder")
     builder_parser.add_argument("--repository", required=True)
     builder_parser.add_argument("--target", required=True)
@@ -1166,6 +1178,10 @@ def main() -> int:
                 with args.github_output.open("a", encoding="utf-8", newline="\n") as output:
                     output.write(f"matrix={json.dumps(result, separators=(',', ':'))}\n")
                     output.write(f"artifact_count={len(result['include'])}\n")
+        elif args.command == "target":
+            result = release_target(args.manifest, args.target)
+            if args.github_output:
+                write_github_output(args.github_output, result)
         elif args.command == "builder":
             result = verify_builder_binding(
                 args.repository,

@@ -24,6 +24,7 @@ from compat_release import (  # noqa: E402
     finalize,
     pack,
     release_matrix,
+    release_target,
     verify_builder_binding,
     verify_target_bundle,
 )
@@ -206,6 +207,7 @@ def test_release_matrix_and_pack(root: Path) -> None:
     }
     for row in matrix["include"]:
         assert row["artifact_filename"] in {"codex", "codex.exe"}
+        assert release_target(P10_MANIFEST, row["target"]) == row
 
     target = TARGET
     builder = TARGET_BUILDERS[target]
@@ -488,7 +490,7 @@ def test_workflow_contracts() -> None:
     )
     assert release.count(cache_policy) == 2
     assert "sccache_version: ${{ steps.resolve.outputs.sccache_version }}" in release
-    assert "sccache_version: ${{ steps.resolve.outputs.sccache_version }}" in target
+    assert "sccache_version: ${{ steps.authority.outputs.sccache_version }}" in target
     assert "cache_mode: read-write" in windows
     assert "Windows cache-warming builds must be dispatched" in windows
     assert "--cargo-frontend" not in validation and "CARGO_FRONTEND" not in target
