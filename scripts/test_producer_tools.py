@@ -78,13 +78,12 @@ def test_repository_boundary() -> None:
     }
     assert workflows == {
         "build-patched-codex-target.yml",
-        "build-patched-codex-windows.yml",
         "ci.yml",
-        "maintain-actions-cache.yml",
         "release-patched-codex.yml",
-        "validate-patched-codex.yml",
         "watch-codex-release.yml",
     }
+    assert not (REPOSITORY / "scripts/actions_cache_policy.py").exists()
+    assert not (REPOSITORY / "scripts/test_actions_cache_policy.py").exists()
 
     old_repository = re.compile(r"(?i)DSLZL/CSA(?!-codex)")
     for root in (REPOSITORY / "scripts", REPOSITORY / ".github/workflows"):
@@ -258,21 +257,77 @@ def test_release_matrix_and_pack(root: Path) -> None:
         workflow_run_id="123456",
     )
     assert verified["result"] == "verified" and verified["sha256"] == record["sha256"]
-    record["request_id"] = "stale-request"
-    record_path.write_text(json.dumps(record), encoding="utf-8")
-    expect_error(
-        lambda: verify_target_bundle(
+
+    def verify_fixture(
+        *,
+        repository: str = builder["repository"],
+        runner: str = builder["runner"],
+        expected_target: str = target,
+    ) -> dict[str, object]:
+        return verify_target_bundle(
             P10_MANIFEST,
             bundle.resolve(),
             request_id="acceptance-1",
             source_commit="a" * 40,
-            repository=builder["repository"],
-            runner=builder["runner"],
-            target=target,
+            repository=repository,
+            runner=runner,
+            target=expected_target,
             workflow_run_id="123456",
+        )
+
+    base_record = dict(record)
+    for field, bad_value in (
+        ("request_id", "stale-request"),
+        ("builder_repository", "DSLZL/CSA-codex-linux-x64"),
+        ("runner", "ubuntu-24.04"),
+        ("workflow_run_id", "654321"),
+        ("compat_id", "rust-v0.150.0-native-join-p10"),
+        ("manifest_sha256", "0" * 64),
+        ("target", "x86_64-unknown-linux-musl"),
+        ("artifact", "bin/not-codex.exe"),
+        ("upstream_commit", "b" * 40),
+        ("source_commit", "b" * 40),
+        ("size", base_record["size"] + 1),
+        ("sha256", "0" * 64),
+    ):
+        record_path.write_text(
+            json.dumps({**base_record, field: bad_value}), encoding="utf-8"
+        )
+        expect_error(verify_fixture, RuntimeError)
+
+    record_path.write_text(json.dumps(base_record), encoding="utf-8")
+    expect_error(
+        lambda: verify_fixture(repository="DSLZL/CSA-codex-linux-x64"),
+        RuntimeError,
+    )
+    expect_error(
+        lambda: verify_fixture(
+            repository="DSLZL/CSA-codex-linux-x64",
+            runner="ubuntu-24.04",
+            expected_target="x86_64-unknown-linux-musl",
         ),
         RuntimeError,
     )
+
+    duplicate = bundle / "duplicate/target-record.json"
+    duplicate.parent.mkdir()
+    duplicate.write_text(json.dumps(base_record), encoding="utf-8")
+    expect_error(verify_fixture, RuntimeError)
+    duplicate.unlink()
+    duplicate.parent.rmdir()
+
+    record_path.unlink()
+    expect_error(verify_fixture, RuntimeError)
+    record_path.write_text(json.dumps(base_record), encoding="utf-8")
+
+    artifact.write_bytes(b"tampered remote builder artifact")
+    expect_error(verify_fixture, RuntimeError)
+    artifact.write_bytes(b"verified remote builder artifact")
+    unexpected = bundle / "unexpected.txt"
+    unexpected.write_text("unexpected\n", encoding="utf-8")
+    expect_error(verify_fixture, RuntimeError)
+    unexpected.unlink()
+    assert verify_fixture()["result"] == "verified"
 
     source = REPOSITORY / "payload/codex/rust-v0.148.0-native-join-p1"
     payload = root / source.name
@@ -398,9 +453,6 @@ def test_workflow_contracts() -> None:
     }
     release = workflows["release-patched-codex.yml"]
     target = workflows["build-patched-codex-target.yml"]
-    validation = workflows["validate-patched-codex.yml"]
-    windows = workflows["build-patched-codex-windows.yml"]
-    maintenance = workflows["maintain-actions-cache.yml"]
     watcher = workflows["watch-codex-release.yml"]
     ci = workflows["ci.yml"]
     cache_setup = (REPOSITORY / ".github/actions/setup-codex-rust-cache/action.yml").read_text(
@@ -412,22 +464,26 @@ def test_workflow_contracts() -> None:
     contract_runner = (REPOSITORY / "scripts/run_patch_contract.py").read_text(
         encoding="utf-8"
     )
-    evidence = (REPOSITORY / "scripts/validation_evidence.py").read_text(encoding="utf-8")
 
     assert 'cron: "0 * * * *"' in watcher
     assert "compat_release.py finalize" not in watcher
     assert "compat_release.py pack" not in watcher
-    assert "uses: ./.github/workflows/validate-patched-codex.yml" in release
-    assert "uses: ./.github/workflows/build-patched-codex-target.yml" in release
-    assert "uses: ./.github/workflows/build-patched-codex-target.yml" in workflows[
-        "build-patched-codex-windows.yml"
-    ]
-    assert "workflow_call:" in target and "workflow_call:" in validation
+    assert "Validate exact patched Codex contract" not in release
+    assert "validate-patched-codex.yml" not in release
+    assert "uses: ./.github/workflows/build-patched-codex-target.yml" not in release
+    assert "workflow_call:" in target
     assert "repository: DSLZL/CSA-codex" in target
     assert "scripts/compat_release.py builder" in target
     assert "scripts/compat_catalog.py resolve" in target
     assert '"schema": 2' in target
-    for input_name in ("builder_repository", "compat_id", "request_id", "runner", "source_commit", "target"):
+    for input_name in (
+        "builder_repository",
+        "compat_id",
+        "request_id",
+        "runner",
+        "source_commit",
+        "target",
+    ):
         assert f"      {input_name}:" in target
     assert "--stream manager" not in release and "--stream compat" not in release
     assert "scripts/generate_release_notes.py" in release
@@ -452,79 +508,56 @@ def test_workflow_contracts() -> None:
     ):
         assert setting in cache_setup
 
-    for owner in (validation, target):
-        assert "uses: ./.github/actions/setup-codex-rust-cache" in owner
-        assert owner.index("dtolnay/rust-toolchain@") < owner.index(
-            "uses: ./.github/actions/setup-codex-rust-cache"
-        )
-        assert "scripts/check_sccache_stats.py" in owner
-        assert "--require-requests" in owner and "--require-clean" in owner
-        assert "cache_mode" in owner and "sccache_version" in owner
-        assert "mr-boxington" not in owner.lower() and "MBX_" not in owner
-        assert "RUSTFLAGS" not in owner and "CARGO_PROFILE_" not in owner
-
-    nextest_install = "Install and verify exact cargo-nextest runner"
-    assert nextest_install in validation
-    assert 'CARGO_NEXTEST_VERSION: "0.9.143"' in validation
-    assert "c670ba18e8731fd2eff33a47af33a0fa53d1afa6d0678344e82dc6f8fc7344ac" in validation
-    assert "nextest-rs/nextest/releases/download/cargo-nextest-" in validation
-    assert "Get-FileHash" in validation and "Expand-Archive" in validation
-    assert "taiki-e/install-action@" not in validation
-    assert "cargo nextest --version" in validation
-    assert "--test-runner nextest" in validation
-    assert validation.index("dtolnay/rust-toolchain@") < validation.index(nextest_install)
-    assert validation.index(nextest_install) < validation.index("--test-runner nextest")
+    assert "uses: ./.github/actions/setup-codex-rust-cache" in target
+    assert target.index("dtolnay/rust-toolchain@") < target.index(
+        "uses: ./.github/actions/setup-codex-rust-cache"
+    )
+    assert "scripts/check_sccache_stats.py" in target
+    assert "--require-requests" in target and "--require-clean" in target
+    assert "cache_mode" in target and "sccache_version" in target
+    assert "mr-boxington" not in target.lower() and "MBX_" not in target
+    assert "RUSTFLAGS" not in target and "CARGO_PROFILE_" not in target
     assert "nextest" not in target.lower()
-    assert validation.count("timeout-minutes: 300") == 1
     assert target.count("timeout-minutes: 300") == 1
-    assert "timeout-minutes: 120" not in validation
     assert "$RUNNER_TEMP/c" in target and "${{ runner.temp }}/c/h" in target
 
     assert (REPOSITORY / "scripts/check_sccache_stats.py").is_file()
     assert "read-only|off" in target and "read-write)" in target
     assert "test \"$GITHUB_EVENT_NAME\" = workflow_dispatch" in target
     assert "refs/heads/$DEFAULT_BRANCH" in target
-    cache_policy = (
-        "cache_mode: ${{ needs.plan.outputs.publish_requested != 'true' && "
-        "'read-write' || 'read-only' }}"
-    )
-    assert release.count(cache_policy) == 2
-    assert "sccache_version: ${{ steps.resolve.outputs.sccache_version }}" in release
     assert "sccache_version: ${{ steps.authority.outputs.sccache_version }}" in target
-    assert "cache_mode: read-write" in windows
-    assert "Windows cache-warming builds must be dispatched" in windows
-    assert "--cargo-frontend" not in validation and "CARGO_FRONTEND" not in target
+    assert "CARGO_FRONTEND" not in target and "--cargo-frontend" not in target
     assert target.count("--timings") == 2
 
-    assert "schedule:" not in maintenance and "workflow_call:" not in maintenance
-    assert maintenance.count("actions: write") == 1
-    assert "high-water" not in maintenance and "low-water" not in maintenance
-    assert 'actions/caches/$cache_id' in maintenance
-    assert "--purge-legacy" in maintenance
-    assert maintenance.count("if: env.DRY_RUN != 'true'") == 2
-    assert "Cache audit is a dry run; no cache IDs will be deleted." in maintenance
-    assert "uses: ./.github/workflows/maintain-actions-cache.yml" not in validation
-    assert "uses: ./.github/workflows/maintain-actions-cache.yml" not in windows
-    assert "uses: ./.github/workflows/maintain-actions-cache.yml" not in release
+    assert "matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}" in release
+    assert "matrix.repository" in release and "matrix.workflow" in release
+    assert 'X-GitHub-Api-Version: 2026-03-10' in release
+    assert 'response.get("workflow_run_id")' in release
+    assert "gh run watch" in release and "gh run download" in release
+    assert "scripts/compat_release.py verify-target" in release
+    assert "needs: [plan, build]" in release
+    assert "needs.validate" not in release
+    assert release.count("${{ secrets.BUILD_FANOUT_TOKEN }}") == 3
+    assert "timeout-minutes: 360" in release
+    assert "request_id=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" in release
+
     for name, workflow in workflows.items():
         assert "actions/cache@" not in workflow, name
-        if name != "maintain-actions-cache.yml":
-            assert "actions/caches/$cache_id" not in workflow, name
-            assert "gh cache delete" not in workflow, name
+        assert "actions/caches/$cache_id" not in workflow, name
+        assert "gh cache delete" not in workflow, name
+        if name != "build-patched-codex-target.yml":
+            assert "cargo build --target" not in workflow, name
 
     assert "sccache" in bundle_builder.lower() and "mbx" not in bundle_builder.lower()
     assert "cargo_frontend" not in contract_runner and "mbx" not in contract_runner.lower()
     assert "test_runner_argv" in contract_runner and "runner_argv" in contract_runner
-    assert "runner_argv" in evidence and "mbx" not in evidence.lower()
     all_workflows = "\n".join(workflows.values())
     assert "spctl developer-mode" not in all_workflows
     assert "DevToolsSecurity" not in all_workflows
     for command in (
         "test_verify_patch_payload.py",
         "test_compat_catalog.py",
-        "test_validation_evidence.py",
         "test_verify_release_asset_set.py",
-        "test_actions_cache_policy.py",
         "test_check_sccache_stats.py",
         "test_producer_tools.py",
         "compat_catalog.py validate",

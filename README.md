@@ -17,11 +17,17 @@ the [CSA Manager](https://github.com/DSLZL/CSA).
 | `payload/codex/` | Exact upstream bindings, preimage hashes, patches, and test contracts |
 | `release/` | Compatibility routing, build profiles, runtime locks, and acceptance records |
 | `scripts/` | Patch verification, catalog, provenance, and release tooling |
-| `.github/workflows/` | Candidate validation and formal patched-Codex release automation |
+| `.github/workflows/` | Central release orchestration and the canonical reusable native-build recipe |
 | `tests/ui/` | Disposable UI development harness for patch work |
 
 Manager/runtime code, npm packages, activation logic, and Manager releases stay
 in `DSLZL/CSA`.
+
+Native compilation runs in six public build-shard repositories named
+`DSLZL/CSA-codex-{windows,linux,macos}-{x64,arm64}`. Each shard fixes one target
+and runner, owns its repository-scoped sccache data, and returns one binary plus
+one exact target record. Only this repository aggregates those records or
+publishes a compatibility Release.
 
 ## Local verification
 
@@ -31,7 +37,6 @@ Use Python 3.11 or newer and Git:
 py -3 -m compileall -q scripts
 py -3 scripts/test_verify_patch_payload.py
 py -3 scripts/test_compat_catalog.py
-py -3 scripts/test_validation_evidence.py
 py -3 scripts/test_verify_release_asset_set.py
 py -3 scripts/test_producer_tools.py
 py -3 scripts/compat_catalog.py validate --repository .

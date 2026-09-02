@@ -20,7 +20,6 @@ payloads.
 py -3 -m compileall -q scripts
 py -3 scripts/test_verify_patch_payload.py
 py -3 scripts/test_compat_catalog.py
-py -3 scripts/test_validation_evidence.py
 py -3 scripts/test_verify_release_asset_set.py
 py -3 scripts/test_producer_tools.py
 py -3 scripts/compat_catalog.py validate --repository .

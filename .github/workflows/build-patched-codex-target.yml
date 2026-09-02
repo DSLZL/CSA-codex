@@ -175,7 +175,7 @@ jobs:
               ;;
           esac
 
-      - name: Configure shared sccache
+      - name: Configure repository-scoped sccache
         uses: ./.github/actions/setup-codex-rust-cache
         with:
           cache_mode: ${{ inputs.cache_mode }}
@@ -276,7 +276,7 @@ jobs:
             echo "Stripped Linux Codex CLI: ${before_size} -> ${after_size} bytes"
           fi
 
-      - name: Verify shared sccache health
+      - name: Verify repository-scoped sccache health
         if: inputs.cache_mode != 'off'
         shell: bash
         run: |

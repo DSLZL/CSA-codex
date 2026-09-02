@@ -1,4 +1,4 @@
-name: Setup shared Codex Rust compiler cache
+name: Setup repository-scoped Codex Rust compiler cache
 description: Configure an isolated Cargo home and one repository-scoped GitHub Actions sccache pool.
 
 inputs:
@@ -74,7 +74,7 @@ runs:
         version: v${{ inputs.sccache_version }}
         disable_annotations: true
 
-    - name: Configure shared repository compiler cache
+    - name: Configure repository compiler cache
       if: inputs.cache_mode != 'off'
       shell: pwsh
       env:
@@ -115,7 +115,7 @@ runs:
         & $sccache --zero-stats
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         @(
-          '### Shared sccache configuration'
+          '### Repository-scoped sccache configuration'
           ''
           "- version: ``$env:CSA_SCCACHE_VERSION``"
           "- mode: ``$env:CSA_CACHE_MODE``"

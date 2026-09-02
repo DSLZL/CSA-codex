@@ -8,7 +8,8 @@ producer.
 | Concern | Canonical repository |
 | --- | --- |
 | Manager CLI, online installer, runtime state, activation, npm distribution | `DSLZL/CSA` |
-| Compatibility payloads, patch verification, patched builds, provenance, compatibility releases | `DSLZL/CSA-codex` |
+| Compatibility payloads, build recipe, patch verification, provenance, aggregation, compatibility releases | `DSLZL/CSA-codex` |
+| Native compiler execution and repository-scoped sccache | One fixed `DSLZL/CSA-codex-{os}-{arch}` build shard |
 
 Neither repository reads the other's checkout at runtime or in CI. The
 integration boundary is a formal `compat-<compat-id>` release containing a
@@ -21,16 +22,23 @@ install catalog.
    build/acceptance authorities.
 2. The manifest binds the exact upstream tag, peeled commit, preimages, ordered
    patches, toolchain, targets, and expected artifact identities.
-3. Validation applies the complete patch sequence to a disposable exact
-   upstream checkout.
-4. Formal build jobs compile every declared target independently.
-5. Packaging verifies the complete target inventory and emits provenance,
+3. Each target-pinned shard invokes the immutable reusable recipe, verifies the
+   exact producer source and patch inputs, and compiles in a disposable upstream
+   checkout using only that shard's cache.
+4. The central broker binds each dispatch to its returned child run ID, then
+   verifies the repository, request, source, target, filename, size, and SHA-256
+   before accepting the binary.
+5. Central packaging requires the complete target inventory and emits provenance,
    checksums, and the display-only install catalog.
 6. Publication is permitted only from the reviewed default-branch commit and an
    annotated `compat-<compat-id>` tag.
 
 Compiler caches affect duration only. They never supply compatibility identity,
 artifact authority, or release eligibility.
+
+The child repositories contain no compatibility payload or publication job and
+receive no central credential. Cross-repository dispatch and artifact retrieval
+use the dedicated `BUILD_FANOUT_TOKEN` only inside trusted central broker steps.
 
 ## Historical releases
 

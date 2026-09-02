@@ -222,46 +222,125 @@ jobs:
             --manifest "$GITHUB_WORKSPACE/${{ steps.resolve.outputs.manifest_path }}" \
             --github-output "$GITHUB_OUTPUT"
 
-  validate:
-    name: Validate exact patched Codex contract
-    needs: plan
-    permissions:
-      actions: write
-      contents: read
-    uses: ./.github/workflows/validate-patched-codex.yml
-    with:
-      cache_mode: ${{ needs.plan.outputs.publish_requested != 'true' && 'read-write' || 'read-only' }}
-      compat_selector: ${{ needs.plan.outputs.compat_id }}
-      source_commit: ${{ needs.plan.outputs.source_commit }}
-      target: ${{ needs.plan.outputs.build_target }}
-      retention_days: 1
-
   build:
-    name: Build ${{ matrix.target }}
-    needs: [plan, validate]
+    name: Build ${{ matrix.target }} in its shard
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    uses: ./.github/workflows/build-patched-codex-target.yml
-    with:
-      builder_repository: ${{ github.repository }}
-      cache_mode: ${{ needs.plan.outputs.publish_requested != 'true' && 'read-write' || 'read-only' }}
-      compat_id: ${{ needs.plan.outputs.compat_id }}
-      request_id: ${{ needs.plan.outputs.request_id }}
-      runner: ${{ matrix.runner }}
-      source_commit: ${{ needs.plan.outputs.source_commit }}
-      target: ${{ matrix.target }}
-      retention_days: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.source_commit }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - id: dispatch
+        name: Dispatch exact child build
+        shell: bash
+        env:
+          CHILD_REPOSITORY: ${{ matrix.repository }}
+          CHILD_WORKFLOW: ${{ matrix.workflow }}
+          COMPAT_ID: ${{ needs.plan.outputs.compat_id }}
+          GH_TOKEN: ${{ secrets.BUILD_FANOUT_TOKEN }}
+          REQUEST_ID: ${{ needs.plan.outputs.request_id }}
+          SOURCE_COMMIT: ${{ needs.plan.outputs.source_commit }}
+        run: |
+          set -euo pipefail
+          [[ -n "$GH_TOKEN" ]] || {
+            echo "Missing required Actions secret: BUILD_FANOUT_TOKEN" >&2
+            exit 2
+          }
+          response="$RUNNER_TEMP/dispatch.json"
+          gh api --method POST \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$CHILD_REPOSITORY/actions/workflows/$CHILD_WORKFLOW/dispatches" \
+            -f ref=main \
+            -f "inputs[source_commit]=$SOURCE_COMMIT" \
+            -f "inputs[compat_id]=$COMPAT_ID" \
+            -f "inputs[request_id]=$REQUEST_ID" \
+            > "$response"
+          python - "$response" "$CHILD_REPOSITORY" "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          response_path, repository, output_path, summary_path = map(Path, sys.argv[1:])
+          response = json.loads(response_path.read_text(encoding="utf-8"))
+          run_id = response.get("workflow_run_id")
+          run_url = response.get("html_url")
+          expected_url = f"https://github.com/{repository.as_posix()}/actions/runs/{run_id}"
+          if type(run_id) is not int or run_id < 1 or run_url != expected_url:
+              raise SystemExit("workflow dispatch did not return the exact child run identity")
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write(f"run_id={run_id}\nrun_url={run_url}\n")
+          with summary_path.open("a", encoding="utf-8") as summary:
+              summary.write(f"- child run: [{repository.as_posix()} #{run_id}]({run_url})\n")
+          PY
+
+      - name: Wait for the exact child run
+        shell: bash
+        env:
+          CHILD_REPOSITORY: ${{ matrix.repository }}
+          GH_TOKEN: ${{ secrets.BUILD_FANOUT_TOKEN }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          if ! gh run watch "$RUN_ID" --repo "$CHILD_REPOSITORY" --exit-status --interval 30; then
+            gh run view "$RUN_ID" --repo "$CHILD_REPOSITORY" --log-failed || true
+            exit 1
+          fi
+
+      - name: Download and verify the exact child artifact
+        shell: bash
+        env:
+          CHILD_REPOSITORY: ${{ matrix.repository }}
+          COMPAT_ID: ${{ needs.plan.outputs.compat_id }}
+          GH_TOKEN: ${{ secrets.BUILD_FANOUT_TOKEN }}
+          REQUEST_ID: ${{ needs.plan.outputs.request_id }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUNNER_LABEL: ${{ matrix.runner }}
+          SOURCE_COMMIT: ${{ needs.plan.outputs.source_commit }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/child-target"
+          mkdir -p "$root"
+          gh run download "$RUN_ID" --repo "$CHILD_REPOSITORY" \
+            --name "patched-codex-target-${COMPAT_ID}-${TARGET}" \
+            --dir "$root"
+          python scripts/compat_release.py verify-target \
+            --manifest "$GITHUB_WORKSPACE/${{ needs.plan.outputs.manifest_path }}" \
+            --root "$root" \
+            --request-id "$REQUEST_ID" \
+            --source-commit "$SOURCE_COMMIT" \
+            --repository "$CHILD_REPOSITORY" \
+            --runner "$RUNNER_LABEL" \
+            --target "$TARGET" \
+            --workflow-run-id "$RUN_ID"
+
+      - name: Upload verified target into the central run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: patched-codex-target-${{ needs.plan.outputs.compat_id }}-${{ matrix.target }}
+          path: ${{ runner.temp }}/child-target
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
 
   bundle:
     name: Aggregate ${{ needs.plan.outputs.artifact_count }} native targets
-    needs: [plan, validate, build]
+    needs: [plan, build]
     if: >-
       always() &&
       needs.plan.result == 'success' &&
-      needs.validate.result == 'success' &&
       needs.build.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 30

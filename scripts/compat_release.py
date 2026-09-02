@@ -449,6 +449,18 @@ def verify_target_bundle(
     if not isinstance(filename, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
         raise CompatibilityReleaseError("manifest artifact filename is invalid")
 
+    members: set[str] = set()
+    for path in bundle_root.rglob("*"):
+        if path.is_symlink():
+            raise CompatibilityReleaseError("target bundle must not contain symlinks")
+        if path.is_file():
+            members.add(path.relative_to(bundle_root).as_posix())
+    expected_members = {"target-record.json", f"bin/{filename}"}
+    if members != expected_members:
+        raise CompatibilityReleaseError(
+            f"target bundle inventory differs: {sorted(members)} != {sorted(expected_members)}"
+        )
+
     record_path = bundle_root / "target-record.json"
     if not record_path.is_file() or record_path.is_symlink():
         raise CompatibilityReleaseError("target record must be one regular file")
