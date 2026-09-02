@@ -319,13 +319,16 @@ def test_workflow_contracts() -> None:
     )
     for owner in (validation, target):
         assert mbx_action in owner
-        assert 'version: "1.3.1"' in owner
+        assert 'version: "1.4.1"' in owner
         assert "mbx doctor" in owner and "mbx cache stats --json" in owner
-        assert "cache-generation: csa-patched-codex-v1-" in owner
+        assert "cache-generation: csa-patched-codex-v2-" in owner
+        assert "MBX_SUMMARY: full" in owner
+        assert "MBX_BYPASS_LOG" in owner and "unknown-codegen-option" in owner
         assert owner.index("dtolnay/rust-toolchain@") < owner.index(mbx_action)
         assert "uses: ./.github/actions/setup-codex-rust-cache" in owner
         assert "minimum-rust-hit-rate" not in owner and "require-requests" not in owner
         assert "max-size:" not in owner
+        assert "RUSTFLAGS" not in owner and "CARGO_PROFILE_" not in owner
         assert "steps.mbx.outputs.cache-primary-key" in owner
         assert "steps.mbx.outputs.mbx-version" in owner
     for former_owner in (validation, target, cargo_cache, bundle_builder):
@@ -338,7 +341,7 @@ def test_workflow_contracts() -> None:
     assert "test \"$GITHUB_EVENT_NAME\" = workflow_dispatch" in target
     assert target.count("inputs.target != 'x86_64-apple-darwin'") == 4
     assert "Record Intel macOS Cargo fallback" in target
-    assert "MBX 1.3.1 does not publish an x86_64-apple-darwin binary" in target
+    assert "MBX 1.4.1 does not publish an x86_64-apple-darwin binary" in target
     assert "COMPILER_CACHE_ENABLED: ${{ inputs.compiler_cache }}" in validation
     cache_policy = "compiler_cache: ${{ needs.plan.outputs.publish_requested != 'true' }}"
     assert release.count(cache_policy) == 2

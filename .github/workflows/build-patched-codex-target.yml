@@ -51,6 +51,7 @@ env:
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: core.autocrlf
   GIT_CONFIG_VALUE_0: "false"
+  MBX_SUMMARY: full
 
 jobs:
   build:
@@ -79,6 +80,7 @@ jobs:
             echo "CARGO_HOME=$root/cargo-home"
             echo "CARGO_TARGET_DIR=$root/cargo-target"
             echo "TARGET_BUNDLE=$root/bundle"
+            echo "MBX_BYPASS_LOG=$root/mbx-bypass.log"
             echo "MBX_STATS=$root/mbx-stats.json"
           } >> "$GITHUB_ENV"
           mkdir -p "$root"
@@ -135,8 +137,8 @@ jobs:
         if: inputs.compiler_cache && inputs.target != 'x86_64-apple-darwin'
         uses: jdx/mr-boxington-action@4fd4eab077dde1d635a289366f62c80cf6f11e6f # v1.1.0
         with:
-          version: "1.3.1"
-          cache-generation: csa-patched-codex-v1-${{ inputs.target }}
+          version: "1.4.1"
+          cache-generation: csa-patched-codex-v2-${{ inputs.target }}
           save-on-workflow-dispatch: ${{ inputs.compiler_cache_save }}
           toolchain: ${{ inputs.rust_toolchain }}
 
@@ -155,7 +157,7 @@ jobs:
           {
             echo '### Mr. Boxington unavailable for this target'
             echo
-            echo 'MBX 1.3.1 does not publish an x86_64-apple-darwin binary; this job uses Cargo directly.'
+            echo 'MBX 1.4.1 does not publish an x86_64-apple-darwin binary; this job uses Cargo directly.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Zig for musl
@@ -277,6 +279,23 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'warning: Mr. Boxington cache statistics are unavailable' >&2
+          fi
+          if [[ -s "$MBX_BYPASS_LOG" ]]; then
+            unknown_codegen="$(grep -F $'unknown-codegen-option\t' "$MBX_BYPASS_LOG" | sort -u)"
+          else
+            unknown_codegen=''
+          fi
+          if [[ -z "$unknown_codegen" ]]; then
+            echo '- unknown codegen options: none observed' >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo
+              echo '#### Unknown codegen options'
+              echo
+              echo '```text'
+              echo "$unknown_codegen"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Stage exact target artifact
