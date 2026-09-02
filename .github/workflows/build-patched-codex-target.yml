@@ -75,15 +75,10 @@ jobs:
             echo "Checked-out producer commit differs from the requested source commit." >&2
             exit 2
           }
-          producer_args=()
-          if [[ "$BUILDER_REPOSITORY" == "DSLZL/CSA-codex" ]]; then
-            producer_args+=(--allow-producer)
-          fi
           python scripts/compat_release.py builder \
             --repository "$BUILDER_REPOSITORY" \
             --target "$TARGET" \
-            --runner "$RUNNER_LABEL" \
-            "${producer_args[@]}"
+            --runner "$RUNNER_LABEL"
           python scripts/compat_catalog.py resolve \
             --repository . \
             --selector "$COMPAT_ID" \

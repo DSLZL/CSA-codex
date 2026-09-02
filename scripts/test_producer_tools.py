@@ -213,12 +213,10 @@ def test_release_matrix_and_pack(root: Path) -> None:
     assert verify_builder_binding(builder["repository"], target, builder["runner"])[
         "repository"
     ] == builder["repository"]
-    assert verify_builder_binding(
-        PRODUCER_REPOSITORY,
-        target,
-        builder["runner"],
-        allow_producer=True,
-    )["repository"] == PRODUCER_REPOSITORY
+    expect_error(
+        lambda: verify_builder_binding(PRODUCER_REPOSITORY, target, builder["runner"]),
+        RuntimeError,
+    )
     expect_error(
         lambda: verify_builder_binding("DSLZL/CSA-codex-linux-x64", target, builder["runner"]),
         RuntimeError,
@@ -474,6 +472,7 @@ def test_workflow_contracts() -> None:
     assert "workflow_call:" in target
     assert "repository: DSLZL/CSA-codex" in target
     assert "scripts/compat_release.py builder" in target
+    assert "producer_args" not in target and "--allow-producer" not in target
     assert "scripts/compat_catalog.py resolve" in target
     assert '"schema": 2' in target
     for input_name in (

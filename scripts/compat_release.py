@@ -389,20 +389,13 @@ def verify_builder_binding(
     repository: str,
     target: str,
     runner: str,
-    *,
-    allow_producer: bool = False,
 ) -> dict[str, Any]:
     builder = TARGET_BUILDERS.get(target)
     if builder is None:
         raise CompatibilityReleaseError(f"unsupported release target: {target}")
     expected_repository = builder["repository"]
     expected_runner = builder["runner"]
-    if repository == PRODUCER_REPOSITORY and allow_producer:
-        if runner != expected_runner:
-            raise CompatibilityReleaseError(
-                f"producer runner differs for {target}: {runner} != {expected_runner}"
-            )
-    elif repository != expected_repository or runner != expected_runner:
+    if repository != expected_repository or runner != expected_runner:
         raise CompatibilityReleaseError(
             "builder binding differs: "
             f"{repository}/{runner} != {expected_repository}/{expected_runner}"
@@ -1140,7 +1133,6 @@ def parse_args() -> argparse.Namespace:
     builder_parser.add_argument("--repository", required=True)
     builder_parser.add_argument("--target", required=True)
     builder_parser.add_argument("--runner", required=True)
-    builder_parser.add_argument("--allow-producer", action="store_true")
 
     verify_target_parser = commands.add_parser("verify-target")
     verify_target_parser.add_argument("--manifest", type=Path, required=True)
@@ -1199,7 +1191,6 @@ def main() -> int:
                 args.repository,
                 args.target,
                 args.runner,
-                allow_producer=args.allow_producer,
             )
         elif args.command == "verify-target":
             result = verify_target_bundle(
