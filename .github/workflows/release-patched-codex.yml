@@ -58,6 +58,7 @@ jobs:
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       replace_published: ${{ steps.authority.outputs.replace_published }}
       rust_toolchain: ${{ steps.resolve.outputs.rust_toolchain }}
+      sccache_version: ${{ steps.resolve.outputs.sccache_version }}
       source_commit: ${{ steps.mode.outputs.source_commit }}
       upstream_commit: ${{ steps.resolve.outputs.upstream_commit }}
       upstream_tag: ${{ steps.resolve.outputs.upstream_tag }}
@@ -227,7 +228,7 @@ jobs:
       contents: read
     uses: ./.github/workflows/validate-patched-codex.yml
     with:
-      compiler_cache: ${{ needs.plan.outputs.publish_requested != 'true' }}
+      cache_mode: ${{ needs.plan.outputs.publish_requested != 'true' && 'read-write' || 'read-only' }}
       compat_selector: ${{ needs.plan.outputs.compat_id }}
       source_commit: ${{ needs.plan.outputs.source_commit }}
       target: ${{ needs.plan.outputs.build_target }}
@@ -237,7 +238,6 @@ jobs:
     name: Build ${{ matrix.target }}
     needs: [plan, validate]
     permissions:
-      actions: write
       contents: read
     strategy:
       fail-fast: false
@@ -245,21 +245,39 @@ jobs:
     uses: ./.github/workflows/build-patched-codex-target.yml
     with:
       artifact_filename: ${{ matrix.artifact_filename }}
-      compiler_cache: ${{ needs.plan.outputs.publish_requested != 'true' }}
-      compiler_cache_save: ${{ needs.plan.outputs.publish_requested != 'true' }}
+      cache_mode: ${{ needs.plan.outputs.publish_requested != 'true' && 'read-write' || 'read-only' }}
       compat_id: ${{ needs.plan.outputs.compat_id }}
       manifest_path: ${{ needs.plan.outputs.manifest_path }}
       runner: ${{ matrix.runner }}
       rust_toolchain: ${{ needs.plan.outputs.rust_toolchain }}
+      sccache_version: ${{ needs.plan.outputs.sccache_version }}
       source_commit: ${{ needs.plan.outputs.source_commit }}
       target: ${{ matrix.target }}
       retention_days: 1
       upstream_commit: ${{ needs.plan.outputs.upstream_commit }}
       upstream_tag: ${{ needs.plan.outputs.upstream_tag }}
 
+  cache-after-build:
+    name: Enforce cache budget after native builds
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.publish_requested != 'true'
+    permissions:
+      actions: write
+      contents: read
+    uses: ./.github/workflows/maintain-actions-cache.yml
+    with:
+      dry_run: false
+      purge_legacy: false
+
   bundle:
     name: Aggregate ${{ needs.plan.outputs.artifact_count }} native targets
-    needs: [plan, validate, build]
+    needs: [plan, validate, build, cache-after-build]
+    if: >-
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.validate.result == 'success' &&
+      needs.build.result == 'success' &&
+      (needs.cache-after-build.result == 'success' || needs.cache-after-build.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:

@@ -21,7 +21,7 @@ from compat_release import finalize, pack, release_matrix  # noqa: E402
 from compatibility_audit import AuditError, check_immutability  # noqa: E402
 from generate_release_notes import ReleaseNotesError, generate  # noqa: E402
 from patch_family import verify_family  # noqa: E402
-from run_patch_contract import ContractError, cargo_frontend_argv, load_contract  # noqa: E402
+from run_patch_contract import ContractError, load_contract  # noqa: E402
 
 
 PRODUCER_REPOSITORY = "DSLZL/CSA-codex"
@@ -66,6 +66,7 @@ def test_repository_boundary() -> None:
         "build-patched-codex-target.yml",
         "build-patched-codex-windows.yml",
         "ci.yml",
+        "maintain-actions-cache.yml",
         "release-patched-codex.yml",
         "validate-patched-codex.yml",
         "watch-codex-release.yml",
@@ -119,41 +120,6 @@ def test_payload_and_contract_authority(root: Path) -> None:
     contract = load_contract(P10_MANIFEST.with_name("test-contract.json"), P10_MANIFEST.parent.name)
     assert contract["schema"] == 1
     assert contract["build"]["artifact"].endswith("/release/codex.exe")
-
-
-def test_cargo_frontend_routing() -> None:
-    assert cargo_frontend_argv(["cargo", "test", "-p", "codex-core"], "mbx") == [
-        "mbx",
-        "test",
-        "-p",
-        "codex-core",
-    ]
-    assert cargo_frontend_argv(["cargo", "clippy", "--workspace"], "mbx") == [
-        "mbx",
-        "clippy",
-        "--workspace",
-    ]
-    assert cargo_frontend_argv(["cargo", "build", "--release"], "mbx") == [
-        "mbx",
-        "build",
-        "--release",
-    ]
-    assert cargo_frontend_argv(["cargo", "build", "--release"], "cargo") == [
-        "cargo",
-        "build",
-        "--release",
-    ]
-    assert cargo_frontend_argv(["cargo", "fmt", "--check"], "mbx") == [
-        "cargo",
-        "fmt",
-        "--check",
-    ]
-    assert cargo_frontend_argv(["cargo", "xwin", "build"], "mbx") == [
-        "cargo",
-        "xwin",
-        "build",
-    ]
-    expect_error(lambda: cargo_frontend_argv(["rustc", "--version"], "mbx"), ContractError)
 
 
 def test_release_matrix_and_pack(root: Path) -> None:
@@ -293,14 +259,19 @@ def test_workflow_contracts() -> None:
     target = workflows["build-patched-codex-target.yml"]
     validation = workflows["validate-patched-codex.yml"]
     windows = workflows["build-patched-codex-windows.yml"]
+    maintenance = workflows["maintain-actions-cache.yml"]
     watcher = workflows["watch-codex-release.yml"]
     ci = workflows["ci.yml"]
-    cargo_cache = (REPOSITORY / ".github/actions/setup-codex-rust-cache/action.yml").read_text(
+    cache_setup = (REPOSITORY / ".github/actions/setup-codex-rust-cache/action.yml").read_text(
         encoding="utf-8"
     )
     bundle_builder = (REPOSITORY / "scripts/build_patched_codex_bundle.sh").read_text(
         encoding="utf-8"
     )
+    contract_runner = (REPOSITORY / "scripts/run_patch_contract.py").read_text(
+        encoding="utf-8"
+    )
+    evidence = (REPOSITORY / "scripts/validation_evidence.py").read_text(encoding="utf-8")
 
     assert 'cron: "0 * * * *"' in watcher
     assert "compat_release.py finalize" not in watcher
@@ -314,45 +285,72 @@ def test_workflow_contracts() -> None:
     assert "--stream manager" not in release and "--stream compat" not in release
     assert "scripts/generate_release_notes.py" in release
     assert "release-csa.yml" not in workflows and "publish-npm.yml" not in workflows
-    mbx_action = (
-        "jdx/mr-boxington-action@4fd4eab077dde1d635a289366f62c80cf6f11e6f"
+
+    sccache_action = "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba"
+    assert sccache_action in cache_setup
+    assert "version: v${{ inputs.sccache_version }}" in cache_setup
+    assert "actions/cache@" not in cache_setup and "github.sha" not in cache_setup
+    for guard_input in ("CSA_EVENT_NAME", "CSA_DEFAULT_BRANCH", "CSA_REF"):
+        assert guard_input in cache_setup
+    assert "Read-write compiler cache access requires a default-branch workflow dispatch." in (
+        cache_setup
     )
+    for setting in (
+        "RUSTC_WRAPPER",
+        "SCCACHE_BASEDIRS",
+        "SCCACHE_CACHE_ZSTD_LEVEL",
+        "SCCACHE_GHA_ENABLED",
+        "SCCACHE_GHA_RW_MODE",
+        "SCCACHE_GHA_VERSION = 'csa-codex-v1'",
+    ):
+        assert setting in cache_setup
+
     for owner in (validation, target):
-        assert mbx_action in owner
-        assert 'version: "1.4.1"' in owner
-        assert "mbx doctor" in owner and "mbx cache stats --json" in owner
-        assert "cache-generation: csa-patched-codex-v2-" in owner
-        assert "MBX_SUMMARY: full" in owner
-        assert "MBX_BYPASS_LOG" in owner and "unknown-codegen-option" in owner
-        assert owner.index("dtolnay/rust-toolchain@") < owner.index(mbx_action)
         assert "uses: ./.github/actions/setup-codex-rust-cache" in owner
-        assert "minimum-rust-hit-rate" not in owner and "require-requests" not in owner
-        assert "max-size:" not in owner
+        assert owner.index("dtolnay/rust-toolchain@") < owner.index(
+            "uses: ./.github/actions/setup-codex-rust-cache"
+        )
+        assert "scripts/check_sccache_stats.py" in owner
+        assert "--require-requests" in owner and "--require-clean" in owner
+        assert "cache_mode" in owner and "sccache_version" in owner
+        assert "mr-boxington" not in owner.lower() and "MBX_" not in owner
         assert "RUSTFLAGS" not in owner and "CARGO_PROFILE_" not in owner
-        assert "steps.mbx.outputs.cache-primary-key" in owner
-        assert "steps.mbx.outputs.mbx-version" in owner
-    for former_owner in (validation, target, cargo_cache, bundle_builder):
-        assert "sccache" not in former_owner.lower()
-        assert "RUSTC_WRAPPER" not in former_owner and "SCCACHE_" not in former_owner
-    assert not (REPOSITORY / "scripts/check_sccache_stats.py").exists()
-    assert 'save-on-workflow-dispatch: "true"' in validation
-    assert "save-on-workflow-dispatch: ${{ inputs.compiler_cache_save }}" in target
-    assert "Verify compiler-cache save authority" in target
+
+    assert (REPOSITORY / "scripts/check_sccache_stats.py").is_file()
+    assert "read-only|off" in target and "read-write)" in target
     assert "test \"$GITHUB_EVENT_NAME\" = workflow_dispatch" in target
-    assert target.count("inputs.target != 'x86_64-apple-darwin'") == 4
-    assert "Record Intel macOS Cargo fallback" in target
-    assert "MBX 1.4.1 does not publish an x86_64-apple-darwin binary" in target
-    assert "COMPILER_CACHE_ENABLED: ${{ inputs.compiler_cache }}" in validation
-    cache_policy = "compiler_cache: ${{ needs.plan.outputs.publish_requested != 'true' }}"
+    assert "refs/heads/$DEFAULT_BRANCH" in target
+    cache_policy = (
+        "cache_mode: ${{ needs.plan.outputs.publish_requested != 'true' && "
+        "'read-write' || 'read-only' }}"
+    )
     assert release.count(cache_policy) == 2
-    save_policy = "compiler_cache_save: ${{ needs.plan.outputs.publish_requested != 'true' }}"
-    assert save_policy in release
-    assert "compiler_cache: true" in windows and "compiler_cache_save: false" in windows
-    assert "--cargo-frontend $env:CARGO_FRONTEND" in validation
-    assert '"$CARGO_FRONTEND" build' in target
+    assert "sccache_version: ${{ steps.resolve.outputs.sccache_version }}" in release
+    assert "sccache_version: ${{ needs.plan.outputs.sccache_version }}" in release
+    assert "cache_mode: read-write" in windows
+    assert "Windows cache-warming builds must be dispatched" in windows
+    assert "--cargo-frontend" not in validation and "CARGO_FRONTEND" not in target
     assert target.count("--timings") == 2
-    assert "registry/index" in cargo_cache and "registry/cache" in cargo_cache
-    assert "git/db" in cargo_cache and "cargo-target" not in cargo_cache
+
+    assert 'cron: "17 */6 * * *"' in maintenance
+    assert maintenance.count("actions: write") == 1
+    assert "7516192768" in maintenance and "6442450944" in maintenance
+    assert 'actions/caches/$cache_id' in maintenance
+    assert "--purge-legacy" in maintenance and "--require-within-high-water" in maintenance
+    assert maintenance.count("if: env.DRY_RUN != 'true'") == 2
+    assert "Cache maintenance is a dry run; no cache IDs will be deleted." in maintenance
+    assert validation.count("uses: ./.github/workflows/maintain-actions-cache.yml") == 2
+    assert windows.count("uses: ./.github/workflows/maintain-actions-cache.yml") == 2
+    assert release.count("uses: ./.github/workflows/maintain-actions-cache.yml") == 1
+    for name, workflow in workflows.items():
+        assert "actions/cache@" not in workflow, name
+        if name != "maintain-actions-cache.yml":
+            assert "actions/caches/$cache_id" not in workflow, name
+            assert "gh cache delete" not in workflow, name
+
+    assert "sccache" in bundle_builder.lower() and "mbx" not in bundle_builder.lower()
+    assert "cargo_frontend" not in contract_runner and "mbx" not in contract_runner.lower()
+    assert "runner_argv" not in contract_runner and "mbx" not in evidence.lower()
     all_workflows = "\n".join(workflows.values())
     assert "spctl developer-mode" not in all_workflows
     assert "DevToolsSecurity" not in all_workflows
@@ -361,6 +359,8 @@ def test_workflow_contracts() -> None:
         "test_compat_catalog.py",
         "test_validation_evidence.py",
         "test_verify_release_asset_set.py",
+        "test_actions_cache_policy.py",
+        "test_check_sccache_stats.py",
         "test_producer_tools.py",
         "compat_catalog.py validate",
     ):
@@ -369,7 +369,6 @@ def test_workflow_contracts() -> None:
 
 def main() -> int:
     test_repository_boundary()
-    test_cargo_frontend_routing()
     with tempfile.TemporaryDirectory(prefix="csa-codex-producer-") as directory:
         root = Path(directory)
         test_payload_and_contract_authority(root / "payload")

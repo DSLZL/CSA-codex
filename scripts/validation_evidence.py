@@ -16,7 +16,6 @@ from typing import Any, NoReturn
 from compat_catalog import CatalogError, resolve
 from run_patch_contract import (
     ContractError,
-    cargo_frontend_argv,
     load_contract,
     load_test_report,
 )
@@ -181,7 +180,6 @@ def validation_identity(
     }
     if not clippy_names or not clippy_names <= {step["name"] for step in report["steps"]}:
         fail("test report does not prove the selected contract's Clippy step")
-    cargo_frontends: set[str] = set()
     for step, (_, contract_step) in zip(report["steps"], expected_contract_steps, strict=True):
         argv = step.get("argv")
         expected_argv = contract_step.get("argv")
@@ -193,26 +191,14 @@ def validation_identity(
             or argv[:2] != expected_argv[:2]
         ):
             fail("test report contains an invalid logical Cargo command")
-        mbx_argv = cargo_frontend_argv(argv, "mbx")
-        if mbx_argv == argv:
-            if "runner_argv" in step and step["runner_argv"] != argv:
-                fail("test report rewrites a Cargo command that MBX does not own")
-            continue
-        runner_argv = step.get("runner_argv", argv)
-        if runner_argv == argv:
-            cargo_frontends.add("cargo")
-        elif runner_argv == mbx_argv:
-            cargo_frontends.add("mbx")
-        else:
-            fail("test report contains an unsupported Cargo frontend command")
-    if len(cargo_frontends) != 1:
-        fail("test report mixes Cargo compiler frontends")
+        if "runner_argv" in step:
+            fail("test report must preserve the logical Cargo command")
     return {
         "test_report_sha256": sha256_file(test_report_path),
         "contract": "passed",
         "tests": "passed",
         "clippy": "passed",
-        "cargo_frontend": cargo_frontends.pop(),
+        "cargo_frontend": "cargo",
         "steps": [{"kind": kind, "name": name} for kind, name in expected_steps],
     }
 

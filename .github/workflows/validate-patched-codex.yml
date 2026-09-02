@@ -6,10 +6,10 @@ on:
       compat_selector:
         required: true
         type: string
-      compiler_cache:
+      cache_mode:
         required: false
-        default: false
-        type: boolean
+        default: read-only
+        type: string
       retention_days:
         required: false
         default: 14
@@ -22,11 +22,15 @@ on:
         type: string
   workflow_dispatch:
     inputs:
-      compiler_cache:
-        description: Use Mr. Boxington for this trusted default-branch validation.
+      cache_mode:
+        description: Shared sccache access for this trusted default-branch validation
         required: true
-        default: true
-        type: boolean
+        default: read-write
+        type: choice
+        options:
+          - read-write
+          - read-only
+          - off
       compat_selector:
         description: "current or one exact compatibility ID from release/compatibility-index.json"
         required: true
@@ -48,21 +52,30 @@ permissions:
 env:
   CSA_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
   CARGO_INCREMENTAL: "0"
-  CARGO_FRONTEND: cargo
   CARGO_TERM_COLOR: always
-  COMPILER_CACHE_ENABLED: ${{ inputs.compiler_cache }}
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: core.autocrlf
   GIT_CONFIG_VALUE_0: "false"
-  MBX_SUMMARY: full
 
 jobs:
+  cache-before:
+    name: Enforce cache budget before validation
+    if: inputs.cache_mode == 'read-write'
+    permissions:
+      actions: write
+      contents: read
+    uses: ./.github/workflows/maintain-actions-cache.yml
+    with:
+      dry_run: false
+      purge_legacy: false
+
   validate:
     name: Validate exact patched Codex contract
+    needs: cache-before
+    if: always() && (needs.cache-before.result == 'success' || needs.cache-before.result == 'skipped')
     runs-on: windows-2025
     timeout-minutes: 120
     permissions:
-      actions: write
       contents: read
     steps:
       - name: Configure isolated validation roots
@@ -82,9 +95,8 @@ jobs:
             TMP = $tmp
             HOME = Join-Path $root 'home'
             CODEX_HOME = Join-Path $root 'codex-home'
-            MBX_BYPASS_LOG = Join-Path $root 'mbx-bypass.log'
             RESOLUTION_JSON = Join-Path $root 'resolution.json'
-            MBX_STATS = Join-Path $root 'mbx-stats.json'
+            SCCACHE_STATS = Join-Path $root 'sccache-stats.json'
             TEST_REPORT = Join-Path $root 'bundle.tests.json'
             EVIDENCE_ROOT = Join-Path $root 'evidence'
           }
@@ -113,6 +125,7 @@ jobs:
         name: Resolve exact validation authority
         shell: pwsh
         env:
+          CACHE_MODE: ${{ inputs.cache_mode }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           REQUESTED_COMPAT_SELECTOR: ${{ inputs.compat_selector || 'current' }}
           REQUESTED_TARGET: ${{ inputs.target || 'x86_64-pc-windows-msvc' }}
@@ -123,6 +136,14 @@ jobs:
           }
           if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:GITHUB_REF_NAME -ne $env:DEFAULT_BRANCH) {
             throw "Patched Codex validation must be dispatched from '$env:DEFAULT_BRANCH'."
+          }
+          if ($env:CACHE_MODE -notin @('read-only', 'read-write', 'off')) {
+            throw "Unsupported compiler cache mode: $env:CACHE_MODE"
+          }
+          if ($env:CACHE_MODE -eq 'read-write') {
+            if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -or $env:GITHUB_REF -ne "refs/heads/$env:DEFAULT_BRANCH") {
+              throw 'Read-write compiler cache access requires a default-branch workflow dispatch.'
+            }
           }
           python scripts/compat_catalog.py resolve `
             --repository . `
@@ -169,22 +190,13 @@ jobs:
           targets: ${{ steps.resolve.outputs.build_target }}
           components: rustfmt, clippy
 
-      - name: Restore isolated Cargo downloads
+      - name: Configure shared sccache
         uses: ./.github/actions/setup-codex-rust-cache
         with:
-          cache-scope: ${{ steps.resolve.outputs.upstream_commit }}
-          toolchain: ${{ steps.resolve.outputs.rust_toolchain }}
-          cargo-home: ${{ runner.temp }}/csa-patched-codex-validation/cache/cargo-home
-
-      - id: mbx
-        name: Restore Mr. Boxington compiler closure
-        if: env.COMPILER_CACHE_ENABLED == 'true'
-        uses: jdx/mr-boxington-action@4fd4eab077dde1d635a289366f62c80cf6f11e6f # v1.1.0
-        with:
-          version: "1.4.1"
-          cache-generation: csa-patched-codex-v2-${{ steps.resolve.outputs.build_target }}
-          save-on-workflow-dispatch: "true"
-          toolchain: ${{ steps.resolve.outputs.rust_toolchain }}
+          cache_mode: ${{ inputs.cache_mode }}
+          cargo_home: ${{ runner.temp }}/csa-patched-codex-validation/cache/cargo-home
+          sccache_version: ${{ steps.resolve.outputs.sccache_version }}
+          source_root: ${{ env.SOURCE_ROOT }}
 
       - name: Configure native MSVC environment
         shell: pwsh
@@ -200,15 +212,6 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not $rustcIdentity.Contains('commit-hash: ${{ steps.resolve.outputs.rustc_commit }}')) {
             throw 'Rust compiler commit does not match the compatibility manifest.'
           }
-
-      - name: Verify Mr. Boxington compiler frontend
-        if: env.COMPILER_CACHE_ENABLED == 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          mbx doctor
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "CARGO_FRONTEND=mbx" >> $env:GITHUB_ENV
 
       - name: Verify exact official runtime archive
         shell: pwsh
@@ -258,57 +261,28 @@ jobs:
             --manifest $manifest `
             --source $env:SOURCE_ROOT `
             --cargo-target $env:CARGO_TARGET_DIR `
-            --cargo-frontend $env:CARGO_FRONTEND `
             --output $env:TEST_REPORT `
             --portable-evidence `
             --phase tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Report Mr. Boxington cache observations
-        if: always() && env.COMPILER_CACHE_ENABLED == 'true'
-        continue-on-error: true
+      - name: Verify shared sccache health
+        if: inputs.cache_mode != 'off'
         shell: pwsh
-        env:
-          MBX_ACTION_CACHE_HIT: ${{ steps.mbx.outputs.cache-hit }}
-          MBX_ACTION_KEY: ${{ steps.mbx.outputs.cache-primary-key }}
-          MBX_ACTION_VERSION: ${{ steps.mbx.outputs.mbx-version }}
         run: |
-          $ErrorActionPreference = 'Continue'
-          $stats = (& mbx cache stats --json 2>&1 | Out-String).Trim()
-          $statsExitCode = $LASTEXITCODE
-          @(
-            '### Mr. Boxington cache observation'
-            ''
-            "- action version: ``$env:MBX_ACTION_VERSION``"
-            "- action key: ``$env:MBX_ACTION_KEY``"
-            "- restored closure: ``$env:MBX_ACTION_CACHE_HIT``"
-          ) | Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
-          if ($statsExitCode -eq 0 -and $stats) {
-            [IO.File]::WriteAllText($env:MBX_STATS, $stats + "`n", [Text.UTF8Encoding]::new($false))
-            @('', '```json', $stats, '```') |
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
-          } else {
-            Write-Warning 'Mr. Boxington cache statistics are unavailable.'
-          }
-          $unknownCodegen = @()
-          if (Test-Path -LiteralPath $env:MBX_BYPASS_LOG) {
-            $unknownCodegen = @(
-              Get-Content -LiteralPath $env:MBX_BYPASS_LOG |
-                Where-Object { $_.StartsWith("unknown-codegen-option`t", [StringComparison]::Ordinal) } |
-                Sort-Object -Unique
-            )
-          }
-          if ($unknownCodegen.Count -eq 0) {
-            '- unknown codegen options: none observed' |
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
-          } else {
-            (
-              @('', '#### Unknown codegen options', '', '```text') +
-                $unknownCodegen +
-                @('```')
-            ) |
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8
-          }
+          $ErrorActionPreference = 'Stop'
+          & $env:SCCACHE_PATH --show-stats --stats-format json |
+            Set-Content -LiteralPath $env:SCCACHE_STATS -Encoding utf8NoBOM
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/check_sccache_stats.py `
+            --stats $env:SCCACHE_STATS `
+            --profile validation `
+            --github-step-summary $env:GITHUB_STEP_SUMMARY `
+            --require-requests `
+            --require-clean
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:SCCACHE_PATH --show-stats
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create exact validation evidence
         shell: pwsh
@@ -334,3 +308,15 @@ jobs:
           path: ${{ runner.temp }}/csa-patched-codex-validation/evidence
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days || 14 }}
+
+  cache-after:
+    name: Enforce cache budget after validation
+    needs: validate
+    if: always() && inputs.cache_mode == 'read-write'
+    permissions:
+      actions: write
+      contents: read
+    uses: ./.github/workflows/maintain-actions-cache.yml
+    with:
+      dry_run: false
+      purge_legacy: false

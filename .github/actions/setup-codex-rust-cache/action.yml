@@ -1,45 +1,125 @@
-name: Restore isolated Cargo downloads
-description: Restore Cargo registry and git downloads without caching compiler objects or target artifacts.
+name: Setup shared Codex Rust compiler cache
+description: Configure an isolated Cargo home and one repository-scoped GitHub Actions sccache pool.
 
 inputs:
-  cache-scope:
-    description: Stable scope such as the CSA Cargo.lock hash or an exact upstream Codex commit.
-    required: true
-  toolchain:
-    description: Rust toolchain identifier used in the cache key.
-    required: true
-  cargo-home:
+  cache_mode:
+    description: "Compiler cache access mode: read-only, read-write, or off."
+    required: false
+    default: read-only
+  cargo_home:
     description: Absolute isolated Cargo home below RUNNER_TEMP.
+    required: true
+  sccache_version:
+    description: Exact sccache version from the reviewed compatibility build profile.
+    required: true
+  source_root:
+    description: Absolute patched Codex source root used to normalize compiler inputs.
     required: true
 
 runs:
   using: composite
   steps:
-    - name: Configure isolated Cargo home
-      id: cargo-home
+    - name: Validate isolated cache configuration
       shell: pwsh
       env:
-        CSA_CARGO_HOME: ${{ inputs.cargo-home }}
+        CSA_CACHE_MODE: ${{ inputs.cache_mode }}
+        CSA_CARGO_HOME: ${{ inputs.cargo_home }}
+        CSA_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        CSA_EVENT_NAME: ${{ github.event_name }}
+        CSA_REF: ${{ github.ref }}
+        CSA_SOURCE_ROOT: ${{ inputs.source_root }}
       run: |
         $ErrorActionPreference = 'Stop'
-        $cargoHome = [IO.Path]::GetFullPath($env:CSA_CARGO_HOME)
-        $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
-        if (-not ($cargoHome + '\').StartsWith($runnerTemp, [StringComparison]::OrdinalIgnoreCase)) {
-          throw "Cargo home must live below RUNNER_TEMP: $cargoHome"
+        if ($env:CSA_CACHE_MODE -notin @('read-only', 'read-write', 'off')) {
+          throw "Unsupported compiler cache mode: $env:CSA_CACHE_MODE"
         }
-        New-Item -ItemType Directory -Force $cargoHome | Out-Null
+        if ($env:CSA_CACHE_MODE -eq 'read-write') {
+          if (
+            $env:CSA_EVENT_NAME -ne 'workflow_dispatch' -or
+            $env:CSA_REF -ne "refs/heads/$env:CSA_DEFAULT_BRANCH"
+          ) {
+            throw 'Read-write compiler cache access requires a default-branch workflow dispatch.'
+          }
+        }
+        $comparison = if ($IsWindows) {
+          [StringComparison]::OrdinalIgnoreCase
+        } else {
+          [StringComparison]::Ordinal
+        }
+        $separator = [IO.Path]::DirectorySeparatorChar
+        $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd(
+          [IO.Path]::DirectorySeparatorChar,
+          [IO.Path]::AltDirectorySeparatorChar
+        ) + $separator
+        foreach ($entry in @(
+          @{ Name = 'Cargo home'; Path = $env:CSA_CARGO_HOME },
+          @{ Name = 'Codex source'; Path = $env:CSA_SOURCE_ROOT }
+        )) {
+          $fullPath = [IO.Path]::GetFullPath($entry.Path)
+          if (-not (($fullPath.TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar
+          ) + $separator).StartsWith($runnerTemp, $comparison))) {
+            throw "$($entry.Name) must live below RUNNER_TEMP: $fullPath"
+          }
+        }
+        $cargoHome = [IO.Path]::GetFullPath($env:CSA_CARGO_HOME)
+        New-Item -ItemType Directory -Force -Path $cargoHome | Out-Null
         "CARGO_HOME=$cargoHome" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
-        "path=$cargoHome" | Add-Content -Path $env:GITHUB_OUTPUT -Encoding utf8
 
-    - name: Restore Cargo registry and git downloads
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+    - name: Install exact sccache
+      if: inputs.cache_mode != 'off'
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       with:
-        path: |
-          ${{ steps.cargo-home.outputs.path }}/registry/index
-          ${{ steps.cargo-home.outputs.path }}/registry/cache
-          ${{ steps.cargo-home.outputs.path }}/git/db
-          ${{ steps.cargo-home.outputs.path }}/.global-cache
-        key: csa-cargo-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.toolchain }}-${{ inputs.cache-scope }}-${{ github.sha }}
-        restore-keys: |
-          csa-cargo-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.toolchain }}-${{ inputs.cache-scope }}-
-          csa-cargo-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.toolchain }}-
+        version: v${{ inputs.sccache_version }}
+        disable_annotations: true
+
+    - name: Configure shared repository compiler cache
+      if: inputs.cache_mode != 'off'
+      shell: pwsh
+      env:
+        CSA_CACHE_MODE: ${{ inputs.cache_mode }}
+        CSA_SCCACHE_VERSION: ${{ inputs.sccache_version }}
+        CSA_SOURCE_ROOT: ${{ inputs.source_root }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $sccache = $env:SCCACHE_PATH
+        if ($IsWindows -and $sccache -and -not (Test-Path -LiteralPath $sccache -PathType Leaf)) {
+          $sccache = "$sccache.exe"
+        }
+        if (-not $sccache -or -not (Test-Path -LiteralPath $sccache -PathType Leaf)) {
+          throw "sccache action did not expose an executable SCCACHE_PATH: $sccache"
+        }
+        $identity = (& $sccache --version | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $identity -cne "sccache $env:CSA_SCCACHE_VERSION") {
+          throw "sccache identity mismatch: $identity"
+        }
+        $rwMode = if ($env:CSA_CACHE_MODE -eq 'read-write') { 'READ_WRITE' } else { 'READ_ONLY' }
+        $settings = [ordered]@{
+          CARGO_INCREMENTAL = '0'
+          RUSTC_WRAPPER = $sccache
+          SCCACHE_BASEDIRS = [IO.Path]::GetFullPath($env:CSA_SOURCE_ROOT)
+          SCCACHE_CACHE_ZSTD_LEVEL = '10'
+          SCCACHE_GHA_ENABLED = 'on'
+          SCCACHE_GHA_RW_MODE = $rwMode
+          SCCACHE_GHA_VERSION = 'csa-codex-v1'
+          SCCACHE_IDLE_TIMEOUT = '0'
+          SCCACHE_PATH = $sccache
+        }
+        foreach ($entry in $settings.GetEnumerator()) {
+          [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+          "$($entry.Key)=$($entry.Value)" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+        }
+        & $sccache --start-server
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $sccache --zero-stats
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        @(
+          '### Shared sccache configuration'
+          ''
+          "- version: ``$env:CSA_SCCACHE_VERSION``"
+          "- mode: ``$env:CSA_CACHE_MODE``"
+          '- generation: `csa-codex-v1`'
+          '- compression: `zstd level 10`'
+          '- source prefix normalization: enabled'
+        ) | Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8

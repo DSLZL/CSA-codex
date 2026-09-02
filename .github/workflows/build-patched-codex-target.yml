@@ -9,14 +9,10 @@ on:
       compat_id:
         required: true
         type: string
-      compiler_cache:
+      cache_mode:
         required: false
-        default: false
-        type: boolean
-      compiler_cache_save:
-        required: false
-        default: false
-        type: boolean
+        default: read-only
+        type: string
       manifest_path:
         required: true
         type: string
@@ -28,6 +24,9 @@ on:
         required: true
         type: string
       rust_toolchain:
+        required: true
+        type: string
+      sccache_version:
         required: true
         type: string
       source_commit:
@@ -45,20 +44,17 @@ on:
 
 env:
   CARGO_INCREMENTAL: "0"
-  CARGO_FRONTEND: cargo
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   CARGO_TERM_COLOR: always
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: core.autocrlf
   GIT_CONFIG_VALUE_0: "false"
-  MBX_SUMMARY: full
 
 jobs:
   build:
     name: Build ${{ inputs.target }}
     runs-on: ${{ inputs.runner }}
     permissions:
-      actions: write
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -80,8 +76,7 @@ jobs:
             echo "CARGO_HOME=$root/cargo-home"
             echo "CARGO_TARGET_DIR=$root/cargo-target"
             echo "TARGET_BUNDLE=$root/bundle"
-            echo "MBX_BYPASS_LOG=$root/mbx-bypass.log"
-            echo "MBX_STATS=$root/mbx-stats.json"
+            echo "SCCACHE_STATS=$root/sccache-stats.json"
           } >> "$GITHUB_ENV"
           mkdir -p "$root"
 
@@ -116,49 +111,32 @@ jobs:
           toolchain: ${{ inputs.rust_toolchain }}
           targets: ${{ inputs.target }}
 
-      - name: Restore isolated Cargo downloads
+      - name: Verify compiler-cache mode and write authority
+        shell: bash
+        env:
+          CACHE_MODE: ${{ inputs.cache_mode }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          case "$CACHE_MODE" in
+            read-only|off) ;;
+            read-write)
+              test "$GITHUB_EVENT_NAME" = workflow_dispatch
+              test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
+              ;;
+            *)
+              echo "Unsupported compiler cache mode: $CACHE_MODE" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Configure shared sccache
         uses: ./.github/actions/setup-codex-rust-cache
         with:
-          cache-scope: ${{ inputs.upstream_commit }}
-          toolchain: ${{ inputs.rust_toolchain }}
-          cargo-home: ${{ runner.temp }}/csa-patched-codex-${{ inputs.target }}/cargo-home
-
-      - name: Verify compiler-cache save authority
-        if: inputs.compiler_cache_save && inputs.target != 'x86_64-apple-darwin'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test '${{ inputs.compiler_cache }}' = true
-          test "$GITHUB_EVENT_NAME" = workflow_dispatch
-          test "$GITHUB_REF" = 'refs/heads/${{ github.event.repository.default_branch }}'
-
-      - id: mbx
-        name: Restore Mr. Boxington compiler closure
-        if: inputs.compiler_cache && inputs.target != 'x86_64-apple-darwin'
-        uses: jdx/mr-boxington-action@4fd4eab077dde1d635a289366f62c80cf6f11e6f # v1.1.0
-        with:
-          version: "1.4.1"
-          cache-generation: csa-patched-codex-v2-${{ inputs.target }}
-          save-on-workflow-dispatch: ${{ inputs.compiler_cache_save }}
-          toolchain: ${{ inputs.rust_toolchain }}
-
-      - name: Verify Mr. Boxington compiler frontend
-        if: inputs.compiler_cache && inputs.target != 'x86_64-apple-darwin'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mbx doctor
-          echo "CARGO_FRONTEND=mbx" >> "$GITHUB_ENV"
-
-      - name: Record Intel macOS Cargo fallback
-        if: inputs.compiler_cache && inputs.target == 'x86_64-apple-darwin'
-        shell: bash
-        run: |
-          {
-            echo '### Mr. Boxington unavailable for this target'
-            echo
-            echo 'MBX 1.4.1 does not publish an x86_64-apple-darwin binary; this job uses Cargo directly.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          cache_mode: ${{ inputs.cache_mode }}
+          cargo_home: ${{ runner.temp }}/csa-patched-codex-${{ inputs.target }}/cargo-home
+          sccache_version: ${{ inputs.sccache_version }}
+          source_root: ${{ env.SOURCE_ROOT }}
 
       - name: Install Zig for musl
         if: contains(inputs.target, 'linux-musl')
@@ -229,7 +207,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$SOURCE_ROOT/codex-rs"
-          "$CARGO_FRONTEND" build --target "$TARGET" --release --timings --bin bwrap
+          cargo build --target "$TARGET" --release --timings --bin bwrap
           bwrap="$CARGO_TARGET_DIR/$TARGET/release/bwrap"
           strip --strip-debug --strip-unneeded "$bwrap"
           echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >> "$GITHUB_ENV"
@@ -244,7 +222,7 @@ jobs:
           if [[ "$TARGET" == x86_64-pc-windows-msvc ]]; then
             export LIBSQLITE3_FLAGS=SQLITE_DISABLE_INTRINSIC
           fi
-          "$CARGO_FRONTEND" build --target "$TARGET" --release --timings --bin codex
+          cargo build --target "$TARGET" --release --timings --bin codex
           if [[ "$TARGET" == *-unknown-linux-musl ]]; then
             codex="$CARGO_TARGET_DIR/$TARGET/release/codex"
             before_size="$(stat -c %s "$codex")"
@@ -253,50 +231,19 @@ jobs:
             echo "Stripped Linux Codex CLI: ${before_size} -> ${after_size} bytes"
           fi
 
-      - name: Report Mr. Boxington cache observations
-        if: always() && inputs.compiler_cache && inputs.target != 'x86_64-apple-darwin'
-        continue-on-error: true
+      - name: Verify shared sccache health
+        if: inputs.cache_mode != 'off'
         shell: bash
-        env:
-          MBX_ACTION_CACHE_HIT: ${{ steps.mbx.outputs.cache-hit }}
-          MBX_ACTION_KEY: ${{ steps.mbx.outputs.cache-primary-key }}
-          MBX_ACTION_VERSION: ${{ steps.mbx.outputs.mbx-version }}
         run: |
-          set +e
-          {
-            echo '### Mr. Boxington cache observation'
-            echo
-            echo "- action version: \`$MBX_ACTION_VERSION\`"
-            echo "- action key: \`$MBX_ACTION_KEY\`"
-            echo "- restored closure: \`$MBX_ACTION_CACHE_HIT\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-          if mbx cache stats --json > "$MBX_STATS"; then
-            {
-              echo
-              echo '```json'
-              cat "$MBX_STATS"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'warning: Mr. Boxington cache statistics are unavailable' >&2
-          fi
-          if [[ -s "$MBX_BYPASS_LOG" ]]; then
-            unknown_codegen="$(grep -F $'unknown-codegen-option\t' "$MBX_BYPASS_LOG" | sort -u)"
-          else
-            unknown_codegen=''
-          fi
-          if [[ -z "$unknown_codegen" ]]; then
-            echo '- unknown codegen options: none observed' >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo
-              echo '#### Unknown codegen options'
-              echo
-              echo '```text'
-              echo "$unknown_codegen"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+          set -euo pipefail
+          "$SCCACHE_PATH" --show-stats --stats-format json > "$SCCACHE_STATS"
+          python scripts/check_sccache_stats.py \
+            --stats "$SCCACHE_STATS" \
+            --profile "target-${{ inputs.target }}" \
+            --github-step-summary "$GITHUB_STEP_SUMMARY" \
+            --require-requests \
+            --require-clean
+          "$SCCACHE_PATH" --show-stats
 
       - name: Stage exact target artifact
         shell: bash

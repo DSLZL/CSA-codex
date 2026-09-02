@@ -30,6 +30,8 @@ jobs:
           python scripts/test_compat_catalog.py
           python scripts/test_validation_evidence.py
           python scripts/test_verify_release_asset_set.py
+          python scripts/test_actions_cache_policy.py
+          python scripts/test_check_sccache_stats.py
           python scripts/test_producer_tools.py
           python scripts/compat_catalog.py validate --repository .
           python scripts/compat_catalog.py guard-workflows .github/workflows/*.yml .github/actions/setup-codex-rust-cache/action.yml
