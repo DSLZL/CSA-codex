@@ -395,6 +395,7 @@ def test_workflow_contracts() -> None:
     assert validation.count("timeout-minutes: 300") == 1
     assert target.count("timeout-minutes: 300") == 1
     assert "timeout-minutes: 120" not in validation
+    assert "$RUNNER_TEMP/c" in target and "${{ runner.temp }}/c/h" in target
 
     assert (REPOSITORY / "scripts/check_sccache_stats.py").is_file()
     assert "read-only|off" in target and "read-write)" in target

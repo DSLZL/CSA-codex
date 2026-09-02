@@ -71,12 +71,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/csa-patched-codex-${{ inputs.target }}"
+          # Cargo's nested git checkouts can exceed MAX_PATH on native Windows ARM64.
+          # Each matrix job has its own runner, so one deliberately short root is isolated.
+          root="$RUNNER_TEMP/c"
           {
-            echo "SOURCE_ROOT=$root/source"
-            echo "CARGO_HOME=$root/cargo-home"
-            echo "CARGO_TARGET_DIR=$root/cargo-target"
-            echo "TARGET_BUNDLE=$root/bundle"
+            echo "SOURCE_ROOT=$root/s"
+            echo "CARGO_HOME=$root/h"
+            echo "CARGO_TARGET_DIR=$root/t"
+            echo "TARGET_BUNDLE=$root/b"
             echo "SCCACHE_STATS=$root/sccache-stats.json"
           } >> "$GITHUB_ENV"
           mkdir -p "$root"
@@ -136,7 +138,7 @@ jobs:
         uses: ./.github/actions/setup-codex-rust-cache
         with:
           cache_mode: ${{ inputs.cache_mode }}
-          cargo_home: ${{ runner.temp }}/csa-patched-codex-${{ inputs.target }}/cargo-home
+          cargo_home: ${{ runner.temp }}/c/h
           sccache_version: ${{ inputs.sccache_version }}
           source_root: ${{ env.SOURCE_ROOT }}
 
