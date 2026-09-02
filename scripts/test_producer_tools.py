@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 
@@ -17,7 +18,15 @@ SCRIPTS = Path(__file__).resolve().parent
 REPOSITORY = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from compat_release import finalize, pack, release_matrix  # noqa: E402
+from compat_release import (  # noqa: E402
+    TARGET_BUILDERS,
+    file_digest,
+    finalize,
+    pack,
+    release_matrix,
+    verify_builder_binding,
+    verify_target_bundle,
+)
 from compatibility_audit import AuditError, check_immutability  # noqa: E402
 from generate_release_notes import ReleaseNotesError, generate  # noqa: E402
 from patch_family import verify_family  # noqa: E402
@@ -188,14 +197,80 @@ def test_nextest_runner_mapping() -> None:
 
 def test_release_matrix_and_pack(root: Path) -> None:
     matrix = release_matrix(P10_MANIFEST)
-    assert {row["target"] for row in matrix["include"]} == {
-        "aarch64-apple-darwin",
-        "aarch64-pc-windows-msvc",
-        "aarch64-unknown-linux-musl",
-        "x86_64-apple-darwin",
-        "x86_64-pc-windows-msvc",
-        "x86_64-unknown-linux-musl",
+    assert {
+        row["target"]: (row["repository"], row["runner"], row["workflow"])
+        for row in matrix["include"]
+    } == {
+        target: (builder["repository"], builder["runner"], "build.yml")
+        for target, builder in TARGET_BUILDERS.items()
     }
+    for row in matrix["include"]:
+        assert row["artifact_filename"] in {"codex", "codex.exe"}
+
+    target = TARGET
+    builder = TARGET_BUILDERS[target]
+    assert verify_builder_binding(builder["repository"], target, builder["runner"])[
+        "repository"
+    ] == builder["repository"]
+    assert verify_builder_binding(
+        PRODUCER_REPOSITORY,
+        target,
+        builder["runner"],
+        allow_producer=True,
+    )["repository"] == PRODUCER_REPOSITORY
+    expect_error(
+        lambda: verify_builder_binding("DSLZL/CSA-codex-linux-x64", target, builder["runner"]),
+        RuntimeError,
+    )
+
+    bundle = root / "target-bundle"
+    artifact = bundle / "bin/codex.exe"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"verified remote builder artifact")
+    p10_manifest = tomllib.loads(P10_MANIFEST.read_text(encoding="utf-8"))
+    record = {
+        "schema": 2,
+        "request_id": "acceptance-1",
+        "builder_repository": builder["repository"],
+        "runner": builder["runner"],
+        "workflow_run_id": "123456",
+        "compat_id": P10_MANIFEST.parent.name,
+        "manifest_sha256": file_digest(P10_MANIFEST),
+        "target": target,
+        "artifact": "bin/codex.exe",
+        "size": artifact.stat().st_size,
+        "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        "upstream_commit": p10_manifest["upstream_commit"],
+        "source_commit": "a" * 40,
+    }
+    record_path = bundle / "target-record.json"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    verified = verify_target_bundle(
+        P10_MANIFEST,
+        bundle.resolve(),
+        request_id="acceptance-1",
+        source_commit="a" * 40,
+        repository=builder["repository"],
+        runner=builder["runner"],
+        target=target,
+        workflow_run_id="123456",
+    )
+    assert verified["result"] == "verified" and verified["sha256"] == record["sha256"]
+    record["request_id"] = "stale-request"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    expect_error(
+        lambda: verify_target_bundle(
+            P10_MANIFEST,
+            bundle.resolve(),
+            request_id="acceptance-1",
+            source_commit="a" * 40,
+            repository=builder["repository"],
+            runner=builder["runner"],
+            target=target,
+            workflow_run_id="123456",
+        ),
+        RuntimeError,
+    )
 
     source = REPOSITORY / "payload/codex/rust-v0.148.0-native-join-p1"
     payload = root / source.name
@@ -346,6 +421,12 @@ def test_workflow_contracts() -> None:
         "build-patched-codex-windows.yml"
     ]
     assert "workflow_call:" in target and "workflow_call:" in validation
+    assert "repository: DSLZL/CSA-codex" in target
+    assert "scripts/compat_release.py builder" in target
+    assert "scripts/compat_catalog.py resolve" in target
+    assert '"schema": 2' in target
+    for input_name in ("builder_repository", "compat_id", "request_id", "runner", "source_commit", "target"):
+        assert f"      {input_name}:" in target
     assert "--stream manager" not in release and "--stream compat" not in release
     assert "scripts/generate_release_notes.py" in release
     assert "release-csa.yml" not in workflows and "publish-npm.yml" not in workflows
@@ -407,7 +488,7 @@ def test_workflow_contracts() -> None:
     )
     assert release.count(cache_policy) == 2
     assert "sccache_version: ${{ steps.resolve.outputs.sccache_version }}" in release
-    assert "sccache_version: ${{ needs.plan.outputs.sccache_version }}" in release
+    assert "sccache_version: ${{ steps.resolve.outputs.sccache_version }}" in target
     assert "cache_mode: read-write" in windows
     assert "Windows cache-warming builds must be dispatched" in windows
     assert "--cargo-frontend" not in validation and "CARGO_FRONTEND" not in target

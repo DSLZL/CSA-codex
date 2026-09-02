@@ -46,14 +46,35 @@ TARGET_START = "<!-- csa-blocker-target:start -->"
 TARGET_END = "<!-- csa-blocker-target:end -->"
 FAILURE_START = "<!-- csa-blocker-failure:start -->"
 FAILURE_END = "<!-- csa-blocker-failure:end -->"
-TARGET_RUNNERS = {
-    "aarch64-apple-darwin": "macos-15",
-    "x86_64-apple-darwin": "macos-15-intel",
-    "aarch64-unknown-linux-musl": "ubuntu-24.04-arm",
-    "x86_64-unknown-linux-musl": "ubuntu-24.04",
-    "aarch64-pc-windows-msvc": "windows-11-arm",
-    "x86_64-pc-windows-msvc": "windows-2025",
+REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
+TARGET_BUILDERS = {
+    "aarch64-apple-darwin": {
+        "repository": "DSLZL/CSA-codex-macos-arm64",
+        "runner": "macos-15",
+    },
+    "x86_64-apple-darwin": {
+        "repository": "DSLZL/CSA-codex-macos-x64",
+        "runner": "macos-15-intel",
+    },
+    "aarch64-unknown-linux-musl": {
+        "repository": "DSLZL/CSA-codex-linux-arm64",
+        "runner": "ubuntu-24.04-arm",
+    },
+    "x86_64-unknown-linux-musl": {
+        "repository": "DSLZL/CSA-codex-linux-x64",
+        "runner": "ubuntu-24.04",
+    },
+    "aarch64-pc-windows-msvc": {
+        "repository": "DSLZL/CSA-codex-windows-arm64",
+        "runner": "windows-11-arm",
+    },
+    "x86_64-pc-windows-msvc": {
+        "repository": "DSLZL/CSA-codex-windows-x64",
+        "runner": "windows-2025",
+    },
 }
+TARGET_RUNNERS = {target: builder["runner"] for target, builder in TARGET_BUILDERS.items()}
+CHILD_WORKFLOW = "build.yml"
 
 
 class CompatibilityReleaseError(RuntimeError):
@@ -347,12 +368,144 @@ def release_matrix(manifest_path: Path) -> dict[str, Any]:
     include = [
         {
             "target": target,
-            "runner": TARGET_RUNNERS[target],
+            "runner": TARGET_BUILDERS[target]["runner"],
+            "repository": TARGET_BUILDERS[target]["repository"],
+            "workflow": CHILD_WORKFLOW,
             "artifact_filename": artifacts[target]["filename"],
         }
         for target in sorted(artifacts)
     ]
     return {"include": include}
+
+
+def verify_builder_binding(
+    repository: str,
+    target: str,
+    runner: str,
+    *,
+    allow_producer: bool = False,
+) -> dict[str, Any]:
+    builder = TARGET_BUILDERS.get(target)
+    if builder is None:
+        raise CompatibilityReleaseError(f"unsupported release target: {target}")
+    expected_repository = builder["repository"]
+    expected_runner = builder["runner"]
+    if repository == PRODUCER_REPOSITORY and allow_producer:
+        if runner != expected_runner:
+            raise CompatibilityReleaseError(
+                f"producer runner differs for {target}: {runner} != {expected_runner}"
+            )
+    elif repository != expected_repository or runner != expected_runner:
+        raise CompatibilityReleaseError(
+            "builder binding differs: "
+            f"{repository}/{runner} != {expected_repository}/{expected_runner}"
+        )
+    return {
+        "schema": 1,
+        "repository": repository,
+        "target": target,
+        "runner": runner,
+        "workflow": CHILD_WORKFLOW,
+    }
+
+
+def verify_target_bundle(
+    manifest_path: Path,
+    root: Path,
+    *,
+    request_id: str,
+    source_commit: str,
+    repository: str,
+    runner: str,
+    target: str,
+    workflow_run_id: str,
+) -> dict[str, Any]:
+    if not manifest_path.is_absolute() or not root.is_absolute():
+        raise CompatibilityReleaseError("manifest and bundle root must be absolute")
+    if not REQUEST_ID.fullmatch(request_id):
+        raise CompatibilityReleaseError("request ID must be 1-128 safe characters")
+    if not SHA1.fullmatch(source_commit):
+        raise CompatibilityReleaseError("source commit must be lowercase 40-hex")
+    if not re.fullmatch(r"[1-9][0-9]*", workflow_run_id):
+        raise CompatibilityReleaseError("workflow run ID must be a positive integer string")
+    verify_builder_binding(repository, target, runner)
+
+    manifest_file = manifest_path.resolve(strict=True)
+    bundle_root = root.resolve(strict=True)
+    payload = _load_payload(manifest_file)
+    manifest = payload.manifest
+    artifacts = manifest.get("artifacts")
+    artifact_contract = artifacts.get(target) if isinstance(artifacts, dict) else None
+    if not isinstance(artifact_contract, dict):
+        raise CompatibilityReleaseError(f"manifest has no artifact for target: {target}")
+    filename = artifact_contract.get("filename")
+    if not isinstance(filename, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
+        raise CompatibilityReleaseError("manifest artifact filename is invalid")
+
+    record_path = bundle_root / "target-record.json"
+    if not record_path.is_file() or record_path.is_symlink():
+        raise CompatibilityReleaseError("target record must be one regular file")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    expected_keys = {
+        "artifact",
+        "builder_repository",
+        "compat_id",
+        "manifest_sha256",
+        "request_id",
+        "runner",
+        "schema",
+        "sha256",
+        "size",
+        "source_commit",
+        "target",
+        "upstream_commit",
+        "workflow_run_id",
+    }
+    if not isinstance(record, dict) or set(record) != expected_keys:
+        raise CompatibilityReleaseError("target record fields differ from schema 2")
+    if record["schema"] != 2 or isinstance(record["schema"], bool):
+        raise CompatibilityReleaseError("target record schema must be 2")
+    size = record["size"]
+    if isinstance(size, bool) or not isinstance(size, int) or not 0 < size <= MAX_ARTIFACT_BYTES:
+        raise CompatibilityReleaseError("target record artifact size is invalid")
+
+    expected = {
+        "artifact": f"bin/{filename}",
+        "builder_repository": repository,
+        "compat_id": manifest["compat_id"],
+        "manifest_sha256": file_digest(manifest_file),
+        "request_id": request_id,
+        "runner": runner,
+        "source_commit": source_commit,
+        "target": target,
+        "upstream_commit": manifest["upstream_commit"],
+        "workflow_run_id": workflow_run_id,
+    }
+    for key, value in expected.items():
+        if record[key] != value:
+            raise CompatibilityReleaseError(f"target record {key} differs")
+    if not isinstance(record["sha256"], str) or not SHA256.fullmatch(record["sha256"]):
+        raise CompatibilityReleaseError("target record artifact digest is invalid")
+
+    artifact_path = bundle_root / "bin" / filename
+    if not artifact_path.is_file() or artifact_path.is_symlink():
+        raise CompatibilityReleaseError("target artifact must be one regular file")
+    if artifact_path.resolve(strict=True).parent != (bundle_root / "bin").resolve(strict=True):
+        raise CompatibilityReleaseError("target artifact escapes the bundle root")
+    if artifact_path.stat().st_size != size:
+        raise CompatibilityReleaseError("target artifact size differs from its record")
+    if file_digest(artifact_path) != record["sha256"]:
+        raise CompatibilityReleaseError("target artifact digest differs from its record")
+    return {
+        "schema": 1,
+        "result": "verified",
+        "repository": repository,
+        "target": target,
+        "workflow_run_id": workflow_run_id,
+        "artifact": str(artifact_path),
+        "size": size,
+        "sha256": record["sha256"],
+    }
 
 
 def git_blob(source: Path, commit: str, relative: str) -> bytes | None:
@@ -959,6 +1112,22 @@ def parse_args() -> argparse.Namespace:
     matrix_parser.add_argument("--manifest", type=Path, required=True)
     matrix_parser.add_argument("--github-output", type=Path)
 
+    builder_parser = commands.add_parser("builder")
+    builder_parser.add_argument("--repository", required=True)
+    builder_parser.add_argument("--target", required=True)
+    builder_parser.add_argument("--runner", required=True)
+    builder_parser.add_argument("--allow-producer", action="store_true")
+
+    verify_target_parser = commands.add_parser("verify-target")
+    verify_target_parser.add_argument("--manifest", type=Path, required=True)
+    verify_target_parser.add_argument("--root", type=Path, required=True)
+    verify_target_parser.add_argument("--request-id", required=True)
+    verify_target_parser.add_argument("--source-commit", required=True)
+    verify_target_parser.add_argument("--repository", required=True)
+    verify_target_parser.add_argument("--runner", required=True)
+    verify_target_parser.add_argument("--target", required=True)
+    verify_target_parser.add_argument("--workflow-run-id", required=True)
+
     finalize_parser = commands.add_parser("finalize")
     finalize_parser.add_argument("--manifest", type=Path, required=True)
     finalize_parser.add_argument("--artifact", action="append", required=True)
@@ -997,6 +1166,24 @@ def main() -> int:
                 with args.github_output.open("a", encoding="utf-8", newline="\n") as output:
                     output.write(f"matrix={json.dumps(result, separators=(',', ':'))}\n")
                     output.write(f"artifact_count={len(result['include'])}\n")
+        elif args.command == "builder":
+            result = verify_builder_binding(
+                args.repository,
+                args.target,
+                args.runner,
+                allow_producer=args.allow_producer,
+            )
+        elif args.command == "verify-target":
+            result = verify_target_bundle(
+                args.manifest,
+                args.root,
+                request_id=args.request_id,
+                source_commit=args.source_commit,
+                repository=args.repository,
+                runner=args.runner,
+                target=args.target,
+                workflow_run_id=args.workflow_run_id,
+            )
         elif args.command == "finalize":
             result = finalize(args.manifest, parse_artifact_args(args.artifact))
         elif args.command == "pack":

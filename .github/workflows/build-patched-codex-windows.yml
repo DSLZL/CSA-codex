@@ -66,17 +66,13 @@ jobs:
       contents: read
     uses: ./.github/workflows/build-patched-codex-target.yml
     with:
-      artifact_filename: ${{ needs.plan.outputs.artifact_filename }}
+      builder_repository: ${{ github.repository }}
       cache_mode: read-write
       compat_id: ${{ needs.plan.outputs.compat_id }}
-      manifest_path: ${{ needs.plan.outputs.manifest_path }}
+      request_id: ${{ github.run_id }}-${{ github.run_attempt }}
       runner: windows-2025
-      rust_toolchain: ${{ needs.plan.outputs.rust_toolchain }}
-      sccache_version: ${{ needs.plan.outputs.sccache_version }}
       source_commit: ${{ github.sha }}
       target: ${{ needs.plan.outputs.build_target }}
-      upstream_commit: ${{ needs.plan.outputs.upstream_commit }}
-      upstream_tag: ${{ needs.plan.outputs.upstream_tag }}
 
   package:
     name: Package Windows test candidate

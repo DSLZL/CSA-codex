@@ -53,6 +53,7 @@ jobs:
       manifest_path: ${{ steps.resolve.outputs.manifest_path }}
       matrix: ${{ steps.matrix.outputs.matrix }}
       publish_requested: ${{ steps.mode.outputs.publish_requested }}
+      request_id: ${{ steps.mode.outputs.request_id }}
       release_source_commit: ${{ steps.authority.outputs.release_source_commit }}
       release_enabled: ${{ steps.resolve.outputs.release_enabled }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
@@ -117,6 +118,7 @@ jobs:
           {
             echo "compat_selector=$selector"
             echo "publish_requested=$publish"
+            echo "request_id=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             echo "replace_published=$replace_published"
             echo "source_commit=$source_commit"
             echo "target=$target"
@@ -244,18 +246,14 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     uses: ./.github/workflows/build-patched-codex-target.yml
     with:
-      artifact_filename: ${{ matrix.artifact_filename }}
+      builder_repository: ${{ github.repository }}
       cache_mode: ${{ needs.plan.outputs.publish_requested != 'true' && 'read-write' || 'read-only' }}
       compat_id: ${{ needs.plan.outputs.compat_id }}
-      manifest_path: ${{ needs.plan.outputs.manifest_path }}
+      request_id: ${{ needs.plan.outputs.request_id }}
       runner: ${{ matrix.runner }}
-      rust_toolchain: ${{ needs.plan.outputs.rust_toolchain }}
-      sccache_version: ${{ needs.plan.outputs.sccache_version }}
       source_commit: ${{ needs.plan.outputs.source_commit }}
       target: ${{ matrix.target }}
       retention_days: 1
-      upstream_commit: ${{ needs.plan.outputs.upstream_commit }}
-      upstream_tag: ${{ needs.plan.outputs.upstream_tag }}
 
   bundle:
     name: Aggregate ${{ needs.plan.outputs.artifact_count }} native targets
