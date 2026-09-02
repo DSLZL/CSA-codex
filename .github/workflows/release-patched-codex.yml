@@ -257,27 +257,14 @@ jobs:
       upstream_commit: ${{ needs.plan.outputs.upstream_commit }}
       upstream_tag: ${{ needs.plan.outputs.upstream_tag }}
 
-  cache-after-build:
-    name: Enforce cache budget after native builds
-    needs: [plan, build]
-    if: always() && needs.plan.result == 'success' && needs.plan.outputs.publish_requested != 'true'
-    permissions:
-      actions: write
-      contents: read
-    uses: ./.github/workflows/maintain-actions-cache.yml
-    with:
-      dry_run: false
-      purge_legacy: false
-
   bundle:
     name: Aggregate ${{ needs.plan.outputs.artifact_count }} native targets
-    needs: [plan, validate, build, cache-after-build]
+    needs: [plan, validate, build]
     if: >-
       always() &&
       needs.plan.result == 'success' &&
       needs.validate.result == 'success' &&
-      needs.build.result == 'success' &&
-      (needs.cache-after-build.result == 'success' || needs.cache-after-build.result == 'skipped')
+      needs.build.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:

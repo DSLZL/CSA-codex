@@ -60,21 +60,8 @@ env:
   GIT_CONFIG_VALUE_0: "false"
 
 jobs:
-  cache-before:
-    name: Enforce cache budget before validation
-    if: inputs.cache_mode == 'read-write'
-    permissions:
-      actions: write
-      contents: read
-    uses: ./.github/workflows/maintain-actions-cache.yml
-    with:
-      dry_run: false
-      purge_legacy: false
-
   validate:
     name: Validate exact patched Codex contract
-    needs: cache-before
-    if: always() && (needs.cache-before.result == 'success' || needs.cache-before.result == 'skipped')
     runs-on: windows-2025
     timeout-minutes: 300
     permissions:
@@ -348,15 +335,3 @@ jobs:
           path: ${{ runner.temp }}/csa-patched-codex-validation/evidence
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days || 14 }}
-
-  cache-after:
-    name: Enforce cache budget after validation
-    needs: validate
-    if: always() && inputs.cache_mode == 'read-write'
-    permissions:
-      actions: write
-      contents: read
-    uses: ./.github/workflows/maintain-actions-cache.yml
-    with:
-      dry_run: false
-      purge_legacy: false

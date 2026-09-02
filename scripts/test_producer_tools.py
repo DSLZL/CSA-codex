@@ -412,16 +412,16 @@ def test_workflow_contracts() -> None:
     assert "--cargo-frontend" not in validation and "CARGO_FRONTEND" not in target
     assert target.count("--timings") == 2
 
-    assert 'cron: "17 */6 * * *"' in maintenance
+    assert "schedule:" not in maintenance and "workflow_call:" not in maintenance
     assert maintenance.count("actions: write") == 1
-    assert "7516192768" in maintenance and "6442450944" in maintenance
+    assert "high-water" not in maintenance and "low-water" not in maintenance
     assert 'actions/caches/$cache_id' in maintenance
-    assert "--purge-legacy" in maintenance and "--require-within-high-water" in maintenance
+    assert "--purge-legacy" in maintenance
     assert maintenance.count("if: env.DRY_RUN != 'true'") == 2
-    assert "Cache maintenance is a dry run; no cache IDs will be deleted." in maintenance
-    assert validation.count("uses: ./.github/workflows/maintain-actions-cache.yml") == 2
-    assert windows.count("uses: ./.github/workflows/maintain-actions-cache.yml") == 2
-    assert release.count("uses: ./.github/workflows/maintain-actions-cache.yml") == 1
+    assert "Cache audit is a dry run; no cache IDs will be deleted." in maintenance
+    assert "uses: ./.github/workflows/maintain-actions-cache.yml" not in validation
+    assert "uses: ./.github/workflows/maintain-actions-cache.yml" not in windows
+    assert "uses: ./.github/workflows/maintain-actions-cache.yml" not in release
     for name, workflow in workflows.items():
         assert "actions/cache@" not in workflow, name
         if name != "maintain-actions-cache.yml":

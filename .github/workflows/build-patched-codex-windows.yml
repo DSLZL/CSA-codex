@@ -59,20 +59,9 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
           python scripts/compat_catalog.py validate --repository .
 
-  cache-before:
-    name: Enforce cache budget before Windows build
-    needs: plan
-    permissions:
-      actions: write
-      contents: read
-    uses: ./.github/workflows/maintain-actions-cache.yml
-    with:
-      dry_run: false
-      purge_legacy: false
-
   build:
     name: Build Windows x64 test candidate
-    needs: [plan, cache-before]
+    needs: plan
     permissions:
       contents: read
     uses: ./.github/workflows/build-patched-codex-target.yml
@@ -89,21 +78,9 @@ jobs:
       upstream_commit: ${{ needs.plan.outputs.upstream_commit }}
       upstream_tag: ${{ needs.plan.outputs.upstream_tag }}
 
-  cache-after:
-    name: Enforce cache budget after Windows build
-    needs: build
-    if: always()
-    permissions:
-      actions: write
-      contents: read
-    uses: ./.github/workflows/maintain-actions-cache.yml
-    with:
-      dry_run: false
-      purge_legacy: false
-
   package:
     name: Package Windows test candidate
-    needs: [plan, build, cache-after]
+    needs: [plan, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

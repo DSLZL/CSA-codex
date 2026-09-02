@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan exact-ID GitHub Actions cache cleanup within a bounded repository budget."""
+"""Audit GitHub Actions caches and plan explicitly authorized legacy cleanup."""
 
 from __future__ import annotations
 
@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-HIGH_WATER_BYTES = 7 * 1024**3
-LOW_WATER_BYTES = 6 * 1024**3
 SCCACHE_PREFIXES = ("sccache/", "/sccache/")
 LEGACY_PREFIXES = (
     "csa-cargo-downloads-v1-",
@@ -123,23 +121,11 @@ def _deletion(entry: CacheEntry, reason: str) -> dict[str, Any]:
 def plan_cleanup(
     document: object,
     *,
-    default_ref: str,
-    high_water_bytes: int = HIGH_WATER_BYTES,
-    low_water_bytes: int = LOW_WATER_BYTES,
     purge_legacy: bool = False,
 ) -> dict[str, Any]:
-    if not isinstance(default_ref, str) or not default_ref.startswith("refs/heads/"):
-        fail("default ref must be an exact refs/heads/... name")
-    high_water_bytes = _integer(high_water_bytes, "high water")
-    low_water_bytes = _integer(low_water_bytes, "low water")
-    if not 0 < low_water_bytes < high_water_bytes:
-        fail("cache watermarks must satisfy 0 < low < high")
-
     entries = load_inventory(document)
     total = sum(entry.size for entry in entries)
-    triggered = total > high_water_bytes
     deletions: list[dict[str, Any]] = []
-    selected: set[int] = set()
     projected = total
 
     if purge_legacy:
@@ -148,35 +134,9 @@ def plan_cleanup(
             key=lambda item: (item.last_accessed, item.cache_id),
         ):
             deletions.append(_deletion(entry, "legacy-explicit-purge"))
-            selected.add(entry.cache_id)
             projected -= entry.size
 
-    if triggered:
-        candidates = sorted(
-            (
-                entry
-                for entry in entries
-                if entry.kind == "sccache" and entry.cache_id not in selected
-            ),
-            key=lambda entry: (
-                entry.ref == default_ref,
-                entry.last_accessed,
-                entry.cache_id,
-            ),
-        )
-        for entry in candidates:
-            if projected <= low_water_bytes:
-                break
-            reason = (
-                "non-default-ref-lru" if entry.ref != default_ref else "default-ref-lru"
-            )
-            deletions.append(_deletion(entry, reason))
-            selected.add(entry.cache_id)
-            projected -= entry.size
-
-    result = "blocked" if triggered and projected > low_water_bytes else (
-        "prune" if deletions else "within_limit"
-    )
+    result = "legacy_purge" if deletions else "audit_only"
     counts = {
         kind: sum(1 for entry in entries if entry.kind == kind)
         for kind in ("sccache", "legacy", "unknown")
@@ -188,10 +148,7 @@ def plan_cleanup(
     return {
         "schema": 1,
         "result": result,
-        "default_ref": default_ref,
         "purge_legacy": purge_legacy,
-        "high_water_bytes": high_water_bytes,
-        "low_water_bytes": low_water_bytes,
         "total_count": len(entries),
         "total_bytes": total,
         "projected_bytes": projected,
@@ -209,15 +166,14 @@ def _gib(value: int) -> str:
 
 def append_summary(path: Path, result: dict[str, Any]) -> None:
     lines = [
-        "### GitHub Actions cache steward",
+        "### GitHub Actions cache audit",
         "",
         "| Metric | Value |",
         "| --- | ---: |",
         f"| Result | `{result['result']}` |",
         f"| Current usage | {_gib(result['total_bytes'])} |",
-        f"| Projected usage | {_gib(result['projected_bytes'])} |",
-        f"| High / low water | {_gib(result['high_water_bytes'])} / {_gib(result['low_water_bytes'])} |",
-        f"| Planned exact-ID deletions | {result['deletion_count']} ({_gib(result['deletion_bytes'])}) |",
+        f"| Projected after explicit legacy purge | {_gib(result['projected_bytes'])} |",
+        f"| Planned legacy exact-ID deletions | {result['deletion_count']} ({_gib(result['deletion_bytes'])}) |",
         f"| Managed sccache | {result['counts']['sccache']} ({_gib(result['bytes']['sccache'])}) |",
         f"| Recognized legacy | {result['counts']['legacy']} ({_gib(result['bytes']['legacy'])}) |",
         f"| Unknown, preserved | {result['counts']['unknown']} ({_gib(result['bytes']['unknown'])}) |",
@@ -231,13 +187,6 @@ def append_summary(path: Path, result: dict[str, Any]) -> None:
             )
         if len(result["deletions"]) > 20:
             lines.extend(("", f"Only the first 20 of {len(result['deletions'])} deletions are shown."))
-    if result["result"] == "blocked":
-        lines.extend(
-            (
-                "",
-                "> WARNING: Safe managed deletions cannot reach the low-water mark; unknown or retained legacy entries require review.",
-            )
-        )
     with path.open("a", encoding="utf-8", newline="\n") as stream:
         stream.write("\n".join(lines) + "\n\n")
 
@@ -253,22 +202,15 @@ def write_github_output(path: Path, result: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inventory", type=Path, required=True)
-    parser.add_argument("--default-ref", required=True)
-    parser.add_argument("--high-water-bytes", type=int, default=HIGH_WATER_BYTES)
-    parser.add_argument("--low-water-bytes", type=int, default=LOW_WATER_BYTES)
     parser.add_argument("--purge-legacy", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--github-step-summary", type=Path)
-    parser.add_argument("--require-within-high-water", action="store_true")
     args = parser.parse_args()
     try:
         document = json.loads(args.inventory.read_text(encoding="utf-8"))
         result = plan_cleanup(
             document,
-            default_ref=args.default_ref,
-            high_water_bytes=args.high_water_bytes,
-            low_water_bytes=args.low_water_bytes,
             purge_legacy=args.purge_legacy,
         )
         args.output.write_text(
@@ -282,8 +224,6 @@ def main() -> int:
         print(json.dumps({"schema": 1, "error": str(error)}, indent=2), file=sys.stderr)
         return 2
     print(json.dumps(result, indent=2, sort_keys=True))
-    if args.require_within_high_water and result["total_bytes"] > result["high_water_bytes"]:
-        return 2
     return 0
 
 
