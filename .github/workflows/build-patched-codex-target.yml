@@ -54,6 +54,7 @@ jobs:
   build:
     name: Build ${{ inputs.target }}
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 300
     permissions:
       contents: read
     steps:
@@ -106,7 +107,8 @@ jobs:
             --manifest "$GITHUB_WORKSPACE/${{ inputs.manifest_path }}" \
             --source "$SOURCE_ROOT" --apply
 
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - name: Install exact compatibility Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
           toolchain: ${{ inputs.rust_toolchain }}
           targets: ${{ inputs.target }}

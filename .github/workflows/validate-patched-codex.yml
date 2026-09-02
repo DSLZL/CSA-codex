@@ -74,7 +74,7 @@ jobs:
     needs: cache-before
     if: always() && (needs.cache-before.result == 'success' || needs.cache-before.result == 'skipped')
     runs-on: windows-2025
-    timeout-minutes: 120
+    timeout-minutes: 300
     permissions:
       contents: read
     steps:
@@ -185,10 +185,25 @@ jobs:
             throw 'Pinned upstream tag and commit identity differ.'
           }
 
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - name: Install exact compatibility Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
           targets: ${{ steps.resolve.outputs.build_target }}
           components: rustfmt, clippy
+
+      - name: Install exact cargo-nextest runner
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: nextest@0.9.143
+
+      - name: Verify cargo-nextest identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $identity = (cargo nextest --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or $identity -notmatch '^cargo-nextest 0\.9\.143(?:\s|$)') {
+            throw "cargo-nextest identity differs from 0.9.143: $identity"
+          }
 
       - name: Configure shared sccache
         uses: ./.github/actions/setup-codex-rust-cache
@@ -263,7 +278,8 @@ jobs:
             --cargo-target $env:CARGO_TARGET_DIR `
             --output $env:TEST_REPORT `
             --portable-evidence `
-            --phase tests
+            --phase tests `
+            --test-runner nextest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify shared sccache health

@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from compat_catalog import resolve
-from run_patch_contract import load_contract
+from run_patch_contract import load_contract, test_runner_argv
 from validation_evidence import (
     EvidenceError,
     WORKFLOW_PATH,
@@ -34,7 +34,9 @@ def git_head() -> str:
     ).stdout.strip()
 
 
-def passed_report(resolution: dict[str, object]) -> dict[str, object]:
+def passed_report(
+    resolution: dict[str, object], test_runner: str = "cargo"
+) -> dict[str, object]:
     payload = _load_payload((REPOSITORY / str(resolution["manifest_path"])).resolve())
     contract = load_contract(_payload_file(payload, "test-contract.json"), str(resolution["compat_id"]))
     steps = []
@@ -43,14 +45,16 @@ def passed_report(resolution: dict[str, object]) -> dict[str, object]:
         ("test", contract["tests"]),
     ):
         for step in contract_steps:
-            steps.append(
-                {
+            record = {
                 "kind": kind,
                 "name": step["name"],
                 "argv": step["argv"],
                 "exit_code": 0,
-                }
-            )
+            }
+            runner_argv = test_runner_argv(step["argv"], test_runner)
+            if runner_argv != step["argv"]:
+                record["runner_argv"] = runner_argv
+            steps.append(record)
     return {
         "schema": 1,
         "result": "pass",
@@ -87,6 +91,7 @@ def main() -> None:
         )
         assert created["validation"]["clippy"] == "passed"
         assert created["validation"]["cargo_frontend"] == "cargo"
+        assert created["validation"]["test_runner"] == "cargo"
         assert created["payload"]["test_contract_sha256"]
         verified = verify_evidence(
             REPOSITORY,
@@ -98,6 +103,41 @@ def main() -> None:
             2,
         )
         assert verified["status"] == "pass"
+
+        nextest_report = passed_report(resolution, "nextest")
+        nextest_report_path = root / "nextest-test-report.json"
+        nextest_evidence_path = root / "nextest-validation-result.json"
+        nextest_report_path.write_text(json.dumps(nextest_report), encoding="utf-8")
+        nextest_created = create_evidence(
+            REPOSITORY,
+            resolution_path,
+            nextest_report_path,
+            nextest_evidence_path,
+            git_head(),
+            124,
+            1,
+        )
+        assert nextest_created["validation"]["cargo_frontend"] == "cargo"
+        assert nextest_created["validation"]["test_runner"] == "nextest"
+
+        mixed_report = passed_report(resolution, "nextest")
+        del mixed_report["steps"][0]["runner_argv"]
+        mixed_report_path = root / "mixed-test-report.json"
+        mixed_report_path.write_text(json.dumps(mixed_report), encoding="utf-8")
+        try:
+            create_evidence(
+                REPOSITORY,
+                resolution_path,
+                mixed_report_path,
+                root / "mixed-validation-result.json",
+                git_head(),
+                125,
+                1,
+            )
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("mixed Cargo/nextest test report was accepted")
 
         rewritten_report = passed_report(resolution)
         rewritten_report["steps"][0]["runner_argv"] = ["mbx", "fmt"]

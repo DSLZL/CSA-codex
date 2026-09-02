@@ -20,6 +20,13 @@ from verify_patch_payload import VerificationError, _load_payload, _payload_file
 ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]*\Z")
 FLAKY_TUI_BACKGROUND_EXIT_STEP = "TUI background exit isolation"
 FAILURE_OUTPUT_TAIL_BYTES = 256 * 1024
+TEST_RUNNERS = ("cargo", "nextest")
+NEXTEST_PASSTHROUGH_LIBTEST_FLAGS = {
+    "--exact",
+    "--ignored",
+    "--include-ignored",
+    "--nocapture",
+}
 
 
 class ContractError(RuntimeError):
@@ -39,6 +46,65 @@ def cross_windows_build_env(env: dict[str, Any]) -> dict[str, Any]:
         **env,
         "RUSTFLAGS": "-C link-arg=/debug:none -C link-arg=/build-id:no",
     }
+
+
+def test_runner_argv(argv: list[str], test_runner: str) -> list[str]:
+    """Map a logical Cargo test command to one explicitly supported runner."""
+    if test_runner not in TEST_RUNNERS:
+        raise ContractError(f"unsupported test runner: {test_runner}")
+    if test_runner == "cargo" or argv[:2] != ["cargo", "test"]:
+        return list(argv)
+
+    separator = argv.index("--") if "--" in argv else len(argv)
+    cargo_args = argv[2:separator]
+    if "--doc" in cargo_args:
+        # cargo-nextest does not support doctests. Keep any explicit doctest
+        # contract on Cargo rather than silently weakening the test gate.
+        return list(argv)
+
+    libtest_args = argv[separator + 1 :] if separator < len(argv) else []
+    passthrough: list[str] = []
+    test_threads: str | None = None
+    index = 0
+    while index < len(libtest_args):
+        argument = libtest_args[index]
+        if argument in NEXTEST_PASSTHROUGH_LIBTEST_FLAGS:
+            passthrough.append(argument)
+        elif argument == "--skip":
+            if index + 1 == len(libtest_args):
+                raise ContractError("nextest mapping requires a value after --skip")
+            passthrough.extend((argument, libtest_args[index + 1]))
+            index += 1
+        elif argument.startswith("--test-threads="):
+            test_threads = argument.partition("=")[2]
+        elif argument == "--test-threads":
+            if index + 1 == len(libtest_args):
+                raise ContractError("nextest mapping requires a value after --test-threads")
+            test_threads = libtest_args[index + 1]
+            index += 1
+        elif argument == "--format=terse":
+            # Nextest already owns output formatting and does not expose
+            # libtest's terse formatter.
+            pass
+        elif argument == "--format":
+            if index + 1 == len(libtest_args) or libtest_args[index + 1] != "terse":
+                raise ContractError("nextest mapping supports only libtest --format=terse")
+            index += 1
+        else:
+            raise ContractError(
+                f"nextest mapping does not support libtest argument: {argument}"
+            )
+        index += 1
+
+    runner_args: list[str] = []
+    if test_threads is not None:
+        if not test_threads.isdecimal() or int(test_threads) < 1:
+            raise ContractError("nextest test thread count must be a positive integer")
+        runner_args.append(f"--test-threads={test_threads}")
+    mapped = ["cargo", "nextest", "run", *runner_args, *cargo_args]
+    if passthrough:
+        mapped.extend(("--", *passthrough))
+    return mapped
 
 
 def load_contract(path: Path, compat_id: str) -> dict[str, Any]:
@@ -94,6 +160,7 @@ def run_step(
     common_env: dict[str, Any],
     source: Path,
     cargo_target: Path,
+    test_runner: str = "cargo",
 ) -> dict[str, Any]:
     allowed = {"name", "argv", "env", "output"}
     if not isinstance(step, dict) or set(step) - allowed or not {"name", "argv"} <= set(step):
@@ -111,6 +178,7 @@ def run_step(
     if not isinstance(output, str) or output not in {"live", "failure-only"}:
         raise ContractError(f"invalid {kind} output policy")
     expanded = [expand(value, source, cargo_target) for value in argv]
+    runner_argv = test_runner_argv(expanded, test_runner)
     attempts = 2 if step["name"] == FLAKY_TUI_BACKGROUND_EXIT_STEP else 1
     print(f"{kind} step started: {step['name']}", flush=True)
     for attempt in range(1, attempts + 1):
@@ -122,7 +190,7 @@ def run_step(
         if output == "failure-only":
             with tempfile.TemporaryFile() as captured_stdout:
                 result = subprocess.run(
-                    expanded,
+                    runner_argv,
                     **options,
                     stdout=captured_stdout,
                 )
@@ -138,7 +206,7 @@ def run_step(
                     sys.stderr.write(captured_stdout.read().decode("utf-8", errors="replace"))
                     sys.stderr.flush()
         else:
-            result = subprocess.run(expanded, **options)
+            result = subprocess.run(runner_argv, **options)
         if not result.returncode or attempt == attempts:
             break
         print(
@@ -148,7 +216,10 @@ def run_step(
     if result.returncode:
         raise ContractError(f"{kind} step failed ({result.returncode}): {step['name']}")
     print(f"{kind} step passed: {step['name']}", flush=True)
-    return {"kind": kind, "name": step["name"], "argv": expanded, "exit_code": 0}
+    report = {"kind": kind, "name": step["name"], "argv": expanded, "exit_code": 0}
+    if runner_argv != expanded:
+        report["runner_argv"] = runner_argv
+    return report
 
 
 def digest(path: Path) -> str:
@@ -235,6 +306,7 @@ def run_contract(
     portable_evidence: bool = False,
     phase: str = "all",
     resume: Path | None = None,
+    test_runner: str = "cargo",
 ) -> dict[str, Any]:
     for path, label in (
         (manifest_path, "manifest"),
@@ -246,6 +318,8 @@ def run_contract(
             raise ContractError(f"{label} path must be absolute")
     if phase not in {"all", "tests", "build", "release"}:
         raise ContractError(f"unsupported contract phase: {phase}")
+    if test_runner not in TEST_RUNNERS:
+        raise ContractError(f"unsupported test runner: {test_runner}")
     if resume is not None and not resume.is_absolute():
         raise ContractError("resume path must be absolute")
     if phase == "build" and resume is None:
@@ -316,6 +390,7 @@ def run_contract(
                         contract["common_env"],
                         source,
                         cargo_target,
+                        test_runner,
                     )
                 )
             for step in contract["tests"]:
@@ -327,6 +402,7 @@ def run_contract(
                         contract["common_env"],
                         source,
                         cargo_target,
+                        test_runner,
                     )
                 )
             if phase == "tests":
@@ -407,6 +483,7 @@ def parse_args() -> argparse.Namespace:
         "--phase", choices=("all", "tests", "build", "release"), default="all"
     )
     parser.add_argument("--resume", type=Path)
+    parser.add_argument("--test-runner", choices=TEST_RUNNERS, default="cargo")
     return parser.parse_args()
 
 
@@ -422,6 +499,7 @@ def main() -> int:
             args.portable_evidence,
             args.phase,
             args.resume,
+            args.test_runner,
         )
     except (ContractError, OSError, VerificationError) as error:
         print(json.dumps({"schema": 1, "error": str(error)}, indent=2), file=sys.stderr)

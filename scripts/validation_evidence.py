@@ -18,6 +18,7 @@ from run_patch_contract import (
     ContractError,
     load_contract,
     load_test_report,
+    test_runner_argv,
 )
 from verify_patch_payload import VerificationError, _load_payload, _payload_file
 
@@ -180,6 +181,8 @@ def validation_identity(
     }
     if not clippy_names or not clippy_names <= {step["name"] for step in report["steps"]}:
         fail("test report does not prove the selected contract's Clippy step")
+    nextest_eligible = 0
+    nextest_translated = 0
     for step, (_, contract_step) in zip(report["steps"], expected_contract_steps, strict=True):
         argv = step.get("argv")
         expected_argv = contract_step.get("argv")
@@ -191,14 +194,31 @@ def validation_identity(
             or argv[:2] != expected_argv[:2]
         ):
             fail("test report contains an invalid logical Cargo command")
-        if "runner_argv" in step:
-            fail("test report must preserve the logical Cargo command")
+        try:
+            expected_runner_argv = test_runner_argv(argv, "nextest")
+        except ContractError:
+            if "runner_argv" in step:
+                fail("test report contains an unsupported runner command")
+            continue
+        if expected_runner_argv == argv:
+            if "runner_argv" in step:
+                fail("test report rewrites a non-nextest Cargo command")
+            continue
+        nextest_eligible += 1
+        if "runner_argv" not in step:
+            continue
+        if step["runner_argv"] != expected_runner_argv:
+            fail("test report contains an inexact nextest command")
+        nextest_translated += 1
+    if nextest_translated not in {0, nextest_eligible}:
+        fail("test report mixes Cargo and nextest for eligible test steps")
     return {
         "test_report_sha256": sha256_file(test_report_path),
         "contract": "passed",
         "tests": "passed",
         "clippy": "passed",
         "cargo_frontend": "cargo",
+        "test_runner": "nextest" if nextest_translated else "cargo",
         "steps": [{"kind": kind, "name": name} for kind, name in expected_steps],
     }
 

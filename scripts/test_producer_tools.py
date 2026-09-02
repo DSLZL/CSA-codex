@@ -21,7 +21,11 @@ from compat_release import finalize, pack, release_matrix  # noqa: E402
 from compatibility_audit import AuditError, check_immutability  # noqa: E402
 from generate_release_notes import ReleaseNotesError, generate  # noqa: E402
 from patch_family import verify_family  # noqa: E402
-from run_patch_contract import ContractError, load_contract  # noqa: E402
+from run_patch_contract import (  # noqa: E402
+    ContractError,
+    load_contract,
+    test_runner_argv,
+)
 
 
 PRODUCER_REPOSITORY = "DSLZL/CSA-codex"
@@ -120,6 +124,66 @@ def test_payload_and_contract_authority(root: Path) -> None:
     contract = load_contract(P10_MANIFEST.with_name("test-contract.json"), P10_MANIFEST.parent.name)
     assert contract["schema"] == 1
     assert contract["build"]["artifact"].endswith("/release/codex.exe")
+
+
+def test_nextest_runner_mapping() -> None:
+    logical = [
+        "cargo",
+        "test",
+        "-p",
+        "codex-tui",
+        "--lib",
+        "subagent_live",
+        "--",
+        "--test-threads=1",
+        "--format=terse",
+    ]
+    assert test_runner_argv(logical, "nextest") == [
+        "cargo",
+        "nextest",
+        "run",
+        "--test-threads=1",
+        "-p",
+        "codex-tui",
+        "--lib",
+        "subagent_live",
+    ]
+    assert test_runner_argv(
+        ["cargo", "test", "-p", "protocol", "generate", "--", "--ignored", "--nocapture"],
+        "nextest",
+    ) == [
+        "cargo",
+        "nextest",
+        "run",
+        "-p",
+        "protocol",
+        "generate",
+        "--",
+        "--ignored",
+        "--nocapture",
+    ]
+    doctest = ["cargo", "test", "-p", "codex-core", "--doc"]
+    assert test_runner_argv(doctest, "nextest") == doctest
+    formatting = ["cargo", "fmt", "--all", "--", "--check"]
+    assert test_runner_argv(formatting, "nextest") == formatting
+    expect_error(
+        lambda: test_runner_argv(["cargo", "test", "--", "--bench"], "nextest"),
+        ContractError,
+    )
+
+    cargo_test_steps = 0
+    for path in sorted((REPOSITORY / "payload/codex").rglob("test-contract.json")):
+        contract = json.loads(path.read_text(encoding="utf-8"))
+        for section in ("generation", "tests"):
+            for step in contract[section]:
+                argv = step["argv"]
+                mapped = test_runner_argv(argv, "nextest")
+                if argv[:2] == ["cargo", "test"] and "--doc" not in argv:
+                    cargo_test_steps += 1
+                    assert mapped[:3] == ["cargo", "nextest", "run"], (path, argv)
+                else:
+                    assert mapped == argv, (path, argv)
+    assert cargo_test_steps > 0
 
 
 def test_release_matrix_and_pack(root: Path) -> None:
@@ -316,6 +380,18 @@ def test_workflow_contracts() -> None:
         assert "mr-boxington" not in owner.lower() and "MBX_" not in owner
         assert "RUSTFLAGS" not in owner and "CARGO_PROFILE_" not in owner
 
+    nextest_action = "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+    assert nextest_action in validation
+    assert "tool: nextest@0.9.143" in validation
+    assert "cargo nextest --version" in validation
+    assert "--test-runner nextest" in validation
+    assert validation.index("dtolnay/rust-toolchain@") < validation.index(nextest_action)
+    assert validation.index(nextest_action) < validation.index("--test-runner nextest")
+    assert "nextest" not in target.lower()
+    assert validation.count("timeout-minutes: 300") == 1
+    assert target.count("timeout-minutes: 300") == 1
+    assert "timeout-minutes: 120" not in validation
+
     assert (REPOSITORY / "scripts/check_sccache_stats.py").is_file()
     assert "read-only|off" in target and "read-write)" in target
     assert "test \"$GITHUB_EVENT_NAME\" = workflow_dispatch" in target
@@ -350,7 +426,8 @@ def test_workflow_contracts() -> None:
 
     assert "sccache" in bundle_builder.lower() and "mbx" not in bundle_builder.lower()
     assert "cargo_frontend" not in contract_runner and "mbx" not in contract_runner.lower()
-    assert "runner_argv" not in contract_runner and "mbx" not in evidence.lower()
+    assert "test_runner_argv" in contract_runner and "runner_argv" in contract_runner
+    assert "runner_argv" in evidence and "mbx" not in evidence.lower()
     all_workflows = "\n".join(workflows.values())
     assert "spctl developer-mode" not in all_workflows
     assert "DevToolsSecurity" not in all_workflows
@@ -372,6 +449,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="csa-codex-producer-") as directory:
         root = Path(directory)
         test_payload_and_contract_authority(root / "payload")
+        test_nextest_runner_mapping()
         test_release_matrix_and_pack(root / "pack")
         test_release_notes(root / "notes")
     test_workflow_contracts()
