@@ -57,7 +57,7 @@ def test_runner_argv(argv: list[str], test_runner: str) -> list[str]:
     libtest_args = argv[separator + 1 :] if separator < len(argv) else []
     # Prefer native nextest options over emulated test-binary arguments. Some
     # upstream test targets reject otherwise valid libtest flags after `--`.
-    runner_args: list[str] = []
+    runner_args = ["--no-fail-fast"]
     passthrough: list[str] = []
     test_threads: str | None = None
     index = 0
