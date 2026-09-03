@@ -46,13 +46,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7.0.1
         with:
           repository: DSLZL/CSA-codex
           ref: ${{ inputs.source_commit }}
           persist-credentials: false
 
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.13"
 
@@ -140,7 +140,7 @@ jobs:
             --source "$SOURCE_ROOT" --apply
 
       - name: Install exact compatibility Rust toolchain
-        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           toolchain: ${{ steps.authority.outputs.rust_toolchain }}
           targets: ${{ inputs.target }}
@@ -183,7 +183,7 @@ jobs:
 
       - name: Install Zig for musl
         if: contains(inputs.target, 'linux-musl')
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.14.0
           use-cache: false
@@ -340,7 +340,7 @@ jobs:
           PY
 
       - name: Upload target artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: patched-codex-target-${{ inputs.compat_id }}-${{ inputs.target }}
           path: ${{ env.TARGET_BUNDLE }}
@@ -357,7 +357,7 @@ jobs:
       - name: Save local compiler cache
         if: ${{ !cancelled() && inputs.cache_mode == 'read-write' && steps.compiler_cache.outcome == 'success' && steps.compiler_cache.outputs.cache_hit != 'true' && steps.compiler_cache.outputs.cache_primary_key != '' }}
         continue-on-error: true
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/save@v6.1.0
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: ${{ steps.compiler_cache.outputs.cache_primary_key }}

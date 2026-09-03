@@ -105,7 +105,7 @@ def test_repository_boundary() -> None:
         for value in action.findall(path.read_text(encoding="utf-8")):
             if value.startswith("./"):
                 continue
-            assert re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", value), (path, value)
+            assert re.fullmatch(r"[^@\s]+@v?[0-9]+\.[0-9]+\.[0-9]+", value), (path, value)
 
 
 def test_payload_and_contract_authority(root: Path) -> None:
@@ -488,9 +488,22 @@ def test_workflow_contracts() -> None:
     assert "scripts/generate_release_notes.py" in release
     assert "release-csa.yml" not in workflows and "publish-npm.yml" not in workflows
 
-    sccache_action = "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba"
-    cache_restore_action = "actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306"
-    cache_save_action = "actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306"
+    sccache_action = "mozilla-actions/sccache-action@v0.0.11"
+    cache_restore_action = "actions/cache/restore@v6.1.0"
+    cache_save_action = "actions/cache/save@v6.1.0"
+    all_action_sources = "\n".join([*workflows.values(), cache_setup])
+    for source in (
+        "actions/checkout@v7.0.1",
+        "actions/setup-python@v7.0.0",
+        "actions/upload-artifact@v7.0.1",
+        "actions/download-artifact@v8.0.1",
+        "dtolnay/rust-toolchain@1.95.0",
+        "mlugg/setup-zig@v2.2.1",
+        sccache_action,
+        cache_restore_action,
+        cache_save_action,
+    ):
+        assert source in all_action_sources
     assert sccache_action in cache_setup
     assert cache_restore_action in cache_setup
     assert cache_save_action in target
