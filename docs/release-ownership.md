@@ -9,7 +9,7 @@ producer.
 | --- | --- |
 | Manager CLI, online installer, runtime state, activation, npm distribution | `DSLZL/CSA` |
 | Compatibility payloads, build recipe, patch verification, provenance, aggregation, compatibility releases | `DSLZL/CSA-codex` |
-| Native compiler execution and repository-scoped sccache | One fixed `DSLZL/CSA-codex-{os}-{arch}` build shard |
+| Native compiler execution and repository-scoped local sccache archive | One fixed `DSLZL/CSA-codex-{os}-{arch}` build shard |
 
 Neither repository reads the other's checkout at runtime or in CI. The
 integration boundary is a formal `compat-<compat-id>` release containing a
@@ -24,7 +24,8 @@ install catalog.
    patches, toolchain, targets, and expected artifact identities.
 3. Each target-pinned shard invokes the immutable reusable recipe, verifies the
    exact producer source and patch inputs, and compiles in a disposable upstream
-   checkout using only that shard's cache.
+   checkout using only that shard's local sccache directory. GitHub Actions
+   restores and saves that directory as one repository-scoped cache archive.
 4. The central broker binds each dispatch to its returned child run ID, then
    verifies the repository, request, source, target, filename, size, and SHA-256
    before accepting the binary.
@@ -35,6 +36,10 @@ install catalog.
 
 Compiler caches affect duration only. They never supply compatibility identity,
 artifact authority, or release eligibility.
+
+The producer sets no cache-size threshold and runs no automatic cache cleanup.
+GitHub owns quota enforcement and eviction. Cache archive restore/save failures
+remain non-fatal because an empty cache is a valid compiler-cache state.
 
 The child repositories contain no compatibility payload or publication job and
 receive no central credential. Cross-repository dispatch and artifact retrieval

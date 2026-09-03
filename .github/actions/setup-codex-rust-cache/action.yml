@@ -1,5 +1,16 @@
 name: Setup repository-scoped Codex Rust compiler cache
-description: Configure an isolated Cargo home and one repository-scoped GitHub Actions sccache pool.
+description: Restore and configure one repository-scoped local sccache directory.
+
+outputs:
+  cache_hit:
+    description: Whether the exact immutable cache key was restored.
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache_matched_key:
+    description: Exact or prefix-matched cache key restored by GitHub Actions.
+    value: ${{ steps.restore.outputs.cache-matched-key }}
+  cache_primary_key:
+    description: Immutable key to use when saving the updated local cache.
+    value: ${{ steps.restore.outputs.cache-primary-key }}
 
 inputs:
   cache_mode:
@@ -12,8 +23,14 @@ inputs:
   sccache_version:
     description: Exact sccache version from the reviewed compatibility build profile.
     required: true
+  sccache_dir:
+    description: Absolute local sccache directory below RUNNER_TEMP.
+    required: true
   source_root:
     description: Absolute patched Codex source root used to normalize compiler inputs.
+    required: true
+  target:
+    description: Exact Rust target owned by the calling build shard.
     required: true
 
 runs:
@@ -27,6 +44,7 @@ runs:
         CSA_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         CSA_EVENT_NAME: ${{ github.event_name }}
         CSA_REF: ${{ github.ref }}
+        CSA_SCCACHE_DIR: ${{ inputs.sccache_dir }}
         CSA_SOURCE_ROOT: ${{ inputs.source_root }}
       run: |
         $ErrorActionPreference = 'Stop'
@@ -53,6 +71,7 @@ runs:
         ) + $separator
         foreach ($entry in @(
           @{ Name = 'Cargo home'; Path = $env:CSA_CARGO_HOME },
+          @{ Name = 'sccache directory'; Path = $env:CSA_SCCACHE_DIR },
           @{ Name = 'Codex source'; Path = $env:CSA_SOURCE_ROOT }
         )) {
           $fullPath = [IO.Path]::GetFullPath($entry.Path)
@@ -74,11 +93,26 @@ runs:
         version: v${{ inputs.sccache_version }}
         disable_annotations: true
 
+    - id: restore
+      name: Restore local compiler cache
+      if: inputs.cache_mode != 'off'
+      continue-on-error: true
+      uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ${{ inputs.sccache_dir }}
+        key: csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-${{ github.run_id }}
+        restore-keys: |
+          csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-
+
     - name: Configure repository compiler cache
       if: inputs.cache_mode != 'off'
       shell: pwsh
       env:
         CSA_CACHE_MODE: ${{ inputs.cache_mode }}
+        CSA_CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+        CSA_CACHE_MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+        CSA_CACHE_PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
+        CSA_SCCACHE_DIR: ${{ inputs.sccache_dir }}
         CSA_SCCACHE_VERSION: ${{ inputs.sccache_version }}
         CSA_SOURCE_ROOT: ${{ inputs.source_root }}
       run: |
@@ -94,15 +128,15 @@ runs:
         if ($LASTEXITCODE -ne 0 -or $identity -cne "sccache $env:CSA_SCCACHE_VERSION") {
           throw "sccache identity mismatch: $identity"
         }
-        $rwMode = if ($env:CSA_CACHE_MODE -eq 'read-write') { 'READ_WRITE' } else { 'READ_ONLY' }
+        $sccacheDir = [IO.Path]::GetFullPath($env:CSA_SCCACHE_DIR)
+        New-Item -ItemType Directory -Force -Path $sccacheDir | Out-Null
         $settings = [ordered]@{
           CARGO_INCREMENTAL = '0'
           RUSTC_WRAPPER = $sccache
           SCCACHE_BASEDIRS = [IO.Path]::GetFullPath($env:CSA_SOURCE_ROOT)
           SCCACHE_CACHE_ZSTD_LEVEL = '10'
-          SCCACHE_GHA_ENABLED = 'on'
-          SCCACHE_GHA_RW_MODE = $rwMode
-          SCCACHE_GHA_VERSION = 'csa-codex-v1'
+          SCCACHE_DIR = $sccacheDir
+          SCCACHE_GHA_ENABLED = 'false'
           SCCACHE_IDLE_TIMEOUT = '0'
           SCCACHE_PATH = $sccache
         }
@@ -119,7 +153,10 @@ runs:
           ''
           "- version: ``$env:CSA_SCCACHE_VERSION``"
           "- mode: ``$env:CSA_CACHE_MODE``"
-          '- generation: `csa-codex-v1`'
+          "- primary archive key: ``$env:CSA_CACHE_PRIMARY_KEY``"
+          "- restored archive key: ``$env:CSA_CACHE_MATCHED_KEY``"
+          "- exact archive hit: ``$env:CSA_CACHE_HIT``"
           '- compression: `zstd level 10`'
+          '- backend: local disk with GitHub Actions archive restore/save'
           '- source prefix normalization: enabled'
         ) | Add-Content -Path $env:GITHUB_STEP_SUMMARY -Encoding utf8

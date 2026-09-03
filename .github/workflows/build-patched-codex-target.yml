@@ -170,13 +170,16 @@ jobs:
               ;;
           esac
 
-      - name: Configure repository-scoped sccache
+      - id: compiler_cache
+        name: Configure repository-scoped sccache
         uses: ./.github/actions/setup-codex-rust-cache
         with:
           cache_mode: ${{ inputs.cache_mode }}
           cargo_home: ${{ runner.temp }}/c/h
+          sccache_dir: ${{ runner.temp }}/c/k
           sccache_version: ${{ steps.authority.outputs.sccache_version }}
           source_root: ${{ env.SOURCE_ROOT }}
+          target: ${{ inputs.target }}
 
       - name: Install Zig for musl
         if: contains(inputs.target, 'linux-musl')
@@ -344,3 +347,17 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: ${{ inputs.retention_days }}
+
+      - name: Stop local sccache server before archiving
+        if: ${{ always() && inputs.cache_mode != 'off' }}
+        continue-on-error: true
+        shell: bash
+        run: '"$SCCACHE_PATH" --stop-server'
+
+      - name: Save local compiler cache
+        if: ${{ !cancelled() && inputs.cache_mode == 'read-write' && steps.compiler_cache.outcome == 'success' && steps.compiler_cache.outputs.cache_hit != 'true' && steps.compiler_cache.outputs.cache_primary_key != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.compiler_cache.outputs.cache_primary_key }}

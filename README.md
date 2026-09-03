@@ -25,9 +25,11 @@ in `DSLZL/CSA`.
 
 Native compilation runs in six public build-shard repositories named
 `DSLZL/CSA-codex-{windows,linux,macos}-{x64,arm64}`. Each shard fixes one target
-and runner, owns its repository-scoped sccache data, and returns one binary plus
-one exact target record. Only this repository aggregates those records or
-publishes a compatibility Release.
+and runner, restores and saves its local sccache directory through that
+repository's GitHub Actions cache, and returns one binary plus one exact target
+record. Cache restore/save failures are non-fatal and GitHub owns cache capacity
+and eviction. Only this repository aggregates records or publishes a
+compatibility Release.
 
 ## Local verification
 

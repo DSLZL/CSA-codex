@@ -489,9 +489,14 @@ def test_workflow_contracts() -> None:
     assert "release-csa.yml" not in workflows and "publish-npm.yml" not in workflows
 
     sccache_action = "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba"
+    cache_restore_action = "actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306"
+    cache_save_action = "actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306"
     assert sccache_action in cache_setup
+    assert cache_restore_action in cache_setup
+    assert cache_save_action in target
     assert "version: v${{ inputs.sccache_version }}" in cache_setup
-    assert "actions/cache@" not in cache_setup and "github.sha" not in cache_setup
+    assert "continue-on-error: true" in cache_setup
+    assert "github.sha" not in cache_setup
     for guard_input in ("CSA_EVENT_NAME", "CSA_DEFAULT_BRANCH", "CSA_REF"):
         assert guard_input in cache_setup
     assert "Read-write compiler cache access requires a default-branch workflow dispatch." in (
@@ -501,11 +506,16 @@ def test_workflow_contracts() -> None:
         "RUSTC_WRAPPER",
         "SCCACHE_BASEDIRS",
         "SCCACHE_CACHE_ZSTD_LEVEL",
+        "SCCACHE_DIR",
         "SCCACHE_GHA_ENABLED",
-        "SCCACHE_GHA_RW_MODE",
-        "SCCACHE_GHA_VERSION = 'csa-codex-v1'",
     ):
         assert setting in cache_setup
+    assert "SCCACHE_GHA_ENABLED = 'false'" in cache_setup
+    assert "SCCACHE_GHA_RW_MODE" not in cache_setup
+    assert "SCCACHE_GHA_VERSION" not in cache_setup
+    assert "SCCACHE_CACHE_SIZE" not in cache_setup
+    assert "csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-" in cache_setup
+    assert "${{ github.run_id }}" in cache_setup
 
     assert "uses: ./.github/actions/setup-codex-rust-cache" in target
     assert target.index("dtolnay/rust-toolchain@") < target.index(
@@ -525,6 +535,11 @@ def test_workflow_contracts() -> None:
     assert "test \"$GITHUB_EVENT_NAME\" = workflow_dispatch" in target
     assert "refs/heads/$DEFAULT_BRANCH" in target
     assert "sccache_version: ${{ steps.authority.outputs.sccache_version }}" in target
+    assert "sccache_dir: ${{ runner.temp }}/c/k" in target
+    assert "target: ${{ inputs.target }}" in target
+    assert "steps.compiler_cache.outputs.cache_primary_key" in target
+    assert "inputs.cache_mode == 'read-write'" in target
+    assert target.count("continue-on-error: true") >= 2
     assert "CARGO_FRONTEND" not in target and "--cargo-frontend" not in target
     assert target.count("--timings") == 2
 
@@ -541,7 +556,10 @@ def test_workflow_contracts() -> None:
     assert "request_id=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" in release
 
     for name, workflow in workflows.items():
-        assert "actions/cache@" not in workflow, name
+        if name == "build-patched-codex-target.yml":
+            assert cache_save_action in workflow
+        else:
+            assert "actions/cache/" not in workflow, name
         assert "actions/caches/$cache_id" not in workflow, name
         assert "gh cache delete" not in workflow, name
         if name != "build-patched-codex-target.yml":
