@@ -58,6 +58,7 @@ def test_runner_argv(argv: list[str], test_runner: str) -> list[str]:
     # Prefer native nextest options over emulated test-binary arguments. Some
     # upstream test targets reject otherwise valid libtest flags after `--`.
     runner_args: list[str] = []
+    passthrough: list[str] = []
     test_threads: str | None = None
     index = 0
     while index < len(libtest_args):
@@ -71,7 +72,8 @@ def test_runner_argv(argv: list[str], test_runner: str) -> list[str]:
         elif argument == "--skip":
             if index + 1 == len(libtest_args):
                 raise ContractError("nextest mapping requires a value after --skip")
-            runner_args.extend((argument, libtest_args[index + 1]))
+            # Nextest only exposes skip through its emulated libtest arguments.
+            passthrough.extend((argument, libtest_args[index + 1]))
             index += 1
         elif argument.startswith("--test-threads="):
             test_threads = argument.partition("=")[2]
@@ -98,7 +100,10 @@ def test_runner_argv(argv: list[str], test_runner: str) -> list[str]:
         if not test_threads.isdecimal() or int(test_threads) < 1:
             raise ContractError("nextest test thread count must be a positive integer")
         runner_args.append(f"--test-threads={test_threads}")
-    return ["cargo", "nextest", "run", *runner_args, *cargo_args]
+    mapped = ["cargo", "nextest", "run", *runner_args, *cargo_args]
+    if passthrough:
+        mapped.extend(("--", *passthrough))
+    return mapped
 
 
 def load_contract(path: Path, compat_id: str) -> dict[str, Any]:

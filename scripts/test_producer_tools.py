@@ -190,13 +190,14 @@ def test_nextest_runner_mapping() -> None:
         "cargo",
         "nextest",
         "run",
+        "-p",
+        "codex-tui",
+        "--lib",
+        "--",
         "--skip",
         "first",
         "--skip",
         "second",
-        "-p",
-        "codex-tui",
-        "--lib",
     ]
     doctest = ["cargo", "test", "-p", "codex-core", "--doc"]
     assert test_runner_argv(doctest, "nextest") == doctest
