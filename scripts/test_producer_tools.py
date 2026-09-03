@@ -164,12 +164,39 @@ def test_nextest_runner_mapping() -> None:
         "cargo",
         "nextest",
         "run",
+        "--run-ignored",
+        "ignored-only",
+        "--no-capture",
         "-p",
         "protocol",
         "generate",
-        "--",
-        "--ignored",
-        "--nocapture",
+    ]
+    assert test_runner_argv(
+        [
+            "cargo",
+            "test",
+            "-p",
+            "codex-tui",
+            "--lib",
+            "--",
+            "--skip",
+            "first",
+            "--skip",
+            "second",
+            "--format=terse",
+        ],
+        "nextest",
+    ) == [
+        "cargo",
+        "nextest",
+        "run",
+        "--skip",
+        "first",
+        "--skip",
+        "second",
+        "-p",
+        "codex-tui",
+        "--lib",
     ]
     doctest = ["cargo", "test", "-p", "codex-core", "--doc"]
     assert test_runner_argv(doctest, "nextest") == doctest
