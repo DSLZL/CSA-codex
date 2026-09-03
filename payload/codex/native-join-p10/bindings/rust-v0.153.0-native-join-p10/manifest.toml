@@ -1,0 +1,181 @@
+schema = 2
+family_id = "native-join-p10"
+compat_id = "rust-v0.153.0-native-join-p10"
+codex_version = "0.153.0"
+upstream_tag = "rust-v0.153.0"
+upstream_commit = "41e22fee981a63b3698df7ed36bad393cda24715"
+patch_api = 1
+patch_set_version = 10
+rust_toolchain = "1.95.0"
+rustc_commit = "59807616e1fa2540724bfbac14d7976d7e4a3860"
+build_target = "x86_64-pc-windows-msvc"
+source_hashes = "expected/source-hashes.json"
+source_hashes_sha256 = "8b54f912d0e13f42a9a783c3eb4597365046eb67fe5c53b9eb1d7fea5bc7e6cf"
+preimage_absent = [
+  "codex-rs/core/src/agent/completion.rs",
+  "codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs",
+  "codex-rs/core/src/tools/handlers/multi_agents_v2/join_many.rs",
+  "codex-rs/core/tests/suite/multi_agent_join.rs",
+  "codex-rs/tui/src/app/subagent_live.rs",
+  "codex-rs/tui/src/csa_graphics.rs",
+  "codex-rs/tui/src/csa_orbit.rs",
+  "codex-rs/tui/src/subagent_live_panel.rs",
+  "codex-rs/tui/src/tui/mouse_capture.rs",
+  "codex-rs/tui/src/tui/mouse_capture_tests.rs",
+]
+
+[[patches]]
+path = "patches/0010-core-owned-files.patch"
+sha256 = "0421fc72ce734464ccc802cc89b2db114e13743ea2d5b1c3ad02438f967d3ee9"
+
+[[patches]]
+path = "patches/0020-tui-owned-files.patch"
+sha256 = "993a15a550ed08a4b7470329d1c28ad3cf6d2639cc31479cba9d6cf56d5742d3"
+
+[[patches]]
+path = "patches/1000-core-adapter.patch"
+sha256 = "44b8faf6bf8edfb97c981237e31d877abf4bbd478ce8d1e230ad2c1720e8e81c"
+
+[[patches]]
+path = "patches/1100-tui-adapter.patch"
+sha256 = "bf8e2b89b7ace828a6b4e5068a8cae0c4e41a32193018008f3c98e3c2760f643"
+
+[[patches]]
+path = "patches/1200-runtime-state-adapter.patch"
+sha256 = "f4043325ee276c5666a1c7b52d94b60bcc49d64492ea7369ca89c0186ea21a89"
+
+[preimage]
+"codex-rs/analytics/src/reducer.rs" = "ec36bb4cf28ba4f95b9b3834e41bbb6220edbd87f0810c442fa09754b2ac1661"
+"codex-rs/app-server-protocol/src/protocol/v2/item.rs" = "c8ac3734a6fc193c8f0c365f53f16f56f39294a7eaa216183f21ed148acc8873"
+"codex-rs/config/src/types.rs" = "c5a81049a05861c6a8a4ca7384f410ebcd4438e3712d31a32a32f888e1bb1a7a"
+"codex-rs/core/config.schema.json" = "692da7699367f6f4fbbd46c0021278c1311440bcebf0bcb9b836690c05e56196"
+"codex-rs/core/src/agent/control.rs" = "06fa53e7b587945b23bb178252566101ca3a8b30ea5d4809d56decbed10f81bb"
+"codex-rs/core/src/agent/control/spawn.rs" = "b41c919444d5fe752fa1b2ee8db45df229a42c61fc9aa5c07c3a197aa99f90a9"
+"codex-rs/core/src/agent/control_tests.rs" = "8611a851d0c72a2e183b164e09e668d86c991efeb2168b58ee29dc4fc134ddaf"
+"codex-rs/core/src/agent/mod.rs" = "fb73c931b6a364a0f970e304eb45776de81c55eff616d2c7faf221b706eddfed"
+"codex-rs/core/src/config/config_tests.rs" = "643ebdb1aef383281e408f4aae6171ac56e04c346eacbcc280f9add992e8bc27"
+"codex-rs/core/src/config/mod.rs" = "b3eb0a9751522f7f6f7a7bd1b21253f2fcb4e669955819bfb6d0a7425e1fed9e"
+"codex-rs/core/src/session/mod.rs" = "2e4010b30003a0c3f319452c6cf453ca18de43faace9a4753f80bedaebd57075"
+"codex-rs/core/src/session/tests.rs" = "f30ed7471f2392db0f7f94acf6a09261bf52127811407855b81484b8ee72063d"
+"codex-rs/core/src/test_support.rs" = "f0128850968b5b55b11e5477e4cd19fd0ae14864e45fb3727a3b307af8a51b14"
+"codex-rs/core/src/tools/handlers/mod.rs" = "2c61072f3366ece854ecffa85874dda405d3d59462471b693384fa600367149e"
+"codex-rs/core/src/tools/handlers/multi_agents_spec.rs" = "c4c5d7bb0a6cc22e27bf6f26bb3e14abebfdbdfce64a92d916e20ccc268c2f2d"
+"codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs" = "84d9ac59c5a6e843379ca8b0450df65c83f03172e8bc7fa04083e7810e8f56c2"
+"codex-rs/core/src/tools/handlers/multi_agents_tests.rs" = "bdf21480f0d2422cc9694e557f0464a4594f12dc474634649249bed56bad8c3a"
+"codex-rs/core/src/tools/handlers/multi_agents_v2.rs" = "a60e2b7ff40dc1d686db6b91dbcac9a0bec471503d25ff1c407ed5a619777c0c"
+"codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs" = "82f738243e40f075bdf2dc08613c5657e8ab5c6aa92aea0644c787a3ea65b317"
+"codex-rs/core/src/tools/handlers/test_sync.rs" = "b0e2a02e5d70c872010d17c91b797fef6e64eefa96ede02beca8009a752079b5"
+"codex-rs/core/src/tools/spec_plan.rs" = "fef34c2bdc27159e4137321526ce8df3e453d3b6538c9db09425561c2320b43e"
+"codex-rs/core/tests/suite/mod.rs" = "eb504830b805b481141d9fd00d96b3551444dcbb0e93c605fe8fdc7b6520e6df"
+"codex-rs/exec/src/event_processor_with_jsonl_output.rs" = "2f71fbf8a1b0a79bd342ed3c9caa414f1c5e06d9e52d6a94461799f304a9f255"
+"codex-rs/exec/src/exec_events.rs" = "c404928e0f2a463e19d1b263081c9d5e0380aec9f651a05ee0766f7bb7527f32"
+"codex-rs/install-context/src/lib.rs" = "18eef650f329b27fbfe986f88c565230d347cb6f5575e953260ace7d794b51b8"
+"codex-rs/protocol/src/items.rs" = "4afe2f1863f49d73065ddaec1caf481fa29f8c88d92b575ecdc67b8d26ef06b1"
+"codex-rs/protocol/src/legacy_events.rs" = "43a755f0cd0cefb2149e3d7bcdecdaf2d214a7828b2c4fc85dc9e0b9e6bd50d3"
+"codex-rs/state/src/migrations.rs" = "ad02ea5bc976f67f9b135398330c6c371624911974907dc78c77a84a8da7419e"
+"codex-rs/state/src/migrations_tests.rs" = "8281aa985b7db08cc4d553c6ae3fa08f561102aac9003e1c0c659208c5fd9fae"
+"codex-rs/state/src/sqlite.rs" = "f5c8a7705c1b064a398d04a1be08d2bf2550a47ee030583ccad06713d5e992e8"
+"codex-rs/thread-manager-sample/src/main.rs" = "d2386e71df5ac332540105dfd3006fae2e746b2c63b8a8b17b35086addb3570f"
+"codex-rs/tui/src/app.rs" = "d39daf88af08db7da630f5e163e68993b040adf2434bda6550dcdcfafc010567"
+"codex-rs/tui/src/app/agent_status_feed.rs" = "3b5fa23633fb409df5f50b1a0a246e2c1c7790c9da2697f5311befcbee84fc0b"
+"codex-rs/tui/src/app/agent_status_feed_tests.rs" = "8629f14314b965df7a29979e2ceac898711e3bc2d4014ca1843e6510b2a908e5"
+"codex-rs/tui/src/app/input.rs" = "a424cf1b8bfaae41e7e8dde0aec01a979a099dba473d41a8cc5614233b1a4d05"
+"codex-rs/tui/src/app/resize_reflow.rs" = "55b3afa172b9616374e014d713cd531ee049725e88e88329c1602357824df5f3"
+"codex-rs/tui/src/app/resize_reflow_tests.rs" = "8ce674a95021a1ced6fd8e592e4122377aed2167051c69f615de8529f7c1de0f"
+"codex-rs/tui/src/app/session_lifecycle.rs" = "17a2c54df66a29753471a4792fd66d6f42fa094d5546cf42452fdf1fb5bceb08"
+"codex-rs/tui/src/app/startup.rs" = "4e08c0c29a32650c43d8e1cfe3f081e15b078cfc349ff504b44c0d160e8f1d8d"
+"codex-rs/tui/src/app/test_support.rs" = "0b0fec14ce2150a91ac24725f2081e29755e2f862278beb0d63cd6036be99f28"
+"codex-rs/tui/src/app/tests.rs" = "e83760ace81e1e563e863f8ef5d4d231d0711d36182f342044416ffc99921008"
+"codex-rs/tui/src/app/tests/key_chords.rs" = "1e6f99c36b63b05d39a85e06118e1ffa1dda8c2beee781b5ef733e8b3a05db26"
+"codex-rs/tui/src/app/tests/session_lifecycle_requests.rs" = "deb0d4b68d6b1337a641683da5534ac7a6acb4372f400854fdf5d9ff3d8bf136"
+"codex-rs/tui/src/app/thread_event_buffer.rs" = "16094f2b2c742cbf0661e7cda5d8a3b2c691373b873332aaa278633110c2ad85"
+"codex-rs/tui/src/app/thread_events.rs" = "f83eb65cbc1bfa2b4b2cf9a6a52cd0eed00f1b792b4463595787aa7fe97a7b6b"
+"codex-rs/tui/src/app/thread_routing.rs" = "93af9728b626ed0440db7b4b9e6c3a8d64e47b39f5f0c16fdc0377b7adab5f14"
+"codex-rs/tui/src/chatwidget.rs" = "7f5016750028144f1cfaeaf73889ab96e88606225d1852912dfb487dbecb15ef"
+"codex-rs/tui/src/chatwidget/rendering.rs" = "ce28cdd4d8013e98b98456193f5ca93cb4660251d0afebdeb9a26d9afee13cf2"
+"codex-rs/tui/src/chatwidget/rendering_tests.rs" = "3578d34d4b380dcf400bc35396bfb2f5a31d32a28b9eaee26ff0a7d394d6ceb7"
+"codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__app_server_collab_wait_items_render_history.snap" = "1e1c42d9406dc581206a0a2494d5f56ef692f9ec9e0342d05649b239d7df46e6"
+"codex-rs/tui/src/chatwidget/status_surfaces.rs" = "ed0d34e3a8da0047128f99e2768c8881cbf3b1722a351a973e7ca4f3d7550bc9"
+"codex-rs/tui/src/chatwidget/tests/app_server.rs" = "0dcb052b60cffa84e7d433471a40a3ae15e4afd0ae7e00887aefe2d46e4b79e9"
+"codex-rs/tui/src/chatwidget/tests/composer_submission.rs" = "98d4128240b2204c4af5d226137851e870e06c3d5c11430f9e7317a1d00ae595"
+"codex-rs/tui/src/chatwidget/tests/terminal_title.rs" = "c9c3e9d80566bf33797b394a6d61abc4dff3e97e6ce22a602b38a5fd36f31895"
+"codex-rs/tui/src/custom_terminal.rs" = "daebfc8a66a04cab24be4ba7f3c86f37b3b3212e55bf30f90096eefa5f35a710"
+"codex-rs/tui/src/cwd_prompt.rs" = "3d1c77c093dc92766e942fdcbb6edbf44e8997e680db0bf58c307d554f2f99d9"
+"codex-rs/tui/src/external_agent_config_migration/mod.rs" = "4c64d96e3df60630a453f7dd7958d17fe846f521b0421742ebe9d0dad280f8ce"
+"codex-rs/tui/src/external_agent_config_migration/source.rs" = "938958938cc593bc5f62d763029549e0caf84fb96402ba67d3e274da94225b08"
+"codex-rs/tui/src/history_cell/session.rs" = "5e4f8f1b80d496681007c31c6b253dd42dadfda5c64f029249d03eb327ec8238"
+"codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__session_header_clamps_to_narrow_width.snap" = "c6b5b1f8a534f967bdd35d06590677a67a3b651a4f27a55c0971913432b4db6e"
+"codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__session_header_halfwidth_directory.snap" = "d58d0131d1d9ee0463ca268cd4d2e353c8b28884f9e0727b9f635605a756cdc8"
+"codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__session_header_halfwidth_sound_marks.snap" = "ab039f71f035da2cbd5fcd34cfca5b981430d691202fbf75e35ca3d7ad3d1433"
+"codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__session_header_indicates_yolo_mode.snap" = "44574bab826bd065957aad480527b45a22f5ea88eec3e5f8fb900b09e646bfbc"
+"codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__session_info_availability_nux_tooltip_snapshot.snap" = "ff27952438f1e130d0f7fdefdb8ef87aed6c08a3ac0349abf535d39ba2452162"
+"codex-rs/tui/src/history_cell/tests.rs" = "a52170ebf11c8937918a5e89c93d8bd091936bfb4462cdfb8ad925dd4b910631"
+"codex-rs/tui/src/lib.rs" = "dacd2ea2756a3af956803ae3dbc1c5d4fd2c22fbdeeab02f0bca57856285d6cf"
+"codex-rs/tui/src/model_migration.rs" = "6fb21a4359ef0cb99f87e2f98958a911e87e64756a166b676986a86206cf1685"
+"codex-rs/tui/src/motion.rs" = "db2af4f87ef3422ba26b6e5e48f6b4694dfc0e8fc4fabf51f9b2300215c63221"
+"codex-rs/tui/src/multi_agents.rs" = "3f04717aff07fef5bdd9ba643d6db2fab8758cc55cfb990a705726e85745167c"
+"codex-rs/tui/src/onboarding/onboarding_screen.rs" = "ad314926b7be70b6cdc1bb7f61b65618727d142e740fb05ca03e2084c0f16d22"
+"codex-rs/tui/src/pets/image_protocol.rs" = "915c257bc28478a345ef738d5630f0ff5c66b78f8f150da8de40b6f52843293c"
+"codex-rs/tui/src/pets/mod.rs" = "55244e5606ef3ec698ea52e3b90475ea953207dacb7074d86e55a5b370d63cf6"
+"codex-rs/tui/src/resume_picker.rs" = "4b1bc68c86385aed0627185da5b06e6c89f0907a3ee366020791f3cff0622366"
+"codex-rs/tui/src/snapshots/codex_tui__app__tests__clear_ui_after_long_transcript_fresh_header_only.snap" = "df60cf6c1374ebb352d2144a21a48ec034652ebb91353b8aa1675fdf8766e84d"
+"codex-rs/tui/src/snapshots/codex_tui__app__tests__clear_ui_header_fast_status_fast_capable_models.snap" = "c014365a4f3a3f80f89db77213364f900925f1a8e1b9cda07164fcc73271c61d"
+"codex-rs/tui/src/snapshots/codex_tui__multi_agents__tests__collab_agent_transcript.snap" = "04cb6a320f427ee5e86a4e6db9b8377749db4fa9217fba8affc1c31b246352ee"
+"codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_fresh_session_transitions.snap" = "fbd23d34e1cc9e19e658549efdfd74bdea140833b9abaf16cc4a9a9190572673"
+"codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_full_frames.snap" = "dc489a7b3eae4841555c6051f5bb005a6726a204330dd5319fa0faf321bf951b"
+"codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_onboarding_transition.snap" = "82ed0c1b1bb3a67a381d55bf0172f494a8f4dd3473588b191ce0cdcd6c31d482"
+"codex-rs/tui/src/startup_draft.rs" = "294d61c9ddb101e983aa9cd171bb8aee093e5c1176498d3daf6110b0f4eea70e"
+"codex-rs/tui/src/startup_hooks_review.rs" = "f9b7cfe51010fb7246b7e2aa384ee9cda34e5d05f917a6232661ca762c5e7325"
+"codex-rs/tui/src/status/helpers.rs" = "08594558bbc65df0391c91a57e1ae504cff04638c28607fccc354fd17137988d"
+"codex-rs/tui/src/thread_transcript.rs" = "bf77cf85d1f96ecc061dc4e3a1d73bbeab6a64dcda07e3463d52f1a5667474d6"
+"codex-rs/tui/src/tui.rs" = "d1d310f1ab2954ab3939a3db5f8b3afef90c5c0021197e58890f6367b0846655"
+"codex-rs/tui/src/tui/event_stream.rs" = "559da6e22e7c22784e281b7d1fac757854c180a7da44bc53efc7cc8896c08bf2"
+"codex-rs/tui/src/tui/frame_requester.rs" = "ed05cdc6741c919430eb1910b0aa25e89a4aeba4c9510caa49ee4611d3ac5658"
+"codex-rs/tui/src/tui/screen_size.rs" = "0c498e362be4199b9a442cccd871bf0fcf79fecdb59e681a5c50d13fe4d71722"
+"codex-rs/tui/src/unarchive_prompt.rs" = "c71e72f3b9e12fc1d0bbfa2460ed95be0486f614bbe9e49e0ad1c1fe04949337"
+"codex-rs/tui/src/update_prompt.rs" = "47225c724f8da520f0474a5124dc989378f5ace17cfcaabd38eda90da698b227"
+"codex-rs/tui/src/version.rs" = "c908ba75a710fb92d84995f8b512f109930501e2cba8f04a33f41b4bd3c9cbb6"
+
+[artifacts."aarch64-apple-darwin"]
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--aarch64-apple-darwin--codex"
+filename = "codex"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 1
+
+[artifacts."aarch64-pc-windows-msvc"]
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--aarch64-pc-windows-msvc--codex.exe"
+filename = "codex.exe"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 1
+
+[artifacts."aarch64-unknown-linux-musl"]
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--aarch64-unknown-linux-musl--codex"
+filename = "codex"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 1
+
+[artifacts."x86_64-apple-darwin"]
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--x86_64-apple-darwin--codex"
+filename = "codex"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 1
+
+[artifacts."x86_64-pc-windows-msvc"]
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--x86_64-pc-windows-msvc--codex.exe"
+filename = "codex.exe"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 1
+
+[artifacts."x86_64-unknown-linux-musl"]
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--x86_64-unknown-linux-musl--codex"
+filename = "codex"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 1
+[files]
+"expected/source-hashes.json" = "bindings/rust-v0.153.0-native-join-p10/expected/source-hashes.json"
+"patches/0010-core-owned-files.patch" = "shared/additions/0010-core-owned-files.patch"
+"patches/0020-tui-owned-files.patch" = "shared/additions/0020-tui-owned-files.patch"
+"patches/1000-core-adapter.patch" = "bindings/rust-v0.153.0-native-join-p10/patches/1000-core-adapter.patch"
+"patches/1100-tui-adapter.patch" = "bindings/rust-v0.153.0-native-join-p10/patches/1100-tui-adapter.patch"
+"patches/1200-runtime-state-adapter.patch" = "bindings/rust-v0.153.0-native-join-p10/patches/1200-runtime-state-adapter.patch"
+"test-contract.json" = "bindings/rust-v0.153.0-native-join-p10/test-contract.json"
