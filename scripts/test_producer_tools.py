@@ -590,14 +590,18 @@ def test_workflow_contracts() -> None:
     assert "matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}" in release
     assert "matrix.repository" in release and "matrix.workflow" in release
     assert 'X-GitHub-Api-Version: 2026-03-10' in release
-    assert 'response.get("workflow_run_id")' in release
+    assert "      reuse_builds:" in release
+    assert 'response.get("id" if reuse else "workflow_run_id")' in release
+    assert "Existing builds cannot be reused after their build inputs changed." in release
+    assert "reused target set differs" in release
+    assert "needs.plan.outputs.artifact_source_commit" in release
     assert "gh run watch" in release and "gh run download" in release
     assert "scripts/compat_release.py verify-target" in release
     assert "needs: [plan, build]" in release
     assert "needs.validate" not in release
     assert release.count("${{ secrets.BUILD_FANOUT_TOKEN }}") == 3
     assert "timeout-minutes: 360" in release
-    assert "request_id=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" in release
+    assert 'request_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"' in release
 
     for name, workflow in workflows.items():
         if name == "build-patched-codex-target.yml":

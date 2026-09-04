@@ -26,9 +26,11 @@ install catalog.
    exact producer source and patch inputs, and compiles in a disposable upstream
    checkout using only that shard's local sccache directory. GitHub Actions
    restores and saves that directory as one repository-scoped cache archive.
-4. The central broker binds each dispatch to its returned child run ID, then
-   verifies the repository, request, source, target, filename, size, and SHA-256
-   before accepting the binary.
+4. The central broker binds each target to an exact child run ID, either returned
+   by a new dispatch or supplied as a complete existing build set, then verifies
+   the repository, request, source, target, filename, size, and SHA-256 before
+   accepting the binary. Existing builds are reusable only while every build
+   input remains unchanged.
 5. Central packaging requires the complete target inventory and emits provenance,
    checksums, and the display-only install catalog.
 6. Publication is permitted only from the reviewed default-branch commit and an
