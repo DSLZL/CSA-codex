@@ -43,7 +43,7 @@ TARGET = "x86_64-pc-windows-msvc"
 P10_MANIFEST = (
     REPOSITORY
     / "payload/codex/native-join-p10/bindings/"
-    "rust-v0.151.0-native-join-p10/manifest.toml"
+    "rust-v0.153.0-native-join-p10/manifest.toml"
 )
 
 
@@ -129,7 +129,7 @@ def test_payload_and_contract_authority(root: Path) -> None:
     )
 
     family = verify_family(REPOSITORY / "payload/codex/native-join-p10")
-    assert family["status"] == "pass" and family["bindings"] == 1
+    assert family["status"] == "pass" and family["bindings"] == 2
     contract = load_contract(P10_MANIFEST.with_name("test-contract.json"), P10_MANIFEST.parent.name)
     assert contract["schema"] == 1
     assert contract["build"]["artifact"].endswith("/release/codex.exe")
@@ -151,6 +151,7 @@ def test_nextest_runner_mapping() -> None:
         "cargo",
         "nextest",
         "run",
+        "--no-fail-fast",
         "--test-threads=1",
         "-p",
         "codex-tui",
@@ -164,12 +165,42 @@ def test_nextest_runner_mapping() -> None:
         "cargo",
         "nextest",
         "run",
+        "--no-fail-fast",
+        "--run-ignored",
+        "ignored-only",
+        "--no-capture",
         "-p",
         "protocol",
         "generate",
+    ]
+    assert test_runner_argv(
+        [
+            "cargo",
+            "test",
+            "-p",
+            "codex-tui",
+            "--lib",
+            "--",
+            "--skip",
+            "first",
+            "--skip",
+            "second",
+            "--format=terse",
+        ],
+        "nextest",
+    ) == [
+        "cargo",
+        "nextest",
+        "run",
+        "--no-fail-fast",
+        "-p",
+        "codex-tui",
+        "--lib",
         "--",
-        "--ignored",
-        "--nocapture",
+        "--skip",
+        "first",
+        "--skip",
+        "second",
     ]
     doctest = ["cargo", "test", "-p", "codex-core", "--doc"]
     assert test_runner_argv(doctest, "nextest") == doctest

@@ -21,14 +21,6 @@ ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]*\Z")
 FLAKY_TUI_BACKGROUND_EXIT_STEP = "TUI background exit isolation"
 FAILURE_OUTPUT_TAIL_BYTES = 256 * 1024
 TEST_RUNNERS = ("cargo", "nextest")
-NEXTEST_PASSTHROUGH_LIBTEST_FLAGS = {
-    "--exact",
-    "--ignored",
-    "--include-ignored",
-    "--nocapture",
-}
-
-
 class ContractError(RuntimeError):
     pass
 
@@ -63,16 +55,24 @@ def test_runner_argv(argv: list[str], test_runner: str) -> list[str]:
         return list(argv)
 
     libtest_args = argv[separator + 1 :] if separator < len(argv) else []
+    # Prefer native nextest options over emulated test-binary arguments. Some
+    # upstream test targets reject otherwise valid libtest flags after `--`.
+    runner_args = ["--no-fail-fast"]
     passthrough: list[str] = []
     test_threads: str | None = None
     index = 0
     while index < len(libtest_args):
         argument = libtest_args[index]
-        if argument in NEXTEST_PASSTHROUGH_LIBTEST_FLAGS:
-            passthrough.append(argument)
+        if argument == "--ignored":
+            runner_args.extend(("--run-ignored", "ignored-only"))
+        elif argument == "--include-ignored":
+            runner_args.extend(("--run-ignored", "all"))
+        elif argument == "--nocapture":
+            runner_args.append("--no-capture")
         elif argument == "--skip":
             if index + 1 == len(libtest_args):
                 raise ContractError("nextest mapping requires a value after --skip")
+            # Nextest only exposes skip through its emulated libtest arguments.
             passthrough.extend((argument, libtest_args[index + 1]))
             index += 1
         elif argument.startswith("--test-threads="):
@@ -96,7 +96,6 @@ def test_runner_argv(argv: list[str], test_runner: str) -> list[str]:
             )
         index += 1
 
-    runner_args: list[str] = []
     if test_threads is not None:
         if not test_threads.isdecimal() or int(test_threads) < 1:
             raise ContractError("nextest test thread count must be a positive integer")
