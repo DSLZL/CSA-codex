@@ -601,7 +601,7 @@ def test_workflow_contracts() -> None:
     assert "needs.validate" not in release
     assert release.count("${{ secrets.BUILD_FANOUT_TOKEN }}") == 3
     assert "timeout-minutes: 360" in release
-    assert "request_id=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" in release
+    assert 'request_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"' in release
 
     for name, workflow in workflows.items():
         if name == "build-patched-codex-target.yml":
