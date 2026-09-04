@@ -129,7 +129,7 @@ def test_payload_and_contract_authority(root: Path) -> None:
     )
 
     family = verify_family(REPOSITORY / "payload/codex/native-join-p10")
-    assert family["status"] == "pass" and family["bindings"] == 2
+    assert family["status"] == "pass" and family["bindings"] == 3
     contract = load_contract(P10_MANIFEST.with_name("test-contract.json"), P10_MANIFEST.parent.name)
     assert contract["schema"] == 1
     assert contract["build"]["artifact"].endswith("/release/codex.exe")

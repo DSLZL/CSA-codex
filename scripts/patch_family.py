@@ -407,7 +407,7 @@ def verify_family(family_root: Path) -> dict[str, object]:
         compat_id = str(payload.manifest["compat_id"])
         absent = set(payload.manifest["preimage_absent"])
         addition_paths: set[str] = set()
-        adapter_count = 0
+        non_addition_count = 0
         for patch in payload.manifest["patches"]:
             logical = str(patch["path"])
             physical = _payload_file(payload, logical)
@@ -422,21 +422,22 @@ def verify_family(family_root: Path) -> dict[str, object]:
                 if touched & absent:
                     raise PatchFamilyError(f"shared exact patch owns an absent path: {logical}")
                 shared_patches[relative] = shared_patches.get(relative, 0) + 1
+                non_addition_count += 1
             elif relative.startswith(f"bindings/{compat_id}/patches/"):
                 if touched & absent:
                     raise PatchFamilyError(f"binding adapter contains a CSA-owned addition: {logical}")
                 adapter_files.add(relative)
                 adapter_digests.setdefault(_digest(physical.read_bytes()), []).append(relative)
                 adapter_loc += added_lines(physical)
-                adapter_count += 1
+                non_addition_count += 1
             else:
                 raise PatchFamilyError(f"patch has unsupported family ownership: {relative}")
         if addition_paths != absent:
             raise PatchFamilyError(
                 f"shared additions do not exactly own absent preimages for {compat_id}"
             )
-        if not addition_paths or adapter_count == 0:
-            raise PatchFamilyError(f"binding must use shared additions and adapters: {compat_id}")
+        if not addition_paths or non_addition_count == 0:
+            raise PatchFamilyError(f"binding must use shared additions and patches: {compat_id}")
     binding_count = len(bindings)
     if any(count != binding_count for count in shared_additions.values()):
         raise PatchFamilyError("every shared addition must be reused by every binding")
