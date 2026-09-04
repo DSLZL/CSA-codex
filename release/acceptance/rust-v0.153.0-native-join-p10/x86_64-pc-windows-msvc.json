@@ -6,7 +6,7 @@
   "artifact_filename": "codex.exe",
   "artifact_sha256": "0e9998bf62ebb4b4ab832f66d41b84e73bc6cd4316960e286abf90374a1cc2ad",
   "artifact_size": 295319040,
-  "manifest_sha256": "eb7fbf2fee57f03896bba7404f113c025f9274a0e76002260063c1b3f2e6f04c",
+  "manifest_sha256": "cba23e0e2c98626b76c75439663a21ef8d4f78d5ef28524f89911ac44ec3e817",
   "build_profile_sha256": "be3194ff9dab2c69914ef0751f700d8d4114a0bd53528bd5b566c61fdf05df13",
   "runtime_lock_sha256": "7857cfdecea1ed58ebc89e2f17466d1a17de8d113a75f8841ff3fd18676015af",
   "recorded_at": "2026-09-04",

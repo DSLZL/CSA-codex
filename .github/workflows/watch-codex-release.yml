@@ -105,7 +105,6 @@ jobs:
       UPSTREAM_TAG: ${{ needs.detect.outputs.upstream_tag }}
       UPSTREAM_COMMIT: ${{ needs.detect.outputs.upstream_commit }}
       BASE_MANIFEST: ${{ needs.detect.outputs.base_manifest }}
-      GH_TOKEN: ${{ github.token }}
     outputs:
       success: ${{ steps.outcome.outputs.success }}
       stage: ${{ steps.outcome.outputs.stage }}
@@ -210,6 +209,8 @@ jobs:
         if: steps.register.outcome == 'success'
         continue-on-error: true
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.BUILD_FANOUT_TOKEN }}
         run: |
           $branch = "automation/compat-$env:COMPAT_ID"
           & git switch -c $branch *> "$env:WATCH_ROOT/candidate.log"

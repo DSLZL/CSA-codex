@@ -1,16 +1,16 @@
 schema = 2
 family_id = "native-join-p10"
-compat_id = "rust-v0.153.0-native-join-p10"
-codex_version = "0.153.0"
-upstream_tag = "rust-v0.153.0"
-upstream_commit = "41e22fee981a63b3698df7ed36bad393cda24715"
+compat_id = "rust-v0.153.2-native-join-p10"
+codex_version = "0.153.2"
+upstream_tag = "rust-v0.153.2"
+upstream_commit = "657a993cbee87acf52d14b758ce49dbd46d1b8eb"
 patch_api = 1
 patch_set_version = 10
 rust_toolchain = "1.95.0"
 rustc_commit = "59807616e1fa2540724bfbac14d7976d7e4a3860"
 build_target = "x86_64-pc-windows-msvc"
 source_hashes = "expected/source-hashes.json"
-source_hashes_sha256 = "8b54f912d0e13f42a9a783c3eb4597365046eb67fe5c53b9eb1d7fea5bc7e6cf"
+source_hashes_sha256 = "c48a1c8924f826940846bc8a34af3d12c5364ee05dd8890538b649ce0a9d6a16"
 preimage_absent = [
   "codex-rs/core/src/agent/completion.rs",
   "codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs",
@@ -137,45 +137,45 @@ sha256 = "f4043325ee276c5666a1c7b52d94b60bcc49d64492ea7369ca89c0186ea21a89"
 "codex-rs/tui/src/version.rs" = "c908ba75a710fb92d84995f8b512f109930501e2cba8f04a33f41b4bd3c9cbb6"
 
 [artifacts."aarch64-apple-darwin"]
-url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--aarch64-apple-darwin--codex"
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.2-native-join-p10/rust-v0.153.2-native-join-p10--aarch64-apple-darwin--codex"
 filename = "codex"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 size = 1
 
 [artifacts."aarch64-pc-windows-msvc"]
-url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--aarch64-pc-windows-msvc--codex.exe"
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.2-native-join-p10/rust-v0.153.2-native-join-p10--aarch64-pc-windows-msvc--codex.exe"
 filename = "codex.exe"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 size = 1
 
 [artifacts."aarch64-unknown-linux-musl"]
-url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--aarch64-unknown-linux-musl--codex"
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.2-native-join-p10/rust-v0.153.2-native-join-p10--aarch64-unknown-linux-musl--codex"
 filename = "codex"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 size = 1
 
 [artifacts."x86_64-apple-darwin"]
-url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--x86_64-apple-darwin--codex"
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.2-native-join-p10/rust-v0.153.2-native-join-p10--x86_64-apple-darwin--codex"
 filename = "codex"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 size = 1
 
 [artifacts."x86_64-pc-windows-msvc"]
-url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--x86_64-pc-windows-msvc--codex.exe"
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.2-native-join-p10/rust-v0.153.2-native-join-p10--x86_64-pc-windows-msvc--codex.exe"
 filename = "codex.exe"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 size = 1
 
 [artifacts."x86_64-unknown-linux-musl"]
-url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.0-native-join-p10/rust-v0.153.0-native-join-p10--x86_64-unknown-linux-musl--codex"
+url = "https://github.com/DSLZL/CSA-codex/releases/download/compat-rust-v0.153.2-native-join-p10/rust-v0.153.2-native-join-p10--x86_64-unknown-linux-musl--codex"
 filename = "codex"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 size = 1
 [files]
-"expected/source-hashes.json" = "bindings/rust-v0.153.0-native-join-p10/expected/source-hashes.json"
+"expected/source-hashes.json" = "bindings/rust-v0.153.2-native-join-p10/expected/source-hashes.json"
 "patches/0010-core-owned-files.patch" = "shared/additions/0010-core-owned-files.patch"
 "patches/0020-tui-owned-files.patch" = "shared/additions/0020-tui-owned-files.patch"
 "patches/1000-core-adapter.patch" = "shared/patches/1000-core-adapter.patch"
 "patches/1100-tui-adapter.patch" = "shared/patches/1100-tui-adapter.patch"
 "patches/1200-runtime-state-adapter.patch" = "shared/patches/1200-runtime-state-adapter.patch"
-"test-contract.json" = "bindings/rust-v0.153.0-native-join-p10/test-contract.json"
+"test-contract.json" = "bindings/rust-v0.153.2-native-join-p10/test-contract.json"
