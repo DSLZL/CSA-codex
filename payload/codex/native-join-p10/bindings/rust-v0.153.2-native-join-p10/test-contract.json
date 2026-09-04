@@ -66,7 +66,7 @@
     }
   ],
   "known_upstream_errata": [
-    "The rust-v0.153.0 Cargo.lock records workspace packages as 0.0.0; Cargo 1.95.0 mechanically normalizes those entries to 0.153.0 before the build.",
+    "The upstream Cargo.lock records workspace packages as 0.0.0; Cargo 1.95.0 mechanically normalizes those entries to the workspace version before the build.",
     "The upstream codex-tui app::tests::background_exit_tests::exit_interrupts_before_requesting_shutdown test can observe an unrelated asynchronous event first under parallel load; the contract runs it separately with one test thread and skips only its duplicate parallel execution.",
     "The upstream codex-tui chatwidget::tests::permissions::profile_permissions_selection_emits_named_profile_event_only test can be intercepted on Windows by unrelated world-writable directories outside the checkout when capability-deny ACL application is denied; the contract skips only this host-dependent test.",
     "The upstream codex-tui app::agents_overview::tests::restored_server_permission_profile_survives_cd_without_turn_override test can leave its synthetic original working directory unchanged instead of adopting the temporary destination on GitHub-hosted Windows; the contract skips only this host-dependent test.",
