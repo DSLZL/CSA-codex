@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "status": "accepted",
+  "compat_id": "rust-v0.153.2-native-join-p10",
+  "target": "x86_64-pc-windows-msvc",
+  "artifact_filename": "codex.exe",
+  "artifact_sha256": "b625496c57e667435c47e50f65007820be8270d26c37f0cca8294e685f342702",
+  "artifact_size": 295608832,
+  "manifest_sha256": "aced106f11c5061ad152a921924fb42d3567f261c2356075ae77c2e08ecf0236",
+  "build_profile_sha256": "be3194ff9dab2c69914ef0751f700d8d4114a0bd53528bd5b566c61fdf05df13",
+  "runtime_lock_sha256": "728e532a04dd7bd4484afbd04718c55f3fc6bd0ea180e04c6b39af8059c6469c",
+  "recorded_at": "2026-09-04",
+  "accepted_by": "DSLZL",
+  "evidence": {
+    "schema": 1,
+    "environment": "github-actions-windows-2025",
+    "compat_id": "rust-v0.153.2-native-join-p10",
+    "target": "x86_64-pc-windows-msvc",
+    "candidate_run_id": 33868328727,
+    "validation_run_id": 33862130230,
+    "candidate_verification_run_id": 33868303877,
+    "accepted_baseline": "rust-v0.153.0-native-join-p10",
+    "lanes": {
+      "candidate_identity_and_sha256": "passed",
+      "native_join_integration": "passed",
+      "state_database_compatibility": "passed",
+      "official_runtime_overlay": "passed",
+      "complete_tui_library": "passed"
+    },
+    "unverified": [
+      "interactive TUI rendering on rust-v0.153.2",
+      "live authenticated runtime on rust-v0.153.2",
+      "formal release publication"
+    ]
+  }
+}
