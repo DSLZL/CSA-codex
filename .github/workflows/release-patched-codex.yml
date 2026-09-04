@@ -26,6 +26,11 @@ on:
         required: true
         default: false
         type: boolean
+      reuse_builds:
+        description: Optional exact existing build set JSON with source_commit, request_id, and target run IDs
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: csa-patched-codex-release-${{ inputs.compat_selector || github.ref_name }}
@@ -47,6 +52,7 @@ jobs:
     outputs:
       artifact_count: ${{ steps.matrix.outputs.artifact_count }}
       artifact_filename: ${{ steps.resolve.outputs.artifact_filename }}
+      artifact_source_commit: ${{ steps.mode.outputs.artifact_source_commit }}
       build_target: ${{ steps.resolve.outputs.build_target }}
       codex_version: ${{ steps.resolve.outputs.codex_version }}
       compat_id: ${{ steps.resolve.outputs.compat_id }}
@@ -58,6 +64,8 @@ jobs:
       release_enabled: ${{ steps.resolve.outputs.release_enabled }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       replace_published: ${{ steps.authority.outputs.replace_published }}
+      reuse_requested: ${{ steps.mode.outputs.reuse_requested }}
+      reuse_run_ids: ${{ steps.mode.outputs.reuse_run_ids }}
       rust_toolchain: ${{ steps.resolve.outputs.rust_toolchain }}
       sccache_version: ${{ steps.resolve.outputs.sccache_version }}
       source_commit: ${{ steps.mode.outputs.source_commit }}
@@ -81,10 +89,15 @@ jobs:
           REQUESTED_COMPAT_SELECTOR: ${{ inputs.compat_selector }}
           REQUESTED_PUBLISH: ${{ inputs.publish }}
           REQUESTED_REPLACE_PUBLISHED: ${{ inputs.replace_published }}
+          REQUESTED_REUSE_BUILDS: ${{ inputs.reuse_builds }}
           REQUESTED_TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
           source_commit="$(git rev-parse HEAD)"
+          artifact_source_commit="$source_commit"
+          request_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          reuse_requested=false
+          reuse_run_ids='{}'
           case "$GITHUB_EVENT_NAME" in
             push)
               [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == compat-* ]] || exit 2
@@ -115,11 +128,56 @@ jobs:
               ;;
             *) exit 2 ;;
           esac
+          if [[ -n "$REQUESTED_REUSE_BUILDS" ]]; then
+            [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$replace_published" == "false" ]] || {
+              echo "Existing builds may only be reused by a normal workflow dispatch." >&2
+              exit 2
+            }
+            mapfile -t reuse < <(python - <<'PY'
+          import json
+          import os
+          import re
+
+          value = json.loads(os.environ["REQUESTED_REUSE_BUILDS"])
+          if not isinstance(value, dict) or set(value) != {"request_id", "runs", "source_commit"}:
+              raise SystemExit("reuse_builds fields must be request_id, runs, and source_commit")
+          source_commit = value["source_commit"]
+          request_id = value["request_id"]
+          runs = value["runs"]
+          if not isinstance(source_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+              raise SystemExit("reused source_commit must be lowercase 40-hex")
+          if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", request_id):
+              raise SystemExit("reused request_id is invalid")
+          if (
+              not isinstance(runs, dict)
+              or not runs
+              or any(not isinstance(target, str) for target in runs)
+              or any(type(run_id) is not int or run_id < 1 for run_id in runs.values())
+          ):
+              raise SystemExit("reused runs must map targets to positive integer run IDs")
+          print(source_commit)
+          print(request_id)
+          print(json.dumps(runs, separators=(",", ":"), sort_keys=True))
+          PY
+            )
+            artifact_source_commit="${reuse[0]}"
+            request_id="${reuse[1]}"
+            reuse_run_ids="${reuse[2]}"
+            git cat-file -e "$artifact_source_commit^{commit}"
+            git merge-base --is-ancestor "$artifact_source_commit" "$source_commit" || {
+              echo "Reused builds must come from an ancestor of the workflow commit." >&2
+              exit 2
+            }
+            reuse_requested=true
+          fi
           {
+            echo "artifact_source_commit=$artifact_source_commit"
             echo "compat_selector=$selector"
             echo "publish_requested=$publish"
-            echo "request_id=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            echo "request_id=$request_id"
             echo "replace_published=$replace_published"
+            echo "reuse_requested=$reuse_requested"
+            echo "reuse_run_ids=$reuse_run_ids"
             echo "source_commit=$source_commit"
             echo "target=$target"
           } >> "$GITHUB_OUTPUT"
@@ -152,17 +210,34 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
+          ARTIFACT_SOURCE_COMMIT: ${{ steps.mode.outputs.artifact_source_commit }}
           MANIFEST_PATH: ${{ steps.resolve.outputs.manifest_path }}
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
           REPLACE_PUBLISHED: ${{ steps.mode.outputs.replace_published }}
           REQUESTED_COMPAT_SELECTOR: ${{ steps.mode.outputs.compat_selector }}
           PUBLISH_REQUESTED: ${{ steps.mode.outputs.publish_requested }}
           RESOLVED_COMPAT_ID: ${{ steps.resolve.outputs.compat_id }}
+          REUSE_REQUESTED: ${{ steps.mode.outputs.reuse_requested }}
           WORKFLOW_COMMIT: ${{ steps.mode.outputs.source_commit }}
         run: |
           set -euo pipefail
           release_source_commit="$WORKFLOW_COMMIT"
           replace_published=false
+          if [[ "$REUSE_REQUESTED" == "true" ]]; then
+            [[ "$REQUESTED_COMPAT_SELECTOR" == "$RESOLVED_COMPAT_ID" ]] || {
+              echo "Existing builds require one exact compatibility ID." >&2
+              exit 2
+            }
+            git diff --quiet "$ARTIFACT_SOURCE_COMMIT" "$WORKFLOW_COMMIT" -- \
+              payload release/build-profiles release/runtime-locks \
+              .github/actions/setup-codex-rust-cache/action.yml \
+              .github/workflows/build-patched-codex-target.yml \
+              scripts/check_sccache_stats.py scripts/compat_catalog.py \
+              scripts/compat_release.py scripts/verify_patch_payload.py || {
+              echo "Existing builds cannot be reused after their build inputs changed." >&2
+              exit 2
+            }
+          fi
           if [[ "$REPLACE_PUBLISHED" == "true" ]]; then
             [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] || exit 2
             [[ "$PUBLISH_REQUESTED" == "true" ]] || {
@@ -216,11 +291,30 @@ jobs:
       - id: matrix
         name: Resolve native target matrix
         shell: bash
+        env:
+          REUSE_REQUESTED: ${{ steps.mode.outputs.reuse_requested }}
+          REUSE_RUN_IDS: ${{ steps.mode.outputs.reuse_run_ids }}
         run: |
           set -euo pipefail
           python scripts/compat_release.py matrix \
             --manifest "$GITHUB_WORKSPACE/${{ steps.resolve.outputs.manifest_path }}" \
-            --github-output "$GITHUB_OUTPUT"
+            > "$RUNNER_TEMP/matrix.json"
+          python - "$RUNNER_TEMP/matrix.json" "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          matrix_path, output_path = map(Path, sys.argv[1:])
+          matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+          expected = {item["target"] for item in matrix["include"]}
+          runs = json.loads(os.environ["REUSE_RUN_IDS"])
+          if os.environ["REUSE_REQUESTED"] == "true" and set(runs) != expected:
+              raise SystemExit(f"reused target set differs: {sorted(runs)} != {sorted(expected)}")
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write(f"matrix={json.dumps(matrix, separators=(',', ':'))}\n")
+              output.write(f"artifact_count={len(matrix['include'])}\n")
+          PY
 
   build:
     name: Build ${{ matrix.target }} in its shard
@@ -242,8 +336,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - id: dispatch
-        name: Dispatch exact child build
+      - id: child
+        name: Select exact child build
         shell: bash
         env:
           CHILD_REPOSITORY: ${{ matrix.repository }}
@@ -251,7 +345,10 @@ jobs:
           COMPAT_ID: ${{ needs.plan.outputs.compat_id }}
           GH_TOKEN: ${{ secrets.BUILD_FANOUT_TOKEN }}
           REQUEST_ID: ${{ needs.plan.outputs.request_id }}
-          SOURCE_COMMIT: ${{ needs.plan.outputs.source_commit }}
+          REUSE_REQUESTED: ${{ needs.plan.outputs.reuse_requested }}
+          REUSE_RUN_IDS: ${{ needs.plan.outputs.reuse_run_ids }}
+          SOURCE_COMMIT: ${{ needs.plan.outputs.artifact_source_commit }}
+          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           [[ -n "$GH_TOKEN" ]] || {
@@ -259,30 +356,42 @@ jobs:
             exit 2
           }
           response="$RUNNER_TEMP/dispatch.json"
-          gh api --method POST \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/$CHILD_REPOSITORY/actions/workflows/$CHILD_WORKFLOW/dispatches" \
-            -f ref=main \
-            -f "inputs[source_commit]=$SOURCE_COMMIT" \
-            -f "inputs[compat_id]=$COMPAT_ID" \
-            -f "inputs[request_id]=$REQUEST_ID" \
-            > "$response"
-          python - "$response" "$CHILD_REPOSITORY" "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY" <<'PY'
+          if [[ "$REUSE_REQUESTED" == "true" ]]; then
+            run_id="$(python -c 'import json, os; print(json.loads(os.environ["REUSE_RUN_IDS"])[os.environ["TARGET"]])')"
+            gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$CHILD_REPOSITORY/actions/runs/$run_id" > "$response"
+          else
+            gh api --method POST \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$CHILD_REPOSITORY/actions/workflows/$CHILD_WORKFLOW/dispatches" \
+              -f ref=main \
+              -f "inputs[source_commit]=$SOURCE_COMMIT" \
+              -f "inputs[compat_id]=$COMPAT_ID" \
+              -f "inputs[request_id]=$REQUEST_ID" \
+              > "$response"
+          fi
+          python - "$response" "$CHILD_REPOSITORY" "$REUSE_REQUESTED" "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY" <<'PY'
           import json
           import sys
           from pathlib import Path
 
-          response_path, repository, output_path, summary_path = map(Path, sys.argv[1:])
+          response_path = Path(sys.argv[1])
+          repository = sys.argv[2]
+          reuse = sys.argv[3] == "true"
+          output_path = Path(sys.argv[4])
+          summary_path = Path(sys.argv[5])
           response = json.loads(response_path.read_text(encoding="utf-8"))
-          run_id = response.get("workflow_run_id")
+          run_id = response.get("id" if reuse else "workflow_run_id")
           run_url = response.get("html_url")
-          expected_url = f"https://github.com/{repository.as_posix()}/actions/runs/{run_id}"
+          expected_url = f"https://github.com/{repository}/actions/runs/{run_id}"
           if type(run_id) is not int or run_id < 1 or run_url != expected_url:
-              raise SystemExit("workflow dispatch did not return the exact child run identity")
+              raise SystemExit("GitHub did not return the exact child run identity")
+          if reuse and (response.get("event") != "workflow_dispatch" or response.get("path") != ".github/workflows/build.yml"):
+              raise SystemExit("reused child run is not an exact build.yml workflow dispatch")
           with output_path.open("a", encoding="utf-8") as output:
               output.write(f"run_id={run_id}\nrun_url={run_url}\n")
           with summary_path.open("a", encoding="utf-8") as summary:
-              summary.write(f"- child run: [{repository.as_posix()} #{run_id}]({run_url})\n")
+              summary.write(f"- child run: [{repository} #{run_id}]({run_url})\n")
           PY
 
       - name: Wait for the exact child run
@@ -290,7 +399,7 @@ jobs:
         env:
           CHILD_REPOSITORY: ${{ matrix.repository }}
           GH_TOKEN: ${{ secrets.BUILD_FANOUT_TOKEN }}
-          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_ID: ${{ steps.child.outputs.run_id }}
         run: |
           set -euo pipefail
           if ! gh run watch "$RUN_ID" --repo "$CHILD_REPOSITORY" --exit-status --interval 30; then
@@ -305,9 +414,9 @@ jobs:
           COMPAT_ID: ${{ needs.plan.outputs.compat_id }}
           GH_TOKEN: ${{ secrets.BUILD_FANOUT_TOKEN }}
           REQUEST_ID: ${{ needs.plan.outputs.request_id }}
-          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_ID: ${{ steps.child.outputs.run_id }}
           RUNNER_LABEL: ${{ matrix.runner }}
-          SOURCE_COMMIT: ${{ needs.plan.outputs.source_commit }}
+          SOURCE_COMMIT: ${{ needs.plan.outputs.artifact_source_commit }}
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
@@ -441,7 +550,7 @@ jobs:
             --provider github-actions \
             --pipeline "$GITHUB_RUN_ID" \
             --job "build/$CANONICAL_TARGET" \
-            --source-commit '${{ needs.plan.outputs.source_commit }}'
+            --source-commit '${{ needs.plan.outputs.artifact_source_commit }}'
           cp -a "$RUNNER_TEMP/patched-targets" "$root/targets"
           python scripts/compat_release.py matrix \
             --manifest "$GITHUB_WORKSPACE/${{ needs.plan.outputs.manifest_path }}" \
