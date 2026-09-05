@@ -38,12 +38,12 @@ class PatchPayloadVerifierTests(unittest.TestCase):
         self._assert_rejected(
             "patch_set_version = 1",
             "patch_set_version = true",
-            "patch_set_version must be an integer from 1 through 12",
+            "patch_set_version must be an integer from 1 through 13",
         )
         self._assert_rejected(
             "patch_set_version = 1",
-            "patch_set_version = 13",
-            "patch_set_version must be an integer from 1 through 12",
+            "patch_set_version = 14",
+            "patch_set_version must be an integer from 1 through 13",
         )
         self._assert_rejected("size = 299944448", "size = true", "artifact size must be positive")
         self._assert_rejected(
@@ -82,7 +82,7 @@ class PatchPayloadVerifierTests(unittest.TestCase):
 
 class PatchRevisionTests(unittest.TestCase):
     def test_reviewed_candidates_load_and_unreviewed_revisions_fail(self) -> None:
-        for patch_set in (11, 12):
+        for patch_set in (11, 12, 13):
             with self.subTest(patch_set=patch_set):
                 manifest_path = ROOT / (
                     f"payload/codex/native-join-p{patch_set}/bindings/"
@@ -90,7 +90,7 @@ class PatchRevisionTests(unittest.TestCase):
                 )
                 payload = _load_payload(manifest_path.resolve())
                 self.assertEqual(payload.manifest["patch_set_version"], patch_set)
-                for revision in (True, 0, 13, "12"):
+                for revision in (True, 0, 14, "13"):
                     with self.subTest(revision=revision):
                         manifest = dict(payload.manifest, patch_set_version=revision)
                         with self.assertRaisesRegex(VerificationError, "patch_set_version"):
