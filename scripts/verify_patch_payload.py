@@ -311,8 +311,8 @@ def _validate_manifest(manifest: dict[str, object]) -> None:
         or manifest["patch_api"] != 1
     ):
         raise VerificationError("unsupported manifest schema or patch_api")
-    if type(manifest["patch_set_version"]) is not int or manifest["patch_set_version"] not in range(1, 12):
-        raise VerificationError("patch_set_version must be an integer from 1 through 11")
+    if type(manifest["patch_set_version"]) is not int or manifest["patch_set_version"] not in range(1, 13):
+        raise VerificationError("patch_set_version must be an integer from 1 through 12")
     for key, pattern in (
         ("compat_id", COMPAT_ID),
         ("codex_version", VERSION),
