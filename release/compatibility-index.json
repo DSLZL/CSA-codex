@@ -190,6 +190,23 @@
           "acceptance_sha256": "e1f51de4e6c40e8f76fb23eb6540831600063959d18ed789193721004b7cdb53"
         }
       }
+    },
+    "rust-v0.153.4-native-join-p10": {
+      "lifecycle": "candidate",
+      "build_enabled": true,
+      "release_enabled": false,
+      "manifest": "payload/codex/native-join-p10/bindings/rust-v0.153.4-native-join-p10/manifest.toml",
+      "manifest_sha256": "1f182b18e759660f27668c6965a956f5a53d3c2597394043ba18ce592aa75671",
+      "targets": {
+        "x86_64-pc-windows-msvc": {
+          "build_profile": "release/build-profiles/windows-msvc-x64.json",
+          "build_profile_sha256": "be3194ff9dab2c69914ef0751f700d8d4114a0bd53528bd5b566c61fdf05df13",
+          "runtime_lock": "release/runtime-locks/rust-v0.153.4-native-join-p10.json",
+          "runtime_lock_sha256": "c97ef1511b7f8df63b48a9a9b7e4296cc1c5dfb1739c33da311f4c49269b644a",
+          "acceptance": null,
+          "acceptance_sha256": null
+        }
+      }
     }
   }
 }

@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "compat_id": "rust-v0.153.4-native-join-p10",
+  "codex_version": "0.153.4",
+  "target": "x86_64-pc-windows-msvc",
+  "package": "@openai/codex",
+  "archive_url": "https://registry.npmjs.org/@openai/codex/-/codex-0.153.4-win32-x64.tgz",
+  "integrity": "sha512-lMkB43kJZH0VFr+hoXc11qqR7QtQIbkr07ALgj4urKL1osNyUyuy1iXd3Vzz2iCYvBUCSw7I0l/W1cEPGx9euQ==",
+  "required_files": [
+    "package/vendor/x86_64-pc-windows-msvc/bin/codex-code-mode-host.exe",
+    "package/vendor/x86_64-pc-windows-msvc/codex-resources/codex-command-runner.exe",
+    "package/vendor/x86_64-pc-windows-msvc/codex-resources/codex-windows-sandbox-setup.exe",
+    "package/vendor/x86_64-pc-windows-msvc/codex-path/rg.exe"
+  ]
+}
