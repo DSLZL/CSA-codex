@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from verify_patch_payload import VerificationError, verify
+from verify_patch_payload import VerificationError, _load_payload, _validate_manifest, verify
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,12 +38,12 @@ class PatchPayloadVerifierTests(unittest.TestCase):
         self._assert_rejected(
             "patch_set_version = 1",
             "patch_set_version = true",
-            "patch_set_version must be an integer from 1 through 10",
+            "patch_set_version must be an integer from 1 through 11",
         )
         self._assert_rejected(
             "patch_set_version = 1",
-            "patch_set_version = 11",
-            "patch_set_version must be an integer from 1 through 10",
+            "patch_set_version = 12",
+            "patch_set_version must be an integer from 1 through 11",
         )
         self._assert_rejected("size = 299944448", "size = true", "artifact size must be positive")
         self._assert_rejected(
@@ -78,6 +78,21 @@ class PatchPayloadVerifierTests(unittest.TestCase):
             with self.assertRaisesRegex(VerificationError, message):
                 verify(manifest.resolve(), self.source, False, artifact.resolve())
             self.assertFalse(artifact.exists())
+
+
+class PatchRevisionTests(unittest.TestCase):
+    def test_p11_candidate_loads_and_unreviewed_revisions_fail(self) -> None:
+        manifest_path = ROOT / (
+            "payload/codex/native-join-p11/bindings/"
+            "rust-v0.153.2-native-join-p11/manifest.toml"
+        )
+        payload = _load_payload(manifest_path.resolve())
+        self.assertEqual(payload.manifest["patch_set_version"], 11)
+        for revision in (True, 0, 12, "11"):
+            with self.subTest(revision=revision):
+                manifest = dict(payload.manifest, patch_set_version=revision)
+                with self.assertRaisesRegex(VerificationError, "patch_set_version"):
+                    _validate_manifest(manifest)
 
 
 if __name__ == "__main__":

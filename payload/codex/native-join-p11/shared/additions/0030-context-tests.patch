@@ -1,0 +1,135 @@
+diff --git a/codex-rs/core/tests/suite/subagent_context.rs b/codex-rs/core/tests/suite/subagent_context.rs
+new file mode 100644
+--- /dev/null
++++ b/codex-rs/core/tests/suite/subagent_context.rs
+@@ -0,0 +1,130 @@
++use anyhow::Result;
++use codex_features::Feature;
++use codex_protocol::protocol::EventMsg;
++use core_test_support::responses::ev_assistant_message;
++use core_test_support::responses::ev_completed;
++use core_test_support::responses::ev_function_call_with_namespace;
++use core_test_support::responses::ev_response_created;
++use core_test_support::responses::mount_sse_sequence;
++use core_test_support::responses::namespace_child_tool;
++use core_test_support::responses::sse;
++use core_test_support::responses::start_mock_server;
++use core_test_support::test_codex::test_codex;
++use core_test_support::wait_for_event;
++use pretty_assertions::assert_eq;
++use serde_json::Value;
++use serde_json::json;
++use test_case::test_case;
++
++const PARENT_FIRST: &str = "parent-only first turn context";
++const PARENT_SECOND: &str = "parent-only second turn context";
++const PARENT_SPAWN: &str = "parent-only delegation turn context";
++const CHILD_TASK: &str = "Inspect the workspace and report the result.";
++const SHARED_INSTRUCTIONS: &str = "Keep repository changes scoped to the requested task.";
++
++#[test_case(json!({}), [false, false, false]; "omitted is fresh")]
++#[test_case(json!({"agent_type": "explorer"}), [false, false, false]; "first explorer is fresh")]
++#[test_case(json!({"agent_type": "worker"}), [false, false, false]; "first worker is fresh")]
++#[test_case(json!({"fork_turns": null}), [false, false, false]; "null is fresh")]
++#[test_case(json!({"fork_turns": ""}), [false, false, false]; "empty is fresh")]
++#[test_case(json!({"fork_turns": " \t "}), [false, false, false]; "blank is fresh")]
++#[test_case(json!({"fork_turns": "none"}), [false, false, false]; "explicit none is fresh")]
++#[test_case(json!({"fork_turns": " NoNe "}), [false, false, false]; "normalized none is fresh")]
++#[test_case(json!({"fork_turns": "1"}), [false, false, true]; "last one turn")]
++#[test_case(json!({"fork_turns": "2"}), [false, true, true]; "last two turns")]
++#[test_case(json!({"fork_turns": "all"}), [true, true, true]; "explicit full history")]
++#[test_case(json!({"fork_turns": " ALL "}), [true, true, true]; "normalized full history")]
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn spawn_context_respects_fork_intent(
++    extra_args: Value,
++    expected_history: [bool; 3],
++) -> Result<()> {
++    let server = start_mock_server().await;
++    let mut args = json!({"message": CHILD_TASK, "task_name": "inspect"});
++    args.as_object_mut()
++        .expect("spawn args object")
++        .extend(extra_args.as_object().expect("extra args object").clone());
++    let completion = sse(vec![
++        ev_response_created("done"),
++        ev_assistant_message("done-message", "done"),
++        ev_completed("done"),
++    ]);
++    // After spawning, parent and child can request their completions in either order.
++    let requests = mount_sse_sequence(
++        &server,
++        vec![
++            completion.clone(),
++            completion.clone(),
++            sse(vec![
++                ev_response_created("spawn"),
++                ev_function_call_with_namespace(
++                    "spawn-context-call",
++                    "collaboration",
++                    "spawn_agent",
++                    &serde_json::to_string(&args)?,
++                ),
++                ev_completed("spawn"),
++            ]),
++            completion.clone(),
++            completion,
++        ],
++    )
++    .await;
++    let mut builder = test_codex()
++        .with_model("gpt-5.6-sol")
++        .with_config(|config| {
++            config
++                .features
++                .enable(Feature::Collab)
++                .expect("enable collab");
++            config
++                .features
++                .enable(Feature::MultiAgentV2)
++                .expect("enable v2");
++            config.developer_instructions = Some(SHARED_INSTRUCTIONS.to_string());
++        });
++    let test = builder.build_with_auto_env(&server).await?;
++    let mut created_threads = test.thread_manager.subscribe_thread_created();
++    for prompt in [PARENT_FIRST, PARENT_SECOND, PARENT_SPAWN] {
++        test.submit_text_turn(prompt).await?;
++    }
++    let child_id = created_threads.recv().await?;
++    let child = test.thread_manager.get_thread(child_id).await?;
++    wait_for_event(child.as_ref(), |event| {
++        matches!(event, EventMsg::TurnComplete(_))
++    })
++    .await;
++
++    let child_request = requests
++        .requests()
++        .into_iter()
++        .find(|request| !request.inputs_of_type("agent_message").is_empty())
++        .expect("child model request");
++    assert_eq!(
++        [PARENT_FIRST, PARENT_SECOND, PARENT_SPAWN]
++            .map(|text| child_request.body_contains_text(text)),
++        expected_history,
++    );
++    assert!(child_request.body_contains_text(CHILD_TASK));
++    assert!(child_request.body_contains_text(SHARED_INSTRUCTIONS));
++    let tool_items = child_request.inputs_of_type("additional_tools");
++    let tool_item = tool_items.first().expect("Responses Lite tool definitions");
++    assert!(namespace_child_tool(tool_item, "collaboration", "spawn_agent").is_some());
++    let parent_config = test.codex.config_snapshot().await;
++    let child_config = child.config_snapshot().await;
++    assert_eq!(
++        (
++            &child_config.environments,
++            &child_config.workspace_roots,
++            &child_config.permission_profile,
++            child_config.approval_policy,
++        ),
++        (
++            &parent_config.environments,
++            &parent_config.workspace_roots,
++            &parent_config.permission_profile,
++            parent_config.approval_policy,
++        ),
++    );
++    Ok(())
++}
