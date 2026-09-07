@@ -1,0 +1,1413 @@
+diff --git a/codex-rs/analytics/src/reducer.rs b/codex-rs/analytics/src/reducer.rs
+--- a/codex-rs/analytics/src/reducer.rs
++++ b/codex-rs/analytics/src/reducer.rs
+@@ -3292,7 +3292,6 @@
+         CollabAgentTool::SendInput => "send_input",
+         CollabAgentTool::ResumeAgent => "resume_agent",
+         CollabAgentTool::Wait => "wait_agent",
+-        CollabAgentTool::Join => "join_agent",
+         CollabAgentTool::CloseAgent => "close_agent",
+         CollabAgentTool::SendMessage => "send_message",
+         CollabAgentTool::FollowupTask => "followup_task",
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/item.rs b/codex-rs/app-server-protocol/src/protocol/v2/item.rs
+--- a/codex-rs/app-server-protocol/src/protocol/v2/item.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/item.rs
+@@ -1111,7 +1111,6 @@
+     SendInput,
+     ResumeAgent,
+     Wait,
+-    Join,
+     CloseAgent,
+     SendMessage,
+     FollowupTask,
+@@ -1219,7 +1218,6 @@
+             CoreCollabAgentTool::SendInput => Self::SendInput,
+             CoreCollabAgentTool::ResumeAgent => Self::ResumeAgent,
+             CoreCollabAgentTool::Wait => Self::Wait,
+-            CoreCollabAgentTool::Join => Self::Join,
+             CoreCollabAgentTool::CloseAgent => Self::CloseAgent,
+             CoreCollabAgentTool::SendMessage => Self::SendMessage,
+             CoreCollabAgentTool::FollowupTask => Self::FollowupTask,
+diff --git a/codex-rs/config/src/types.rs b/codex-rs/config/src/types.rs
+--- a/codex-rs/config/src/types.rs
++++ b/codex-rs/config/src/types.rs
+@@ -719,20 +719,6 @@
+ /// Fallback resize-reflow row cap when Codex cannot identify a terminal-specific scrollback size.
+ pub const DEFAULT_TERMINAL_RESIZE_REFLOW_FALLBACK_MAX_ROWS: usize = 1_000;
+ 
+-/// Controls mouse capture for the resident sub-agent live panel.
+-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+-#[serde(rename_all = "lowercase")]
+-pub enum SubagentLiveMouseMode {
+-    /// Enable capture only for positively identified terminals while the alternate-screen live
+-    /// panel is visible.
+-    #[default]
+-    Auto,
+-    /// Enable capture whenever the interactive TUI is active, except in raw output mode.
+-    On,
+-    /// Never enable mouse capture.
+-    Off,
+-}
+-
+ /// Collection of settings that are specific to the TUI.
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+ #[schemars(deny_unknown_fields)]
+@@ -770,12 +756,6 @@
+     /// Defaults to `false`.
+     #[serde(default)]
+     pub raw_output_mode: bool,
+-
+-    /// Controls mouse capture for selecting rows in the resident sub-agent live panel.
+-    /// Defaults to `auto`; unknown terminals fail closed. When capture is active, hold Shift while
+-    /// dragging to select terminal text where the terminal supports that convention.
+-    #[serde(default)]
+-    pub subagent_live_mouse: SubagentLiveMouseMode,
+ 
+     /// Controls whether the TUI uses the terminal's alternate screen buffer.
+     ///
+diff --git a/codex-rs/core/config.schema.json b/codex-rs/core/config.schema.json
+--- a/codex-rs/core/config.schema.json
++++ b/codex-rs/core/config.schema.json
+@@ -3614,32 +3614,6 @@
+           "description": "Register sleep regardless of the model or legacy clock configuration.",
+           "enum": [
+             "always_on"
+-          ],
+-          "type": "string"
+-        }
+-      ]
+-    },
+-    "SubagentLiveMouseMode": {
+-      "description": "Controls mouse capture for the resident sub-agent live panel.",
+-      "oneOf": [
+-        {
+-          "description": "Enable capture only for positively identified terminals while the alternate-screen live panel is visible.",
+-          "enum": [
+-            "auto"
+-          ],
+-          "type": "string"
+-        },
+-        {
+-          "description": "Enable capture whenever the interactive TUI is active, except in raw output mode.",
+-          "enum": [
+-            "on"
+-          ],
+-          "type": "string"
+-        },
+-        {
+-          "description": "Never enable mouse capture.",
+-          "enum": [
+-            "off"
+           ],
+           "type": "string"
+         }
+@@ -4137,15 +4111,6 @@
+           "default": true,
+           "description": "Color status line items with colors derived from the active syntax theme. Defaults to `true`.",
+           "type": "boolean"
+-        },
+-        "subagent_live_mouse": {
+-          "allOf": [
+-            {
+-              "$ref": "#/definitions/SubagentLiveMouseMode"
+-            }
+-          ],
+-          "default": "auto",
+-          "description": "Controls mouse capture for selecting rows in the resident sub-agent live panel. Defaults to `auto`; unknown terminals fail closed. When capture is active, hold Shift while dragging to select terminal text where the terminal supports that convention."
+         },
+         "terminal_resize_reflow_max_rows": {
+           "default": null,
+@@ -6872,4 +6837,4 @@
+   },
+   "title": "ConfigToml",
+   "type": "object"
+-}
++}
+\ No newline at end of file
+diff --git a/codex-rs/core/src/config/config_tests.rs b/codex-rs/core/src/config/config_tests.rs
+--- a/codex-rs/core/src/config/config_tests.rs
++++ b/codex-rs/core/src/config/config_tests.rs
+@@ -1224,7 +1224,6 @@
+             disable_paste_burst: None,
+             vim_mode_default: false,
+             raw_output_mode: false,
+-            subagent_live_mouse: codex_config::types::SubagentLiveMouseMode::Auto,
+             alternate_screen: AltScreenMode::default(),
+             status_line: None,
+             status_line_use_colors: true,
+@@ -1243,22 +1242,6 @@
+             },
+             terminal_resize_reflow_max_rows: None,
+         }
+-    );
+-}
+-
+-#[test]
+-fn config_toml_deserializes_subagent_live_mouse_policy() {
+-    let cfg: ConfigToml = toml::from_str(
+-        r#"
+-[tui]
+-subagent_live_mouse = "on"
+-"#,
+-    )
+-    .expect("TOML deserialization should accept the mouse policy");
+-
+-    assert_eq!(
+-        cfg.tui.expect("tui config").subagent_live_mouse,
+-        codex_config::types::SubagentLiveMouseMode::On
+     );
+ }
+ 
+@@ -4254,7 +4237,6 @@
+             disable_paste_burst: None,
+             vim_mode_default: false,
+             raw_output_mode: false,
+-            subagent_live_mouse: codex_config::types::SubagentLiveMouseMode::Auto,
+             alternate_screen: AltScreenMode::Auto,
+             status_line: None,
+             status_line_use_colors: true,
+diff --git a/codex-rs/core/src/config/mod.rs b/codex-rs/core/src/config/mod.rs
+--- a/codex-rs/core/src/config/mod.rs
++++ b/codex-rs/core/src/config/mod.rs
+@@ -754,9 +754,6 @@
+ 
+     /// Start the TUI in raw scrollback mode for copy-friendly transcript output.
+     pub tui_raw_output_mode: bool,
+-
+-    /// Mouse-capture policy for the resident sub-agent live panel.
+-    pub tui_subagent_live_mouse: codex_config::types::SubagentLiveMouseMode,
+ 
+     /// Start the TUI in the specified collaboration mode (plan/default).
+ 
+@@ -4350,11 +4347,6 @@
+                 .as_ref()
+                 .map(|t| t.raw_output_mode)
+                 .unwrap_or(false),
+-            tui_subagent_live_mouse: cfg
+-                .tui
+-                .as_ref()
+-                .map(|t| t.subagent_live_mouse)
+-                .unwrap_or_default(),
+             tui_alternate_screen: cfg
+                 .tui
+                 .as_ref()
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs
+@@ -235,7 +235,8 @@
+ ) -> CollabAgentToolCallItem {
+     CollabAgentToolCallItem {
+         id: call_id,
+-        tool: CollabAgentTool::Join,
++        // Persist the upstream waiting presentation; exact-run semantics stay in the tool result.
++        tool: CollabAgentTool::Wait,
+         status,
+         sender_thread_id,
+         receiver_thread_ids,
+diff --git a/codex-rs/core/tests/suite/multi_agent_join.rs b/codex-rs/core/tests/suite/multi_agent_join.rs
+--- a/codex-rs/core/tests/suite/multi_agent_join.rs
++++ b/codex-rs/core/tests/suite/multi_agent_join.rs
+@@ -8,6 +8,8 @@
+ use anyhow::Context;
+ use anyhow::Result;
+ use anyhow::ensure;
++use codex_app_server_protocol::ThreadItem;
++use codex_app_server_protocol::ThreadTimelineEntry;
+ use codex_core::NotSubmittedReason;
+ use codex_core::StartIfIdleSubmission;
+ use codex_core::TurnInputRequest;
+@@ -15,6 +17,8 @@
+ use codex_core::test_support::wait_for_test_sync_barrier_arrivals;
+ use codex_core::test_support::wait_on_test_sync_barrier;
+ use codex_features::Feature;
++use codex_history::RolloutItem;
++use codex_history::RolloutLine;
+ use codex_protocol::config_types::CollaborationMode;
+ use codex_protocol::config_types::ModeKind;
+ use codex_protocol::config_types::Settings;
+@@ -22,13 +26,28 @@
+ use codex_protocol::items::CollabAgentToolCallStatus;
+ use codex_protocol::items::TurnItem;
+ use codex_protocol::models::PermissionProfile;
++use codex_protocol::models::ResponseItem;
+ use codex_protocol::protocol::AgentStatus;
+ use codex_protocol::protocol::AskForApproval;
+ use codex_protocol::protocol::EventMsg;
+ use codex_protocol::protocol::Op;
+ use codex_protocol::protocol::ReviewDecision;
++use codex_protocol::protocol::ThreadHistoryMode;
++use codex_protocol::protocol::ThreadMemoryMode;
+ use codex_protocol::protocol::ThreadSettingsOverrides;
+ use codex_protocol::user_input::UserInput;
++use codex_thread_store::ItemSortKey;
++use codex_thread_store::ListItemsParams;
++use codex_thread_store::ListTimelineParams;
++use codex_thread_store::ListTurnsParams;
++use codex_thread_store::LocalThreadStore;
++use codex_thread_store::LocalThreadStoreConfig;
++use codex_thread_store::ResumeThreadParams;
++use codex_thread_store::SortDirection;
++use codex_thread_store::StoredTurnItemsView;
++use codex_thread_store::ThreadPersistenceMetadata;
++use codex_thread_store::ThreadStore;
++use codex_utils_absolute_path::AbsolutePathBuf;
+ use core_test_support::responses::ev_assistant_message;
+ use core_test_support::responses::ev_completed;
+ use core_test_support::responses::ev_function_call;
+@@ -47,6 +66,7 @@
+ use core_test_support::wait_for_event;
+ use pretty_assertions::assert_eq;
+ use serde_json::json;
++use test_case::test_case;
+ use tokio::process::Command;
+ use tokio::time::timeout;
+ use wiremock::Mock;
+@@ -190,6 +210,8 @@
+     join_call_id: &'static str,
+     child_call_id: &'static str,
+     gate_id: &'static str,
++    history_mode: ThreadHistoryMode,
++    join_tool: &'static str,
+ ) -> Result<(MockServer, TestCodex, Arc<Mutex<Option<(String, String)>>>)> {
+     let server = start_mock_server().await;
+     let spawn_args = json!({
+@@ -254,10 +276,16 @@
+                 .to_string();
+             *captured_spawned_run.lock().expect("spawn capture lock") =
+                 Some((target.clone(), run_id.clone()));
+-            let join_args = json!({ "target": target, "run_id": run_id }).to_string();
++            let run = json!({ "target": target, "run_id": run_id });
++            let join_args = if join_tool == "join_agents" {
++                json!({ "runs": [run] })
++            } else {
++                run
++            }
++            .to_string();
+             sse_response(sse(vec![
+                 ev_response_created(&format!("{join_call_id}-parent-2")),
+-                ev_function_call(join_call_id, "join_agent", &join_args),
++                ev_function_call(join_call_id, join_tool, &join_args),
+                 ev_completed(&format!("{join_call_id}-parent-2")),
+             ]))
+         })
+@@ -266,6 +294,7 @@
+         .await;
+ 
+     let test = test_codex()
++        .with_history_mode(history_mode)
+         .with_model("test-gpt-5.1-codex")
+         .with_config(|config| {
+             config
+@@ -338,7 +367,7 @@
+                         &event.item,
+                         TurnItem::CollabAgentToolCall(item)
+                             if item.id == join_call_id
+-                                && item.tool == CollabAgentTool::Join
++                                && item.tool == CollabAgentTool::Wait
+                                 && item.status == CollabAgentToolCallStatus::InProgress
+                     )
+             )
+@@ -534,7 +563,7 @@
+                         &event.item,
+                         TurnItem::CollabAgentToolCall(item)
+                             if item.id == APPROVAL_JOIN_CALL_ID
+-                                && item.tool == CollabAgentTool::Join
++                                && item.tool == CollabAgentTool::Wait
+                                 && item.status == CollabAgentToolCallStatus::InProgress
+                     )
+             )
+@@ -606,7 +635,7 @@
+                         &event.item,
+                         TurnItem::CollabAgentToolCall(item)
+                             if item.id == APPROVAL_JOIN_CALL_ID
+-                                && item.tool == CollabAgentTool::Join
++                                && item.tool == CollabAgentTool::Wait
+                                 && item.status == CollabAgentToolCallStatus::Completed
+                     )
+             )
+@@ -925,8 +954,16 @@
+     Ok(())
+ }
+ 
++#[test_case(ThreadHistoryMode::Legacy, JOIN_GATE_ID, "join_agent"; "legacy_single")]
++#[test_case(ThreadHistoryMode::Paginated, "join-paginated-single", "join_agent"; "paginated_single")]
++#[test_case(ThreadHistoryMode::Legacy, "join-legacy-many", "join_agents"; "legacy_many")]
++#[test_case(ThreadHistoryMode::Paginated, "join-paginated-many", "join_agents"; "paginated_many")]
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+-async fn native_join_parks_parent_until_exact_child_run_completes() -> Result<()> {
++async fn native_join_parks_parent_until_exact_child_run_completes(
++    history_mode: ThreadHistoryMode,
++    gate_id: &'static str,
++    join_tool: &'static str,
++) -> Result<()> {
+     skip_if_no_network!(Ok(()));
+ 
+     let (server, test, spawned_run) = start_pending_native_join(
+@@ -934,7 +971,9 @@
+         JOIN_SPAWN_CALL_ID,
+         JOIN_CALL_ID,
+         JOIN_CHILD_CALL_ID,
+-        JOIN_GATE_ID,
++        gate_id,
++        history_mode,
++        join_tool,
+     )
+     .await?;
+ 
+@@ -961,7 +1000,7 @@
+         ]),
+     )
+     .await;
+-    wait_for_pending_join(&test, &spawned_run, JOIN_GATE_ID, JOIN_CALL_ID).await;
++    wait_for_pending_join(&test, &spawned_run, gate_id, JOIN_CALL_ID).await;
+ 
+     let requests_before_release = server
+         .received_requests()
+@@ -978,7 +1017,7 @@
+             .count(),
+         2
+     );
+-    wait_on_test_sync_barrier(JOIN_GATE_ID, 2, 30_000)
++    wait_on_test_sync_barrier(gate_id, 2, 30_000)
+         .await
+         .map_err(anyhow::Error::msg)?;
+     timeout(
+@@ -991,7 +1030,7 @@
+                         &event.item,
+                         TurnItem::CollabAgentToolCall(item)
+                             if item.id == JOIN_CALL_ID
+-                                && item.tool == CollabAgentTool::Join
++                                && item.tool == CollabAgentTool::Wait
+                                 && item.status == CollabAgentToolCallStatus::Completed
+                     )
+             )
+@@ -1017,6 +1056,18 @@
+         .function_call_output_text(JOIN_CALL_ID)
+         .expect("next Parent request should contain the join result");
+     let join_output: serde_json::Value = serde_json::from_str(&join_output)?;
++    let join_output = if join_tool == "join_agents" {
++        assert_eq!(
++            join_output["results"]
++                .as_array()
++                .expect("joined runs")
++                .len(),
++            1
++        );
++        &join_output["results"][0]
++    } else {
++        &join_output
++    };
+     assert_eq!(join_output["target"], json!(target));
+     assert_eq!(join_output["run_id"], json!(run_id));
+     assert_eq!(join_output["status"], json!("completed"));
+@@ -1040,6 +1091,141 @@
+         1
+     );
+ 
++    let root_id = test.session_configured.thread_id;
++    let mut rollouts = Vec::new();
++    for id in test.thread_manager.list_thread_ids().await {
++        let thread = test.thread_manager.get_thread(id).await?;
++        rollouts.push((id, thread.rollout_path().expect("native durable history")));
++    }
++    let shutdown = test
++        .thread_manager
++        .shutdown_all_threads_bounded(Duration::from_secs(5))
++        .await;
++    assert!(shutdown.submit_failed.is_empty());
++    assert!(shutdown.timed_out.is_empty());
++    assert_eq!(shutdown.completed.len(), 2);
++    let root_path = rollouts
++        .iter()
++        .find(|(id, _)| *id == root_id)
++        .expect("parent rollout")
++        .1
++        .clone();
++    for (id, path) in rollouts {
++        let raw = std::fs::read_to_string(path)?;
++        // Decode every persisted line strictly; a tolerant loader skipping a private enum is a failure.
++        let lines = raw
++            .lines()
++            .map(serde_json::from_str::<RolloutLine>)
++            .collect::<std::result::Result<Vec<_>, _>>()?;
++        if id == root_id {
++            let responses = lines
++                .iter()
++                .filter_map(|line| match &line.item {
++                    RolloutItem::ResponseItem(item) => Some(&item.item),
++                    _ => None,
++                })
++                .collect::<Vec<_>>();
++            assert!(responses.iter().any(|item| matches!(item,
++                ResponseItem::FunctionCall { name, call_id, .. }
++                    if name == join_tool && call_id == JOIN_CALL_ID
++            )));
++            assert!(responses.iter().any(|item| matches!(item,
++                ResponseItem::FunctionCallOutput { call_id, .. } if call_id.as_deref() == Some(JOIN_CALL_ID)
++            )));
++        }
++    }
++    if history_mode == ThreadHistoryMode::Paginated {
++        let local = test
++            .thread_store
++            .as_any()
++            .downcast_ref::<LocalThreadStore>()
++            .expect("local native store");
++        let projection_home = tempfile::tempdir()?;
++        let mut reproject_config = LocalThreadStoreConfig::from_config(&test.config);
++        reproject_config.sqlite = codex_state::SqliteConfig::new_for_testing(
++            AbsolutePathBuf::try_from(projection_home.path())?,
++        );
++        // A fresh projection DB reuses native metadata and original rollouts without deleting either.
++        let reprojected = LocalThreadStore::new(reproject_config, local.state_db().await);
++        let original_bytes = std::fs::read(&root_path)?;
++        reprojected
++            .resume_thread(ResumeThreadParams {
++                thread_id: root_id,
++                rollout_path: Some(root_path.clone()),
++                history: None,
++                include_archived: false,
++                metadata: ThreadPersistenceMetadata {
++                    cwd: Some(test.config.cwd.to_path_buf()),
++                    model_provider: test.config.model_provider_id.clone(),
++                    memory_mode: ThreadMemoryMode::Enabled,
++                },
++            })
++            .await?;
++        reprojected.shutdown_thread(root_id).await?;
++        assert_eq!(std::fs::read(root_path)?, original_bytes);
++        for (label, store) in [
++            ("existing", test.thread_store.as_ref()),
++            ("reprojected", &reprojected as &dyn ThreadStore),
++        ] {
++            let params = ListItemsParams {
++                thread_id: root_id,
++                turn_id: None,
++                include_archived: false,
++                cursor: None,
++                page_size: 100,
++                sort_direction: SortDirection::Asc,
++                sort_key: ItemSortKey::CreatedAtOrdinal,
++                after_updated_at_ordinal: None,
++            };
++            let page = store.list_items(params.clone()).await?;
++            assert!(page.next_cursor.is_none());
++            let items = page
++                .items
++                .iter()
++                .map(|item| serde_json::from_slice::<ThreadItem>(&item.item_json))
++                .collect::<std::result::Result<Vec<_>, _>>()?;
++            let joined = items.iter().find(|item| matches!(item,
++                ThreadItem::CollabAgentToolCall { id, tool: codex_app_server_protocol::CollabAgentTool::Wait, .. }
++                    if id == JOIN_CALL_ID
++            )).unwrap_or_else(|| panic!("native waiting item missing from {label} projection: {items:?}"));
++            let turns = store
++                .list_turns(ListTurnsParams {
++                    thread_id: root_id,
++                    include_archived: false,
++                    cursor: None,
++                    page_size: 100,
++                    sort_direction: SortDirection::Asc,
++                    items_view: StoredTurnItemsView::Summary,
++                })
++                .await?;
++            assert!(turns.next_cursor.is_none());
++            assert_eq!(turns.turns.len(), 1);
++            let full_turn = store
++                .list_items(ListItemsParams {
++                    turn_id: Some(turns.turns[0].turn_id.clone()),
++                    ..params
++                })
++                .await?;
++            assert!(full_turn.next_cursor.is_none());
++            let full_items = full_turn
++                .items
++                .iter()
++                .map(|item| serde_json::from_slice::<ThreadItem>(&item.item_json))
++                .collect::<std::result::Result<Vec<_>, _>>()?;
++            assert_eq!(full_items, items);
++            let timeline = store
++                .list_timeline(ListTimelineParams {
++                    thread_id: root_id,
++                    cursor: None,
++                    page_size: 100,
++                })
++                .await?;
++            assert!(timeline.next_cursor.is_none());
++            assert!(timeline.items.iter().any(|entry| matches!(entry,
++                ThreadTimelineEntry::Item { item, .. } if item.as_ref() == joined
++            )));
++        }
++    }
+     Ok(())
+ }
+ 
+@@ -1054,6 +1240,8 @@
+         CANCEL_JOIN_CALL_ID,
+         CANCEL_CHILD_CALL_ID,
+         CANCEL_GATE_ID,
++        ThreadHistoryMode::Legacy,
++        "join_agent",
+     )
+     .await?;
+     wait_for_pending_join(&test, &spawned_run, CANCEL_GATE_ID, CANCEL_JOIN_CALL_ID).await;
+@@ -1143,7 +1331,7 @@
+                         &event.item,
+                         TurnItem::CollabAgentToolCall(item)
+                             if item.id == REJOIN_CALL_ID
+-                                && item.tool == CollabAgentTool::Join
++                                && item.tool == CollabAgentTool::Wait
+                                 && item.status == CollabAgentToolCallStatus::InProgress
+                     )
+             )
+@@ -1184,7 +1372,7 @@
+                         &event.item,
+                         TurnItem::CollabAgentToolCall(item)
+                             if item.id == REJOIN_CALL_ID
+-                                && item.tool == CollabAgentTool::Join
++                                && item.tool == CollabAgentTool::Wait
+                                 && item.status == CollabAgentToolCallStatus::Completed
+                     )
+             )
+@@ -1254,6 +1442,8 @@
+         SHUTDOWN_JOIN_CALL_ID,
+         SHUTDOWN_CHILD_CALL_ID,
+         SHUTDOWN_GATE_ID,
++        ThreadHistoryMode::Legacy,
++        "join_agent",
+     )
+     .await?;
+     wait_for_pending_join(&test, &spawned_run, SHUTDOWN_GATE_ID, SHUTDOWN_JOIN_CALL_ID).await;
+diff --git a/codex-rs/exec/src/event_processor_with_jsonl_output.rs b/codex-rs/exec/src/event_processor_with_jsonl_output.rs
+--- a/codex-rs/exec/src/event_processor_with_jsonl_output.rs
++++ b/codex-rs/exec/src/event_processor_with_jsonl_output.rs
+@@ -252,7 +252,6 @@
+                         CollabAgentTool::SendInput => CollabTool::SendInput,
+                         CollabAgentTool::ResumeAgent => CollabTool::Wait,
+                         CollabAgentTool::Wait => CollabTool::Wait,
+-                        CollabAgentTool::Join => CollabTool::Join,
+                         CollabAgentTool::CloseAgent => CollabTool::CloseAgent,
+                     },
+                     sender_thread_id,
+diff --git a/codex-rs/exec/src/exec_events.rs b/codex-rs/exec/src/exec_events.rs
+--- a/codex-rs/exec/src/exec_events.rs
++++ b/codex-rs/exec/src/exec_events.rs
+@@ -224,7 +224,6 @@
+     SpawnAgent,
+     SendInput,
+     Wait,
+-    Join,
+     CloseAgent,
+ }
+ 
+diff --git a/codex-rs/protocol/src/items.rs b/codex-rs/protocol/src/items.rs
+--- a/codex-rs/protocol/src/items.rs
++++ b/codex-rs/protocol/src/items.rs
+@@ -310,7 +310,6 @@
+     SendInput,
+     ResumeAgent,
+     Wait,
+-    Join,
+     CloseAgent,
+     SendMessage,
+     FollowupTask,
+@@ -731,19 +730,6 @@
+     use serde_json::json;
+ 
+     #[test]
+-    fn collab_join_has_its_own_wire_value() {
+-        assert_eq!(
+-            serde_json::to_value(CollabAgentTool::Join).expect("serialize join tool"),
+-            json!("join")
+-        );
+-        assert_eq!(
+-            serde_json::from_value::<CollabAgentTool>(json!("join"))
+-                .expect("deserialize join tool"),
+-            CollabAgentTool::Join
+-        );
+-    }
+-
+-    #[test]
+     fn sleep_extension_item_preserves_type_and_kind() {
+         let item = TurnItem::Extension(ExtensionItem::Sleep(SleepItem {
+             id: "sleep-1".to_string(),
+diff --git a/codex-rs/protocol/src/legacy_events.rs b/codex-rs/protocol/src/legacy_events.rs
+--- a/codex-rs/protocol/src/legacy_events.rs
++++ b/codex-rs/protocol/src/legacy_events.rs
+@@ -292,7 +292,6 @@
+                 receiver_agents: self.receiver_agents.clone(),
+                 call_id: self.id.clone(),
+             })),
+-            CollabAgentTool::Join => None,
+             CollabAgentTool::CloseAgent => receiver_thread_id.map(|receiver_thread_id| {
+                 EventMsg::CollabCloseBegin(CollabCloseBeginEvent {
+                     call_id: self.id.clone(),
+@@ -376,7 +375,6 @@
+                     .collect(),
+                 statuses: self.agents_states.clone(),
+             })),
+-            CollabAgentTool::Join => None,
+             CollabAgentTool::CloseAgent => receiver_thread_id.map(|receiver_thread_id| {
+                 let (receiver_agent_nickname, receiver_agent_role) =
+                     self.receiver_agent_identity(receiver_thread_id);
+diff --git a/codex-rs/state/src/migrations.rs b/codex-rs/state/src/migrations.rs
+--- a/codex-rs/state/src/migrations.rs
++++ b/codex-rs/state/src/migrations.rs
+@@ -21,7 +21,14 @@
+ /// checksum, so this only relaxes the "database is ahead of me" case.
+ fn runtime_migrator(base: &'static Migrator) -> Migrator {
+     Migrator {
+-        migrations: Cow::Owned(base.migrations.iter().map(migration_with_crlf).collect()),
++        // Official 0.153.2 Windows x64 embeds CRLF SQL. Match that input even when cross-built
++        // from an LF checkout; never rewrite a database's recorded checksums to fit this binary.
++        // Other targets retain upstream's embedded bytes until their artifact contract is verified.
++        migrations: if cfg!(all(windows, target_arch = "x86_64")) {
++            Cow::Owned(base.migrations.iter().map(migration_with_crlf).collect())
++        } else {
++            Cow::Borrowed(base.migrations.as_ref())
++        },
+         ignore_missing: true,
+         locking: base.locking,
+         no_tx: base.no_tx,
+@@ -31,21 +38,11 @@
+ }
+ 
+ fn migration_with_crlf(migration: &Migration) -> Migration {
+-    migration_with_sql(
+-        migration,
+-        migration
+-            .sql
+-            .as_str()
+-            .replace("\r\n", "\n")
+-            .replace('\n', "\r\n"),
+-    )
+-}
+-
+-fn migration_with_lf(migration: &Migration) -> Migration {
+-    migration_with_sql(migration, migration.sql.as_str().replace("\r\n", "\n"))
+-}
+-
+-fn migration_with_sql(migration: &Migration, sql: String) -> Migration {
++    let sql = migration
++        .sql
++        .as_str()
++        .replace("\r\n", "\n")
++        .replace('\n', "\r\n");
+     Migration::new(
+         migration.version,
+         migration.description.clone(),
+@@ -81,68 +78,6 @@
+     runtime_migrator(&THREAD_HISTORY_MIGRATOR)
+ }
+ 
+-pub(crate) async fn repair_migration_line_endings(
+-    pool: &SqlitePool,
+-    migrator: &Migrator,
+-) -> anyhow::Result<()> {
+-    let migrations_table_exists = sqlx::query_scalar::<_, i64>(
+-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
+-    )
+-    .fetch_optional(pool)
+-    .await?
+-    .is_some();
+-    if !migrations_table_exists {
+-        return Ok(());
+-    }
+-
+-    let mut transaction = pool.begin().await?;
+-    let applied = sqlx::query_as::<_, (i64, Vec<u8>, bool)>(
+-        "SELECT version, checksum, success FROM _sqlx_migrations ORDER BY version",
+-    )
+-    .fetch_all(&mut *transaction)
+-    .await?;
+-    let mut repairs = Vec::new();
+-    for (version, checksum, success) in applied {
+-        if !success {
+-            transaction.rollback().await?;
+-            return Ok(());
+-        }
+-        let Some(migration) = migrator
+-            .migrations
+-            .iter()
+-            .find(|migration| migration.version == version)
+-        else {
+-            continue;
+-        };
+-        if checksum == migration.checksum.as_ref() {
+-            continue;
+-        }
+-        let legacy_checksum = migration_with_lf(migration).checksum;
+-        if checksum != legacy_checksum.as_ref() {
+-            transaction.rollback().await?;
+-            return Ok(());
+-        }
+-        repairs.push((version, checksum, migration.checksum.to_vec()));
+-    }
+-
+-    for (version, legacy_checksum, checksum) in repairs {
+-        let result = sqlx::query(
+-            "UPDATE _sqlx_migrations SET checksum = ? WHERE version = ? AND checksum = ?",
+-        )
+-        .bind(checksum)
+-        .bind(version)
+-        .bind(legacy_checksum)
+-        .execute(&mut *transaction)
+-        .await?;
+-        anyhow::ensure!(
+-            result.rows_affected() == 1,
+-            "migration history changed while repairing line endings"
+-        );
+-    }
+-    transaction.commit().await?;
+-    Ok(())
+-}
+-
+ pub(crate) async fn repair_legacy_recency_migration_version(
+     pool: &SqlitePool,
+     migrator: &Migrator,
+@@ -154,7 +89,6 @@
+     else {
+         return Ok(());
+     };
+-    let legacy_recency_checksum = migration_with_lf(recency_migration).checksum;
+     let migrations_table_exists = sqlx::query_scalar::<_, i64>(
+         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
+     )
+@@ -170,7 +104,7 @@
+ SELECT 1
+ FROM _sqlx_migrations
+ WHERE version = ?
+-  AND checksum IN (?, ?)
++  AND checksum = ?
+   AND NOT EXISTS (
+       SELECT 1 FROM _sqlx_migrations WHERE version = ?
+   )
+@@ -178,7 +112,6 @@
+     )
+     .bind(38_i64)
+     .bind(recency_migration.checksum.as_ref())
+-    .bind(legacy_recency_checksum.as_ref())
+     .bind(recency_migration.version)
+     .fetch_optional(pool)
+     .await?
+@@ -192,7 +125,7 @@
+ UPDATE _sqlx_migrations
+ SET version = ?, description = ?
+ WHERE version = ?
+-  AND checksum IN (?, ?)
++  AND checksum = ?
+   AND NOT EXISTS (
+       SELECT 1 FROM _sqlx_migrations WHERE version = ?
+   )
+@@ -202,7 +135,6 @@
+     .bind(recency_migration.description.as_ref())
+     .bind(38_i64)
+     .bind(recency_migration.checksum.as_ref())
+-    .bind(legacy_recency_checksum.as_ref())
+     .bind(recency_migration.version)
+     .execute(pool)
+     .await?;
+diff --git a/codex-rs/state/src/migrations_tests.rs b/codex-rs/state/src/migrations_tests.rs
+--- a/codex-rs/state/src/migrations_tests.rs
++++ b/codex-rs/state/src/migrations_tests.rs
+@@ -2,15 +2,15 @@
+ use pretty_assertions::assert_eq;
+ use sqlx::Connection;
+ use sqlx::Row;
++#[cfg(all(windows, target_arch = "x86_64"))]
++use sqlx::SqlSafeStr;
+ use sqlx::migrate::Migration;
+ use sqlx::migrate::Migrator;
+ use std::borrow::Cow;
+ 
+ use super::STATE_MIGRATOR;
+ use super::THREAD_HISTORY_MIGRATOR;
+-use super::migration_with_lf;
+ use super::repair_legacy_recency_migration_version;
+-use super::repair_migration_line_endings;
+ use super::runtime_state_migrator;
+ use crate::PINNED_THREAD_SECTION_ID;
+ use crate::PINNED_THREAD_SECTION_NAME;
+@@ -35,12 +35,6 @@
+     }
+ }
+ 
+-fn lf_state_migrator() -> Migrator {
+-    let mut migrator = runtime_state_migrator();
+-    migrator.migrations = Cow::Owned(migrator.migrations.iter().map(migration_with_lf).collect());
+-    migrator
+-}
+-
+ async fn insert_migration_line_endings_sentinel(pool: &sqlx::SqlitePool) {
+     sqlx::query(
+         "INSERT INTO projects (id, name, position, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?)",
+@@ -83,7 +77,92 @@
+ }
+ 
+ #[tokio::test]
+-async fn migration_line_endings_official_database_round_trips() {
++async fn runtime_migration_inputs_preserve_all_six_database_histories() {
++    // First-migration checksums from the hash-verified official 0.153.2 Windows x64 binary
++    // e86ffd96751ded51f669b520d70ba3139b514eb36313a8eeeedde37baa7b58e3.
++    let cases = [
++        (
++            &super::STATE_MIGRATOR,
++            super::runtime_state_migrator(),
++            "54bbd6f47905a4e4c674034575963d82da7b534e66e9a37a81ec2afb6a4b56ce6de9b3ecf3032796a800f650239847d4",
++        ),
++        (
++            &super::LOGS_MIGRATOR,
++            super::runtime_logs_migrator(),
++            "f477e6056db490de009f392c16761f4719b17ba37d043ca92d907b5ff885846f6e8c821a357475d74b6d0d6f511eb279",
++        ),
++        (
++            &super::GOALS_MIGRATOR,
++            super::runtime_goals_migrator(),
++            "9d4af4ba7688052dd22a508b567b977e6d79ba20cd49c8989e7bc828ac947cd7344be7d2559d3e901cc81a3793ea66d2",
++        ),
++        (
++            &super::MEMORIES_MIGRATOR,
++            super::runtime_memories_migrator(),
++            "7178a6d5072f7aa00e036aad06cc53143b834b68c84ba17285277a8ee68652a8ee1d6a9ff9965c7dafe8193293641769",
++        ),
++        (
++            &super::QUEUE_MIGRATOR,
++            super::runtime_queue_migrator(),
++            "21910955e848becb4eeee41d3a2c9ac395f183d26fdfc86aea7222e58e007db3d450ae20c9372f659d9cd4bf0787e904",
++        ),
++        (
++            &super::THREAD_HISTORY_MIGRATOR,
++            super::runtime_thread_history_migrator(),
++            "3d81349432ecbf6e5255dbe0a075d27811144fd3c32941ac1cbba640a83e278fa562309fb3b226964ee4251e97b4b513",
++        ),
++    ];
++    let sqlite_home = crate::runtime::test_support::unique_temp_dir();
++    tokio::fs::create_dir_all(&sqlite_home)
++        .await
++        .expect("create fixture directory");
++    let _cleanup = scopeguard::guard(sqlite_home.clone(), |path| {
++        let _ = std::fs::remove_dir_all(path);
++    });
++    let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
++    for (index, (base, migrator, windows_checksum)) in cases.into_iter().enumerate() {
++        let expected = if cfg!(all(windows, target_arch = "x86_64")) {
++            windows_checksum.to_string()
++        } else {
++            migration_checksum_hex(&base.migrations[0])
++        };
++        assert_eq!(migration_checksum_hex(&migrator.migrations[0]), expected);
++        let path = sqlite_home.join(format!("migration-{index}.sqlite"));
++        let pool = sqlite
++            .open_read_write_pool(&path)
++            .await
++            .expect("open fixture DB");
++        migrator.run(&pool).await.expect("create native database");
++        sqlx::query("CREATE TABLE fixture_sentinel (value TEXT NOT NULL)")
++            .execute(&pool)
++            .await
++            .expect("create fixture sentinel");
++        sqlx::query("INSERT INTO fixture_sentinel VALUES ('preserved')")
++            .execute(&pool)
++            .await
++            .expect("insert fixture sentinel");
++        let before = migration_history(&pool).await;
++        pool.close().await;
++        let pool = sqlite
++            .open_read_write_pool(&path)
++            .await
++            .expect("reopen fixture DB");
++        migrator
++            .run(&pool)
++            .await
++            .expect("reopen matching native database");
++        assert_eq!(migration_history(&pool).await, before);
++        let sentinel: String = sqlx::query_scalar("SELECT value FROM fixture_sentinel")
++            .fetch_one(&pool)
++            .await
++            .expect("read fixture sentinel");
++        assert_eq!(sentinel, "preserved");
++        pool.close().await;
++    }
++}
++
++#[tokio::test]
++async fn migration_line_endings_matching_database_round_trips() {
+     let sqlite_home = crate::runtime::test_support::unique_temp_dir();
+     tokio::fs::create_dir_all(&sqlite_home)
+         .await
+@@ -94,10 +173,6 @@
+     let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
+     let state_path = sqlite.state_db_path();
+     let official = runtime_state_migrator();
+-    assert_eq!(
+-        migration_checksum_hex(&official.migrations[0]),
+-        "54bbd6f47905a4e4c674034575963d82da7b534e66e9a37a81ec2afb6a4b56ce6de9b3ecf3032796a800f650239847d4"
+-    );
+     let pool = sqlite
+         .open_read_write_pool(&state_path)
+         .await
+@@ -105,7 +180,7 @@
+     official
+         .run(&pool)
+         .await
+-        .expect("official CRLF migrations should apply");
++        .expect("matching native migrations should apply");
+     insert_migration_line_endings_sentinel(&pool).await;
+     let before = migration_history(&pool).await;
+     pool.close().await;
+@@ -124,8 +199,9 @@
+     pool.close().await;
+ }
+ 
+-#[tokio::test]
+-async fn migration_line_endings_legacy_database_upgrades_to_official_checksums() {
++#[cfg(all(windows, target_arch = "x86_64"))]
++#[tokio::test]
++async fn migration_line_endings_mismatch_is_rejected_without_repair() {
+     let sqlite_home = crate::runtime::test_support::unique_temp_dir();
+     tokio::fs::create_dir_all(&sqlite_home)
+         .await
+@@ -135,10 +211,21 @@
+     });
+     let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
+     let state_path = sqlite.state_db_path();
+-    let legacy = lf_state_migrator();
+-    assert_eq!(
+-        migration_checksum_hex(&legacy.migrations[0]),
+-        "627ef19164c9bb298a0cd99945981c9b7bda3d9e6cf12eb35145e3b1d3bf7cf8740f0dbaa0b475185fc2993397078049"
++    let legacy = Migrator::with_migrations(
++        STATE_MIGRATOR
++            .migrations
++            .iter()
++            .map(|migration| {
++                Migration::new(
++                    migration.version,
++                    migration.description.clone(),
++                    migration.migration_type,
++                    sqlx::AssertSqlSafe(migration.sql.as_str().replace("\r\n", "\n"))
++                        .into_sql_str(),
++                    migration.no_tx,
++                )
++            })
++            .collect(),
+     );
+     let pool = sqlite
+         .open_read_write_pool(&state_path)
+@@ -152,41 +239,20 @@
+     let before = migration_history(&pool).await;
+     pool.close().await;
+ 
+-    let official = runtime_state_migrator();
+-    let pool = sqlite
+-        .open_state_db(&official, None)
+-        .await
+-        .expect("patched runtime should upgrade the legacy database");
+-    let after = migration_history(&pool).await;
+-    assert_eq!(
+-        before
+-            .iter()
+-            .map(|(version, description, _, success, execution_time)| {
+-                (version, description, success, execution_time)
+-            })
+-            .collect::<Vec<_>>(),
+-        after
+-            .iter()
+-            .map(|(version, description, _, success, execution_time)| {
+-                (version, description, success, execution_time)
+-            })
+-            .collect::<Vec<_>>()
++    let error = sqlite
++        .open_state_db(&runtime_state_migrator(), /*telemetry_override*/ None)
++        .await
++        .expect_err("a known EOL mismatch must not trigger a database rewrite");
++    assert!(
++        error
++            .to_string()
++            .contains("migration 1 was previously applied but has been modified")
+     );
+-    assert_eq!(
+-        after
+-            .iter()
+-            .map(|(version, _, checksum, _, _)| (*version, checksum.clone()))
+-            .collect::<Vec<_>>(),
+-        official
+-            .migrations
+-            .iter()
+-            .map(|migration| (migration.version, migration.checksum.to_vec()))
+-            .collect::<Vec<_>>()
+-    );
+-    official
+-        .run(&pool)
+-        .await
+-        .expect("official runtime should reopen the upgraded database");
++    let pool = sqlite
++        .open_read_write_pool(&state_path)
++        .await
++        .expect("database should reopen for verification");
++    assert_eq!(migration_history(&pool).await, before);
+     assert_migration_line_endings_sentinel(&pool).await;
+     pool.close().await;
+ }
+@@ -206,10 +272,10 @@
+         .open_read_write_pool(&state_path)
+         .await
+         .expect("legacy database should open");
+-    lf_state_migrator()
+-        .run(&pool)
+-        .await
+-        .expect("legacy LF migrations should apply");
++    runtime_state_migrator()
++        .run(&pool)
++        .await
++        .expect("matching native migrations should apply");
+     sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 1")
+         .bind(vec![0x5a_u8; 48])
+         .execute(&pool)
+@@ -950,7 +1016,7 @@
+ }
+ 
+ #[tokio::test]
+-async fn migration_line_endings_repairs_recency_migration_applied_as_version_38() {
++async fn native_recency_migration_repairs_version_38_without_changing_checksums() {
+     let sqlite_home = crate::runtime::test_support::unique_temp_dir();
+     tokio::fs::create_dir_all(&sqlite_home)
+         .await
+@@ -964,7 +1030,7 @@
+         .open_read_write_pool(&state_path)
+         .await
+         .expect("sqlite database should open");
+-    let legacy = lf_state_migrator();
++    let legacy = runtime_state_migrator();
+     let mut legacy_migrations = legacy
+         .migrations
+         .iter()
+@@ -998,9 +1064,6 @@
+     repair_legacy_recency_migration_version(&pool, &official)
+         .await
+         .expect("legacy migration history should be repaired");
+-    repair_migration_line_endings(&pool, &official)
+-        .await
+-        .expect("legacy checksums should upgrade to official line endings");
+     official
+         .run(&pool)
+         .await
+diff --git a/codex-rs/state/src/runtime.rs b/codex-rs/state/src/runtime.rs
+--- a/codex-rs/state/src/runtime.rs
++++ b/codex-rs/state/src/runtime.rs
+@@ -428,7 +428,6 @@
+     use super::test_support::unique_temp_dir;
+     use crate::DB_INIT_METRIC;
+     use crate::DbTelemetry;
+-    use crate::migrations::STATE_MIGRATOR;
+     use codex_protocol::ThreadId;
+     use codex_utils_absolute_path::test_support::PathExt;
+     use pretty_assertions::assert_eq;
+@@ -601,7 +600,9 @@
+             .open_read_write_pool(&state_path)
+             .await
+             .expect("open state db");
+-        STATE_MIGRATOR
++        let mut strict_migrator = runtime_state_migrator();
++        strict_migrator.ignore_missing = false;
++        strict_migrator
+             .run(&pool)
+             .await
+             .expect("apply current state schema");
+@@ -619,7 +620,7 @@
+         pool.close().await;
+ 
+         let strict_pool = open_db_pool(state_path.as_path()).await;
+-        let strict_err = STATE_MIGRATOR
++        let strict_err = strict_migrator
+             .run(&strict_pool)
+             .await
+             .expect_err("strict migrator should reject newer applied migrations");
+diff --git a/codex-rs/state/src/runtime/logs.rs b/codex-rs/state/src/runtime/logs.rs
+--- a/codex-rs/state/src/runtime/logs.rs
++++ b/codex-rs/state/src/runtime/logs.rs
+@@ -540,7 +540,7 @@
+     use super::test_support::unique_temp_dir;
+     use crate::LogEntry;
+     use crate::LogQuery;
+-    use crate::migrations::LOGS_MIGRATOR;
++    use crate::migrations::runtime_logs_migrator;
+     use chrono::Utc;
+     use codex_utils_absolute_path::test_support::PathExt;
+     use pretty_assertions::assert_eq;
+@@ -610,13 +610,11 @@
+             .expect("create codex home");
+         let logs_path =
+             crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()).logs_db_path();
++        let current_migrator = runtime_logs_migrator();
+         let old_logs_migrator = Migrator {
+-            migrations: Cow::Owned(vec![LOGS_MIGRATOR.migrations[0].clone()]),
++            migrations: Cow::Owned(vec![current_migrator.migrations[0].clone()]),
+             ignore_missing: false,
+-            locking: true,
+-            no_tx: false,
+-            table_name: LOGS_MIGRATOR.table_name.clone(),
+-            create_schemas: LOGS_MIGRATOR.create_schemas.clone(),
++            ..current_migrator
+         };
+         let pool = crate::SqliteConfig::new_for_testing(codex_home.as_path().abs())
+             .open_read_write_pool(&logs_path)
+diff --git a/codex-rs/state/src/runtime/queued_items_tests.rs b/codex-rs/state/src/runtime/queued_items_tests.rs
+--- a/codex-rs/state/src/runtime/queued_items_tests.rs
++++ b/codex-rs/state/src/runtime/queued_items_tests.rs
+@@ -1,5 +1,5 @@
+ use super::*;
+-use crate::migrations::QUEUE_MIGRATOR;
++use crate::migrations::runtime_queue_migrator;
+ use crate::runtime::test_support::test_thread_metadata;
+ use crate::runtime::test_support::unique_temp_dir;
+ use codex_utils_absolute_path::test_support::PathExt;
+@@ -49,13 +49,11 @@
+     tokio::fs::create_dir_all(&home).await.unwrap();
+     let sqlite = crate::SqliteConfig::new_for_testing(home.as_path().abs());
+     let queue_path = sqlite.queue_db_path();
++    let current_migrator = runtime_queue_migrator();
+     let old_queue_migrator = Migrator {
+-        migrations: Cow::Owned(vec![QUEUE_MIGRATOR.migrations[0].clone()]),
++        migrations: Cow::Owned(vec![current_migrator.migrations[0].clone()]),
+         ignore_missing: false,
+-        locking: true,
+-        no_tx: false,
+-        table_name: QUEUE_MIGRATOR.table_name.clone(),
+-        create_schemas: QUEUE_MIGRATOR.create_schemas.clone(),
++        ..current_migrator
+     };
+     let pool = sqlite.open_read_write_pool(&queue_path).await.unwrap();
+     old_queue_migrator.run(&pool).await.unwrap();
+diff --git a/codex-rs/state/src/runtime/remote_control.rs b/codex-rs/state/src/runtime/remote_control.rs
+--- a/codex-rs/state/src/runtime/remote_control.rs
++++ b/codex-rs/state/src/runtime/remote_control.rs
+@@ -156,7 +156,7 @@
+     use super::RemoteControlEnrollmentRecord;
+     use super::StateRuntime;
+     use super::test_support::unique_temp_dir;
+-    use crate::migrations::STATE_MIGRATOR;
++    use crate::migrations::runtime_state_migrator;
+     use codex_utils_absolute_path::test_support::PathExt;
+     use pretty_assertions::assert_eq;
+     use sqlx::migrate::Migrator;
+@@ -334,9 +334,10 @@
+         tokio::fs::create_dir_all(&codex_home)
+             .await
+             .expect("create codex home");
++        let current_migrator = runtime_state_migrator();
+         let old_state_migrator = Migrator {
+             migrations: Cow::Owned(
+-                STATE_MIGRATOR
++                current_migrator
+                     .migrations
+                     .iter()
+                     .filter(|migration| migration.version <= 36)
+@@ -344,10 +345,7 @@
+                     .collect(),
+             ),
+             ignore_missing: false,
+-            locking: true,
+-            no_tx: false,
+-            table_name: STATE_MIGRATOR.table_name.clone(),
+-            create_schemas: STATE_MIGRATOR.create_schemas.clone(),
++            ..current_migrator
+         };
+         let sqlite = crate::SqliteConfig::new_for_testing(codex_home.as_path().abs());
+         let pool = sqlite
+diff --git a/codex-rs/state/src/sqlite.rs b/codex-rs/state/src/sqlite.rs
+--- a/codex-rs/state/src/sqlite.rs
++++ b/codex-rs/state/src/sqlite.rs
+@@ -7,7 +7,6 @@
+ 
+ use crate::DbTelemetry;
+ use crate::migrations::repair_legacy_recency_migration_version;
+-use crate::migrations::repair_migration_line_endings;
+ use crate::runtime::RuntimeDbInitError;
+ use crate::telemetry;
+ use crate::telemetry::DbKind;
+@@ -256,7 +255,6 @@
+             if matches!(spec.kind, DbKind::State) {
+                 repair_legacy_recency_migration_version(&pool, migrator).await?;
+             }
+-            repair_migration_line_endings(&pool, migrator).await?;
+             migrator.run(&pool).await.map_err(anyhow::Error::from)
+         }
+         .await;
+diff --git a/codex-rs/thread-manager-sample/src/main.rs b/codex-rs/thread-manager-sample/src/main.rs
+--- a/codex-rs/thread-manager-sample/src/main.rs
++++ b/codex-rs/thread-manager-sample/src/main.rs
+@@ -232,7 +232,6 @@
+         tui_terminal_title: None,
+         tui_theme: None,
+         tui_raw_output_mode: false,
+-        tui_subagent_live_mouse: codex_config::types::SubagentLiveMouseMode::Auto,
+         tui_pet: None,
+         tui_pet_anchor: TuiPetAnchor::Composer,
+         terminal_resize_reflow: TerminalResizeReflowConfig::default(),
+diff --git a/codex-rs/tui/src/app/agent_status_feed.rs b/codex-rs/tui/src/app/agent_status_feed.rs
+--- a/codex-rs/tui/src/app/agent_status_feed.rs
++++ b/codex-rs/tui/src/app/agent_status_feed.rs
+@@ -260,7 +260,6 @@
+                 CollabAgentTool::SendInput => "Sent input to an agent",
+                 CollabAgentTool::ResumeAgent => "Resumed an agent",
+                 CollabAgentTool::Wait => "Waited for an agent",
+-                CollabAgentTool::Join => "Joined an agent",
+                 CollabAgentTool::CloseAgent => "Closed an agent",
+             };
+             other_summary(action)
+diff --git a/codex-rs/tui/src/lib.rs b/codex-rs/tui/src/lib.rs
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -1631,7 +1631,6 @@
+             shutdown_app_server_if_present(app_server.take()).await;
+         }
+     }
+-    tui.set_subagent_live_mouse_mode(config.tui_subagent_live_mouse);
+     tui.sync_subagent_live_mouse_capture(
+         /*panel_renderable*/ false,
+         config.tui_raw_output_mode,
+diff --git a/codex-rs/tui/src/multi_agents.rs b/codex-rs/tui/src/multi_agents.rs
+--- a/codex-rs/tui/src/multi_agents.rs
++++ b/codex-rs/tui/src/multi_agents.rs
+@@ -261,7 +261,7 @@
+                 )
+             }
+         }),
+-        CollabAgentTool::Wait | CollabAgentTool::Join => None,
++        CollabAgentTool::Wait => None,
+         CollabAgentTool::CloseAgent => {
+             if matches!(status, CollabAgentToolCallStatus::InProgress) {
+                 return None;
+diff --git a/codex-rs/tui/src/thread_transcript.rs b/codex-rs/tui/src/thread_transcript.rs
+--- a/codex-rs/tui/src/thread_transcript.rs
++++ b/codex-rs/tui/src/thread_transcript.rs
+@@ -265,9 +265,7 @@
+             vec![format!("tool: {name} · {status:?}").dim().into()]
+         }
+         ThreadItem::CollabAgentToolCall {
+-            tool:
+-                codex_app_server_protocol::CollabAgentTool::Wait
+-                | codex_app_server_protocol::CollabAgentTool::Join,
++            tool: codex_app_server_protocol::CollabAgentTool::Wait,
+             ..
+         } => Vec::new(),
+         ThreadItem::CollabAgentToolCall { tool, status, .. } => {
+diff --git a/codex-rs/tui/src/tui.rs b/codex-rs/tui/src/tui.rs
+--- a/codex-rs/tui/src/tui.rs
++++ b/codex-rs/tui/src/tui.rs
+@@ -47,6 +47,7 @@
+ pub(crate) use self::input_boundary::discard_pending_terminal_input;
+ #[cfg(all(test, unix))]
+ use self::input_boundary::terminal_input_is_readable;
++use self::mouse_capture::SubagentLiveMouseMode;
+ use crate::custom_terminal;
+ use crate::custom_terminal::Terminal as CustomTerminal;
+ use crate::insert_history::HistoryLineWrapPolicy;
+@@ -62,7 +63,6 @@
+ use crate::tui::scrollback::ScrollbackStrategy;
+ use codex_config::types::NotificationCondition;
+ use codex_config::types::NotificationMethod;
+-use codex_config::types::SubagentLiveMouseMode;
+ 
+ mod event_stream;
+ mod frame_rate_limiter;
+@@ -683,7 +683,9 @@
+             notification_condition: NotificationCondition::default(),
+             scrollback,
+             alt_screen_enabled: true,
+-            subagent_live_mouse_mode: SubagentLiveMouseMode::Auto,
++            subagent_live_mouse_mode: SubagentLiveMouseMode::from_env_value(std::env::var(
++                "CSA_SUBAGENT_LIVE_MOUSE",
++            )),
+             mouse_capture: mouse_capture::MouseCapture::default(),
+             _stderr_guard: stderr_guard,
+         }
+@@ -692,10 +694,6 @@
+     /// Set whether alternate screen is enabled. When false, enter_alt_screen() becomes a no-op.
+     pub fn set_alt_screen_enabled(&mut self, enabled: bool) {
+         self.alt_screen_enabled = enabled;
+-    }
+-
+-    pub fn set_subagent_live_mouse_mode(&mut self, mode: SubagentLiveMouseMode) {
+-        self.subagent_live_mouse_mode = mode;
+     }
+ 
+     pub(crate) fn sync_subagent_live_mouse_capture(
+diff --git a/codex-rs/tui/src/tui/mouse_capture.rs b/codex-rs/tui/src/tui/mouse_capture.rs
+--- a/codex-rs/tui/src/tui/mouse_capture.rs
++++ b/codex-rs/tui/src/tui/mouse_capture.rs
+@@ -1,3 +1,4 @@
++use std::env::VarError;
+ use std::io::Result;
+ use std::io::Write;
+ use std::io::stdout;
+@@ -5,7 +6,6 @@
+ use std::sync::atomic::AtomicBool;
+ use std::sync::atomic::Ordering;
+ 
+-use codex_config::types::SubagentLiveMouseMode;
+ use codex_terminal_detection::TerminalInfo;
+ use codex_terminal_detection::TerminalName;
+ use crossterm::event::DisableMouseCapture;
+@@ -13,6 +13,32 @@
+ use ratatui::crossterm::execute;
+ 
+ static MOUSE_CAPTURE_INITIALIZED: AtomicBool = AtomicBool::new(false);
++
++/// Process-only mouse policy; it must not extend the upstream Codex config schema.
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
++pub(super) enum SubagentLiveMouseMode {
++    /// Capture in identified terminals while the live panel is visible.
++    #[default]
++    Auto,
++    /// Capture in the interactive TUI, except in raw output mode.
++    On,
++    /// Leave mouse input to the terminal.
++    Off,
++}
++
++impl SubagentLiveMouseMode {
++    pub(super) fn from_env_value(value: std::result::Result<String, VarError>) -> Self {
++        match value.as_deref() {
++            Err(VarError::NotPresent) | Ok("auto") => Self::Auto,
++            Ok("on") => Self::On,
++            Ok("off") => Self::Off,
++            Ok(_) | Err(VarError::NotUnicode(_)) => {
++                tracing::warn!("invalid CSA_SUBAGENT_LIVE_MOUSE; using auto");
++                Self::Auto
++            }
++        }
++    }
++}
+ 
+ #[derive(Clone, Debug, Default)]
+ pub(super) struct MouseCapture {
+diff --git a/codex-rs/tui/src/tui/mouse_capture_tests.rs b/codex-rs/tui/src/tui/mouse_capture_tests.rs
+--- a/codex-rs/tui/src/tui/mouse_capture_tests.rs
++++ b/codex-rs/tui/src/tui/mouse_capture_tests.rs
+@@ -1,6 +1,25 @@
+ use super::*;
+ use codex_terminal_detection::Multiplexer;
+ use crossterm::Command;
++use pretty_assertions::assert_eq;
++
++#[test]
++fn process_mouse_policy_parses_without_config_or_environment_mutation() {
++    for (input, expected) in [
++        (Err(VarError::NotPresent), SubagentLiveMouseMode::Auto),
++        (Ok("auto".to_string()), SubagentLiveMouseMode::Auto),
++        (Ok("on".to_string()), SubagentLiveMouseMode::On),
++        (Ok("off".to_string()), SubagentLiveMouseMode::Off),
++        (Ok(String::new()), SubagentLiveMouseMode::Auto),
++        (Ok("invalid".to_string()), SubagentLiveMouseMode::Auto),
++        (
++            Err(VarError::NotUnicode(std::ffi::OsString::new())),
++            SubagentLiveMouseMode::Auto,
++        ),
++    ] {
++        assert_eq!(SubagentLiveMouseMode::from_env_value(input), expected);
++    }
++}
+ 
+ fn terminal(name: TerminalName, multiplexer: Option<Multiplexer>) -> TerminalInfo {
+     TerminalInfo {

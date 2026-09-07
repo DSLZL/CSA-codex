@@ -30,7 +30,7 @@ from compat_release import (  # noqa: E402
 )
 from compatibility_audit import AuditError, check_immutability  # noqa: E402
 from generate_release_notes import ReleaseNotesError, generate  # noqa: E402
-from patch_family import verify_family  # noqa: E402
+from patch_family import PatchFamilyError, verify_family  # noqa: E402
 from run_patch_contract import (  # noqa: E402
     ContractError,
     load_contract,
@@ -130,6 +130,26 @@ def test_payload_and_contract_authority(root: Path) -> None:
 
     family = verify_family(REPOSITORY / "payload/codex/native-join-p10")
     assert family["status"] == "pass" and family["bindings"] == 3
+    p14 = root / "native-join-p14"
+    shutil.copytree(REPOSITORY / "payload/codex/native-join-p14", p14)
+    assert verify_family(p14)["status"] == "pass"
+    manifest_path = p14 / "bindings/rust-v0.153.2-native-join-p14/manifest.toml"
+    before = manifest_path.read_bytes()
+    text = before.decode("utf-8")
+    adapter = text[text.rindex("[[patches]]"):text.index("[preimage]")]
+    reordered = text.replace(adapter, "").replace("[[patches]]", adapter + "[[patches]]", 1)
+    # Keep lexical ordering valid so the ordered-ownership check rejects this fixture.
+    reordered = reordered.replace(
+        '"patches/1600-cold-unplug-persistence-adapter.patch"',
+        '"patches/0000-cold-unplug-persistence-adapter.patch"',
+    ).encode("utf-8")
+    manifest_path.write_bytes(reordered)
+    family_path = p14 / "family.toml"
+    family_path.write_bytes(family_path.read_bytes().replace(
+        hashlib.sha256(before).hexdigest().encode(),
+        hashlib.sha256(reordered).hexdigest().encode(),
+    ))
+    expect_error(lambda: verify_family(p14), PatchFamilyError)
     contract = load_contract(P10_MANIFEST.with_name("test-contract.json"), P10_MANIFEST.parent.name)
     assert contract["schema"] == 1
     assert contract["build"]["artifact"].endswith("/release/codex.exe")

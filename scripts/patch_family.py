@@ -424,8 +424,9 @@ def verify_family(family_root: Path) -> dict[str, object]:
                 shared_patches[relative] = shared_patches.get(relative, 0) + 1
                 non_addition_count += 1
             elif relative.startswith(f"bindings/{compat_id}/patches/"):
-                if touched & absent:
-                    raise PatchFamilyError(f"binding adapter contains a CSA-owned addition: {logical}")
+                # Later adapters may update files introduced by earlier shared additions.
+                if (touched & absent) - addition_paths:
+                    raise PatchFamilyError(f"binding adapter precedes its CSA-owned addition: {logical}")
                 adapter_files.add(relative)
                 adapter_digests.setdefault(_digest(physical.read_bytes()), []).append(relative)
                 adapter_loc += added_lines(physical)
