@@ -258,6 +258,23 @@
           "acceptance_sha256": null
         }
       }
+    },
+    "rust-v0.153.2-native-join-p15": {
+      "lifecycle": "candidate",
+      "build_enabled": true,
+      "release_enabled": false,
+      "manifest": "payload/codex/native-join-p15/bindings/rust-v0.153.2-native-join-p15/manifest.toml",
+      "manifest_sha256": "c92bcbf2f3f7d1a10ee850e292b02aa7041e0934ea70002249ed89a7d9d53532",
+      "targets": {
+        "x86_64-pc-windows-msvc": {
+          "build_profile": "release/build-profiles/windows-msvc-x64.json",
+          "build_profile_sha256": "be3194ff9dab2c69914ef0751f700d8d4114a0bd53528bd5b566c61fdf05df13",
+          "runtime_lock": "release/runtime-locks/rust-v0.153.2-native-join-p15.json",
+          "runtime_lock_sha256": "f9cb635512b7acb9b62cec5ba49130365dfaefb6642f50a5cf283ef390371d71",
+          "acceptance": null,
+          "acceptance_sha256": null
+        }
+      }
     }
   }
 }

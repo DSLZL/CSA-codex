@@ -1,0 +1,61 @@
+diff --git a/codex-rs/rollout/src/policy_tests.rs b/codex-rs/rollout/src/policy_tests.rs
+new file mode 100644
+--- /dev/null
++++ b/codex-rs/rollout/src/policy_tests.rs
+@@ -0,0 +1,56 @@
++use super::*;
++use codex_protocol::ThreadId;
++use codex_protocol::items::CollabAgentToolCallItem;
++use codex_protocol::items::CollabAgentToolCallStatus;
++use codex_protocol::protocol::AgentStatus;
++use codex_protocol::protocol::ItemCompletedEvent;
++use codex_protocol::protocol::ItemStartedEvent;
++use pretty_assertions::assert_eq;
++
++#[test]
++fn native_wait_completion_is_durable_once_in_both_history_modes() {
++    let parent = ThreadId::new();
++    let children = [ThreadId::new(), ThreadId::new()];
++    for child_count in [1, 2] {
++        let completed = ItemCompletedEvent {
++            thread_id: parent,
++            turn_id: "parent-turn".to_string(),
++            item: TurnItem::CollabAgentToolCall(CollabAgentToolCallItem {
++                id: "join-call".to_string(),
++                tool: CollabAgentTool::Wait,
++                status: CollabAgentToolCallStatus::Completed,
++                sender_thread_id: parent,
++                receiver_thread_ids: children[..child_count].to_vec(),
++                receiver_agents: Vec::new(),
++                prompt: None,
++                model: None,
++                reasoning_effort: None,
++                agents_states: children[..child_count]
++                    .iter()
++                    .map(|child| (*child, AgentStatus::Completed(Some("done".to_string()))))
++                    .collect(),
++            }),
++            started_at_ms: Some(1),
++            completed_at_ms: 2,
++        };
++        let started = EventMsg::ItemStarted(ItemStartedEvent {
++            thread_id: parent,
++            turn_id: completed.turn_id.clone(),
++            item: completed.item.clone(),
++            started_at_ms: 1,
++        });
++        let mut events = vec![started, EventMsg::ItemCompleted(completed.clone())];
++        events.extend(completed.as_legacy_events(/*show_raw_agent_reasoning*/ false));
++        let items = events
++            .into_iter()
++            .map(RolloutItem::EventMsg)
++            .collect::<Vec<_>>();
++        let expected = vec![RolloutItem::EventMsg(EventMsg::ItemCompleted(completed))];
++        for mode in [ThreadHistoryMode::Legacy, ThreadHistoryMode::Paginated] {
++            assert_eq!(
++                serde_json::to_value(persisted_rollout_items(&items, mode)).unwrap(),
++                serde_json::to_value(&expected).unwrap()
++            );
++        }
++    }
++}
