@@ -650,6 +650,130 @@ def test_workflow_contracts() -> None:
         assert command in ci
 
 
+def test_cold_unplug_boundaries(root: Path) -> None:
+    import copy
+    import queue
+    import time
+
+    import verify_cold_unplug as cold
+
+    root.mkdir(parents=True)
+    owned = cold.fresh_root(root / "owned", root)
+    expect_error(lambda: cold.fresh_root(owned, root), cold.ValidationError)
+    expect_error(lambda: cold.fresh_root(root.parent / "escape", root), cold.ValidationError)
+    expect_error(lambda: cold.strict_json('{"id":1,"id":2}'), cold.ValidationError)
+    expect_error(lambda: cold.strict_json('{"value":NaN}'), cold.ValidationError)
+    history = owned / "sessions" / "rollout.jsonl"
+    history.parent.mkdir()
+    history.write_text('{"type":"session_meta","payload":{"id":"fixture"}}\n', encoding="utf-8")
+    assert cold.read_canonical(owned)["sessions/rollout.jsonl"]["count"] == 1
+    history.write_text(history.read_text(encoding="utf-8") + '{"type":', encoding="utf-8")
+    expect_error(lambda: cold.read_canonical(owned), json.JSONDecodeError)
+    expect_error(lambda: cold.tool_result({"input": []}, "missing"), cold.ValidationError)
+    before = {"id": "thread", "turns": [{"id": "turn", "status": "completed", "items": [{"id": "item", "type": "agentMessage", "text": "sentinel"}]}]}
+    cold.assert_history_preserved(before, before)
+    dropped = {"id": "thread", "turns": [{"id": "turn", "status": "completed", "items": []}]}
+    expect_error(lambda: cold.assert_history_preserved(before, dropped), cold.ValidationError)
+    wait = {"id": "join", "type": "collabAgentToolCall", "tool": "wait", "status": "completed"}
+    with_wait = copy.deepcopy(before)
+    with_wait["turns"][0]["items"].insert(0, wait)
+    cold.assert_history_preserved(with_wait, before, official_legacy_wait_ids={"join"})
+    expect_error(lambda: cold.assert_history_preserved(with_wait, before), cold.ValidationError)
+    expect_error(lambda: cold.assert_history_preserved(with_wait, before, official_legacy_wait_ids={"unknown"}), cold.ValidationError)
+    expect_error(lambda: cold.assert_history_preserved(with_wait, dropped, official_legacy_wait_ids={"join"}), cold.ValidationError)
+    for key, value in (("status", "inProgress"), ("tool", "spawnAgent"), ("type", "agentMessage")):
+        changed = copy.deepcopy(with_wait)
+        changed["turns"][0]["items"][0][key] = value
+        expect_error(lambda: cold.assert_history_preserved(changed, before, official_legacy_wait_ids={"join"}), cold.ValidationError)
+    for index in (0, 1):
+        changed = copy.deepcopy(with_wait)
+        changed["turns"][0]["items"][index]["text"] = "changed"
+        expect_error(lambda: cold.assert_history_preserved(with_wait, changed, official_legacy_wait_ids={"join"}), cold.ValidationError)
+
+    runs = [{"target": "/root/a", "run_id": "run-a"}, {"target": "/root/b", "run_id": "run-b"}]
+    terminal = [{**run, "status": "completed", "output": run["run_id"], "error": None, "reason": None} for run in reversed(runs)]
+    join = {"join_call_id": "join", "runs": runs, "thread_ids": ["a", "b"], "terminal": terminal}
+    rows = [
+        {"type": "session_meta", "payload": {"id": "parent"}},
+        {"type": "response_item", "payload": {"type": "function_call", "name": "join_agents", "call_id": "join", "arguments": json.dumps({"runs": list(reversed(runs))})}},
+        {"type": "event_msg", "payload": {"type": "item_completed", "item": {"id": "join", "type": "CollabAgentToolCall", "tool": "wait", "status": "completed", "sender_thread_id": "parent", "receiver_thread_ids": ["b", "a"]}}},
+        {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "join", "output": json.dumps({"results": terminal})}},
+    ]
+    history.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    canonical = cold.read_canonical(owned)
+    assert len(cold.verify_persisted_joins(canonical, "parent", [join])) == 1
+    cold.assert_canonical_preserved(canonical, canonical)
+    relative = next(iter(canonical))
+    for index in (1, 2, 3):
+        changed = copy.deepcopy(canonical)
+        changed[relative]["rows"].pop(index)
+        expect_error(lambda: cold.verify_persisted_joins(changed, "parent", [join]), cold.ValidationError)
+        expect_error(lambda: cold.assert_canonical_preserved(canonical, changed), cold.ValidationError)
+    for index, key, value in ((1, "arguments", json.dumps({"runs": runs})), (3, "output", json.dumps({"results": list(reversed(terminal))}))):
+        changed = copy.deepcopy(canonical)
+        changed[relative]["rows"][index]["payload"][key] = value
+        expect_error(lambda: cold.verify_persisted_joins(changed, "parent", [join]), cold.ValidationError)
+        expect_error(lambda: cold.assert_canonical_preserved(canonical, changed), cold.ValidationError)
+    changed = copy.deepcopy(canonical)
+    changed[relative]["rows"].append(copy.deepcopy(rows[2]))
+    expect_error(lambda: cold.verify_persisted_joins(changed, "parent", [join]), cold.ValidationError)
+    with_event_wait = copy.deepcopy(canonical)
+    with_event_wait[relative]["rows"].extend([
+        {"type": "response_item", "payload": {"type": "function_call", "name": "wait_agent", "call_id": "event-wait", "arguments": '{"timeout_ms":1000}'}},
+        {"type": "event_msg", "payload": {"type": "item_completed", "item": {"id": "event-wait", "type": "CollabAgentToolCall", "tool": "wait", "status": "completed", "sender_thread_id": "parent", "receiver_thread_ids": []}}},
+        {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "event-wait", "output": "native event notification"}},
+    ])
+    assert len(cold.verify_persisted_joins(with_event_wait, "parent", [join], {"event-wait"})) == 2
+    expect_error(lambda: cold.verify_persisted_joins(canonical, "parent", [join], {"event-wait"}), cold.ValidationError)
+    with_event_wait[relative]["rows"][-2]["payload"]["item"]["status"] = "in_progress"
+    expect_error(lambda: cold.verify_persisted_joins(with_event_wait, "parent", [join], {"event-wait"}), cold.ValidationError)
+    child_id = "01a07b65-03a5-72a0-ab67-a5154f4b1879"
+    spawn = {"turns": [{"items": [{"type": "subAgentActivity", "kind": "started", "id": "spawn", "agentThreadId": child_id}]}]}
+    assert cold.spawn_thread_id(spawn, "spawn") == child_id
+    expect_error(lambda: cold.spawn_thread_id(spawn, "other"), cold.ValidationError)
+    server = cold.AppServer.__new__(cold.AppServer)
+    server.home = owned
+    sent = []
+    server.send = sent.append
+    server.call = lambda _method, _params: {"codexHome": str(root)}
+    expect_error(server.initialize, cold.ValidationError)
+    assert not sent
+    server.call = lambda _method, _params: {"codexHome": str(owned)}
+    server.initialize()
+    assert sent == [{"method": "initialized", "params": {}}]
+    server.label = "unit-timeout"
+    server.messages = queue.Queue()
+    expect_error(lambda: server.receive(time.monotonic()), cold.ValidationError)
+    server.messages.put(None)
+    expect_error(lambda: server.receive(time.monotonic() + 1), cold.ValidationError)
+    server.call = lambda _method, _params: {"data": [], "nextCursor": "repeated"}
+    expect_error(lambda: server.pages("thread/turns/list", {}), cold.ValidationError)
+    start = {"type": "turnStarted", "position": 1, "turnId": "turn"}
+    item = {"type": "item", "position": 1, "turnId": "turn", "item": {"id": "item"}}
+    end = {"type": "turnCompleted", "position": 2, "turnId": "turn"}
+    pages = iter([{"data": [item, end], "nextCursor": "older"}, {"data": [start], "nextCursor": None}])
+    server.call = lambda _method, _params: next(pages)
+    assert server.pages("thread/timeline/list", {}) == [start, item, end]
+    server.call = lambda _method, _params: {"data": [end, item], "nextCursor": None}
+    expect_error(lambda: server.pages("thread/timeline/list", {}), cold.ValidationError)
+    turns = [{"id": "first", "status": "completed", "items": [{"id": "message"}, {"id": "late-child-completion"}]}, {"id": "second", "status": "completed", "items": [{"id": "next-message"}]}]
+    items = [{"turnId": "first", "item": turns[0]["items"][0]}, {"turnId": "second", "item": turns[1]["items"][0]}, {"turnId": "first", "item": turns[0]["items"][1]}]
+    timeline = [{"type": "item", "position": index, **row} for index, row in enumerate(items)]
+    server.pages = lambda method, _params: {"thread/turns/list": turns, "thread/items/list": items, "thread/timeline/list": timeline}[method]
+    thread = {"id": "thread", "turns": turns}
+    assert cold.check_paginated_readers(server, thread)["items"] == items
+    timeline[1], timeline[2] = timeline[2], timeline[1]
+    expect_error(lambda: cold.check_paginated_readers(server, thread), cold.ValidationError)
+    parents = [{"id": "official-parent"}, {"id": "candidate-parent"}]
+    children = [{"id": f"child-{index}"} for index in range(5)]
+    expected = [row["id"] for row in parents + children]
+    cold.assert_native_discovery(parents, children, expected)
+    expect_error(lambda: cold.assert_native_discovery(parents[:1], children, expected), cold.ValidationError)
+    expect_error(lambda: cold.assert_native_discovery(parents + parents[:1], children, expected), cold.ValidationError)
+    expect_error(lambda: cold.assert_native_discovery(parents, children[:-1], expected), cold.ValidationError)
+    expect_error(lambda: cold.assert_native_discovery(parents, children[:-1] + children[:1], expected), cold.ValidationError)
+
+
 def main() -> int:
     test_repository_boundary()
     with tempfile.TemporaryDirectory(prefix="csa-codex-producer-") as directory:
@@ -658,6 +782,7 @@ def main() -> int:
         test_nextest_runner_mapping()
         test_release_matrix_and_pack(root / "pack")
         test_release_notes(root / "notes")
+        test_cold_unplug_boundaries(root / "cold-unplug")
     test_workflow_contracts()
     print(json.dumps({"schema": 1, "result": "pass"}, indent=2))
     return 0

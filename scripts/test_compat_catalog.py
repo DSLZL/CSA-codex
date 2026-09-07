@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import subprocess
@@ -226,6 +227,170 @@ url = "{url}"
             stderr=subprocess.PIPE,
             check=False,
         )
+
+    def cold_unplug_fixture(self, revision: int = 14) -> tuple[Path, str, dict]:
+        holder, root = self.fixture()
+        self.addCleanup(holder.cleanup)
+        compat = f"rust-v9.8.0-native-join-p{revision}"
+        index_path = root / "release/compatibility-index.json"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        entry = index["compatibilities"].pop(LEGACY)
+        entry["lifecycle"] = "candidate"
+        index["compatibilities"][compat] = entry
+        manifest_path = root / entry["manifest"]
+        manifest_text = manifest_path.read_text(encoding="utf-8").replace(LEGACY, compat)
+        manifest_text = manifest_text.replace(
+            f"unpublished://csa/{compat}/{TARGET}/codex.exe",
+            f"https://github.com/DSLZL/CSA-codex/releases/download/compat-{compat}/{compat}--codex.exe",
+        )
+        manifest_path.write_text(manifest_text, encoding="utf-8")
+        entry["manifest_sha256"] = sha(manifest_path)
+        route = entry["targets"][TARGET]
+        runtime_path = root / route["runtime_lock"]
+        runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+        runtime["compat_id"] = compat
+        dump(runtime_path, runtime)
+        route["runtime_lock_sha256"] = sha(runtime_path)
+        dump(index_path, index)
+        resolved = catalog_module.resolve(root, compat, TARGET)
+        dump(root / "resolution.json", resolved)
+        (root / "codex.exe").write_bytes(DEVELOPMENT_ARTIFACT)
+        catalog_module.create_candidate_record(
+            root, root / "resolution.json", root / "codex.exe", root / "candidate.json",
+            "github", "123", None, "a" * 40,
+        )
+        proof_path = root / "observations.json"
+        dump(proof_path, {"kind": "unit-test-only; not runtime acceptance"})
+        target_record = root / "target-record.json"
+        dump(target_record, {
+            "schema": 2, "builder_repository": "DSLZL/CSA-codex-windows-x64", "runner": "windows-2025",
+            "source_commit": "a" * 40, "request_id": "unit-test", "workflow_run_id": "123",
+            "target": TARGET, "compat_id": compat, "manifest_sha256": resolved["manifest_sha256"],
+            "upstream_commit": UPSTREAM, "artifact": "bin/codex.exe",
+            "sha256": DEVELOPMENT_ARTIFACT_SHA, "size": len(DEVELOPMENT_ARTIFACT),
+        })
+        proof = {"status": "passed", "evidence": [proof_path.name]}
+        report = {
+            "schema": 1, "status": "passed", "fixture_kind": "loopback-responses",
+            "compat_id": compat, "target": TARGET, "codex_version": "9.8.0",
+            "upstream_commit": UPSTREAM, "manifest_sha256": resolved["manifest_sha256"],
+            "build_profile_sha256": resolved["build_profile_sha256"],
+            "runtime_lock_sha256": resolved["runtime_lock_sha256"],
+            "candidate": {"sha256": DEVELOPMENT_ARTIFACT_SHA, "size": len(DEVELOPMENT_ARTIFACT), "version": "codex-cli 9.8.0"},
+            "official": {"sha256": "b" * 64, "size": 100, "version": "codex-cli 9.8.0", "archive_integrity": SRI},
+            "build": {
+                "provider": "github", "repository": "DSLZL/CSA-codex-windows-x64",
+                "source_commit": "a" * 40, "workflow_run_id": 123, "request_id": "unit-test",
+                "recipe_commit": "c" * 40, "target_record": target_record.name,
+            },
+            "cases": {mode: {case: copy.deepcopy(proof) for case in catalog_module.COLD_UNPLUG_CASES} for mode in catalog_module.COLD_UNPLUG_MODES},
+            "files": {path.name: {"sha256": sha(path), "size": path.stat().st_size} for path in (proof_path, target_record)},
+            "processes": [
+                {
+                    **copy.deepcopy(proof), "id": f"{role}-{mode}", "role": role, "mode": mode,
+                    "sha256": DEVELOPMENT_ARTIFACT_SHA if role == "candidate" else "b" * 64,
+                    "version": "codex-cli 9.8.0",
+                    "started_at": "2026-09-07T00:00:00+00:00", "ended_at": "2026-09-07T00:00:01+00:00",
+                    "exit_code": 0, "normal_shutdown": True,
+                }
+                for role in ("candidate", "official") for mode in catalog_module.COLD_UNPLUG_MODES
+            ],
+            "terminal": {"method": "conpty", "modes": {
+                mode: {
+                    **copy.deepcopy(proof), "keyboard": True, "capture_cleanup": True,
+                    "normal_shutdown": True, "exit_code": 0, "sha256": DEVELOPMENT_ARTIFACT_SHA,
+                    "version": "codex-cli 9.8.0", "started_at": "2026-09-07T00:00:00+00:00", "ended_at": "2026-09-07T00:00:01+00:00",
+                    "warning_count": 1 if mode == "invalid" else 0,
+                    "effective_mode": "auto" if mode in {"unset", "invalid"} else mode,
+                } for mode in catalog_module.COLD_UNPLUG_MOUSE_MODES
+            }},
+        }
+        for mode in catalog_module.COLD_UNPLUG_MODES:
+            report["cases"][mode]["G"].update(presentation="official-native" if mode == "legacy" else "native-wait", canonical_join_verified=True)
+        return root, compat, {"cold_unplug": report}
+
+    def accept_cold_fixture(self, root: Path, compat: str, evidence: dict) -> dict:
+        dump(root / "evidence.json", evidence)
+        return catalog_module.accept_candidate(
+            root, compat, TARGET, root / "candidate.json", root / "codex.exe",
+            Path(f"release/acceptance/{compat}/{TARGET}.json"), root / "evidence.json",
+            False, "unit-test",
+        )
+
+    def test_cold_unplug_acceptance_and_resolved_records_require_complete_evidence(self) -> None:
+        for revision in (14, 15):
+            with self.subTest(revision=revision):
+                root, compat, evidence = self.cold_unplug_fixture(revision)
+                self.assertEqual(self.accept_cold_fixture(root, compat, evidence)["result"], "accepted")
+                self.assertEqual(catalog_module.resolve(root, compat, TARGET)["lifecycle"], "accepted")
+                index_path = root / "release/compatibility-index.json"
+                index = json.loads(index_path.read_text(encoding="utf-8"))
+                route = index["compatibilities"][compat]["targets"][TARGET]
+                path = root / route["acceptance"]
+                accepted = json.loads(path.read_text(encoding="utf-8"))
+                del accepted["evidence"]["cold_unplug"]["cases"]["legacy"]["B"]
+                dump(path, accepted)
+                route["acceptance_sha256"] = sha(path)
+                dump(index_path, index)
+                with self.assertRaises(catalog_module.CatalogError):
+                    catalog_module.resolve(root, compat, TARGET)
+
+    def test_cold_unplug_rejects_incomplete_or_mismatched_evidence_before_writes(self) -> None:
+        root, compat, valid = self.cold_unplug_fixture()
+        before = {str(path.relative_to(root)): path.read_bytes() for path in (root / "release").rglob("*") if path.is_file()}
+        mutations = [
+            ((), "cold_unplug", None),
+            (("cold_unplug",), "schema", True),
+            (("cold_unplug",), "status", "NOT VERIFIED"),
+            (("cold_unplug",), "manifest_sha256", "0" * 64),
+            (("cold_unplug", "candidate"), "sha256", "0" * 64),
+            (("cold_unplug", "candidate"), "size", True),
+            (("cold_unplug", "official"), "archive_integrity", "wrong"),
+            (("cold_unplug", "build"), "source_commit", "d" * 40),
+            (("cold_unplug", "build"), "workflow_run_id", 124),
+            (("cold_unplug", "build"), "target_record", []),
+            (("cold_unplug", "cases", "paginated"), "I", None),
+            (("cold_unplug", "cases", "legacy", "G"), "status", "timed_out"),
+            (("cold_unplug", "cases", "legacy", "G"), "canonical_join_verified", False),
+            (("cold_unplug", "cases", "legacy", "G"), "canonical_join_verified", 1),
+            (("cold_unplug", "cases", "legacy", "G"), "presentation", "ignore-missing-items"),
+            (("cold_unplug", "cases", "paginated", "G"), "presentation", "official-native"),
+            (("cold_unplug", "cases", "legacy", "A"), "evidence", ["missing.json"]),
+            (("cold_unplug",), "processes", []),
+            (("cold_unplug", "processes", 0), "normal_shutdown", False),
+            (("cold_unplug", "processes", 0), "exit_code", False),
+            (("cold_unplug", "processes", 0), "ended_at", "2026-09-06T00:00:00+00:00"),
+            (("cold_unplug", "terminal"), "method", "redirected-stdout"),
+            (("cold_unplug", "terminal", "modes", "on"), "capture_cleanup", False),
+            (("cold_unplug", "terminal", "modes", "invalid"), "warning_count", 2),
+            (("cold_unplug", "terminal", "modes", "invalid"), "started_at", None),
+            (("cold_unplug", "files", "observations.json"), "sha256", "0" * 64),
+        ]
+        for path, key, value in mutations:
+            with self.subTest(path=path, key=key):
+                evidence = copy.deepcopy(valid)
+                target = evidence
+                for part in path:
+                    target = target[part]
+                target[key] = value
+                with self.assertRaises(catalog_module.CatalogError):
+                    self.accept_cold_fixture(root, compat, evidence)
+                after = {str(path.relative_to(root)): path.read_bytes() for path in (root / "release").rglob("*") if path.is_file()}
+                self.assertEqual(after, before)
+        target_record = root / "target-record.json"
+        changed_record = json.loads(target_record.read_text(encoding="utf-8"))
+        changed_record["request_id"] = "another-build"
+        dump(target_record, changed_record)
+        rebound = copy.deepcopy(valid)
+        rebound["cold_unplug"]["files"][target_record.name] = {"sha256": sha(target_record), "size": target_record.stat().st_size}
+        with self.assertRaises(catalog_module.CatalogError):
+            self.accept_cold_fixture(root, compat, rebound)
+        self.assertEqual({str(path.relative_to(root)): path.read_bytes() for path in (root / "release").rglob("*") if path.is_file()}, before)
+
+    def test_p13_keeps_its_original_acceptance_contract(self) -> None:
+        root, compat, _ = self.cold_unplug_fixture(13)
+        self.assertEqual(self.accept_cold_fixture(root, compat, {"kind": "historical-manual-evidence"})["result"], "accepted")
+        self.assertEqual(catalog_module.resolve(root, compat, TARGET)["lifecycle"], "accepted")
 
     def test_current_resolves_and_validates_acceptance(self) -> None:
         holder, root = self.fixture()

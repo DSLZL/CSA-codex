@@ -563,6 +563,181 @@ def validate_runtime_lock(path: Path, compat_id: str, codex_version: str, target
     }
 
 
+COLD_UNPLUG_MODES = ("legacy", "paginated")
+COLD_UNPLUG_CASES = tuple("ABCDEFGHI")
+COLD_UNPLUG_MOUSE_MODES = ("unset", "auto", "on", "off", "invalid")
+
+
+def validate_cold_unplug(
+    acceptance: dict[str, Any],
+    manifest: dict[str, Any],
+    runtime: dict[str, Any],
+    *,
+    evidence_root: Path | None = None,
+    candidate_record: dict[str, Any] | None = None,
+) -> None:
+    """Validate the portable p14+ report; acceptance also checks its evidence files."""
+    revision = re.search(r"-native-join-p(\d+)\Z", acceptance["compat_id"])
+    if revision is None or int(revision.group(1)) < 14:
+        return
+    label = "evidence.cold_unplug"
+    evidence = acceptance.get("evidence")
+    report = evidence.get("cold_unplug") if isinstance(evidence, dict) else None
+    keys = {
+        "schema", "status", "fixture_kind", "compat_id", "target", "codex_version",
+        "upstream_commit", "manifest_sha256", "build_profile_sha256",
+        "runtime_lock_sha256", "candidate", "official", "build", "cases",
+        "processes", "terminal", "files",
+    }
+    report = require_exact_keys(report, keys, keys, label)
+    if require_int(report["schema"], f"{label}.schema", minimum=1) != 1:
+        fail(f"{label} has an unsupported schema")
+    if report["status"] != "passed" or report["fixture_kind"] != "loopback-responses":
+        fail(f"{label} requires completed real-binary loopback observations")
+    for key in ("compat_id", "target", "manifest_sha256", "build_profile_sha256", "runtime_lock_sha256"):
+        if report[key] != acceptance[key]:
+            fail(f"{label}.{key} differs from acceptance authority")
+    for key in ("codex_version", "upstream_commit"):
+        if report[key] != manifest[key]:
+            fail(f"{label}.{key} differs from the manifest")
+    if report["target"] != "x86_64-pc-windows-msvc":
+        fail(f"{label} currently defines only the reviewed Windows x64 gate")
+
+    binary_keys = {"sha256", "size", "version"}
+    candidate = require_exact_keys(report["candidate"], binary_keys, binary_keys, f"{label}.candidate")
+    official_keys = binary_keys | {"archive_integrity"}
+    official = require_exact_keys(report["official"], official_keys, official_keys, f"{label}.official")
+    for role, binary in (("candidate", candidate), ("official", official)):
+        require_string(binary["sha256"], f"{label}.{role}.sha256", pattern=LOWER_SHA256)
+        require_int(binary["size"], f"{label}.{role}.size", minimum=1)
+        if binary["version"] != f"codex-cli {manifest['codex_version']}":
+            fail(f"{label}.{role}.version differs from the pinned version")
+    if candidate["sha256"] != acceptance["artifact_sha256"] or candidate["size"] != acceptance["artifact_size"]:
+        fail(f"{label}.candidate differs from the actual accepted artifact")
+    if candidate["sha256"] == official["sha256"]:
+        fail(f"{label} requires distinct official and candidate binaries")
+    if official["archive_integrity"] != runtime["integrity"]:
+        fail(f"{label}.official archive differs from the runtime lock")
+
+    build_keys = {"provider", "repository", "source_commit", "workflow_run_id", "request_id", "recipe_commit", "target_record"}
+    build = require_exact_keys(report["build"], build_keys, build_keys, f"{label}.build")
+    if build["provider"] != "github" or build["repository"] != "DSLZL/CSA-codex-windows-x64":
+        fail(f"{label}.build differs from the reviewed GitHub builder")
+    for key in ("source_commit", "recipe_commit"):
+        require_string(build[key], f"{label}.build.{key}", pattern=LOWER_SHA1)
+    run_id = require_int(build["workflow_run_id"], f"{label}.build.workflow_run_id", minimum=1)
+    require_string(build["request_id"], f"{label}.build.request_id", pattern=re.compile(r"[A-Za-z0-9._-]{1,128}\Z"))
+    if candidate_record is not None:
+        provenance = candidate_record.get("provenance", {})
+        if not isinstance(provenance, dict) or any(
+            provenance.get(key) != value for key, value in {
+                "provider": "github", "source_commit": build["source_commit"], "pipeline": str(run_id),
+            }.items()
+        ):
+            fail(f"{label}.build differs from candidate provenance")
+        if candidate_record.get("upstream") != {"tag": manifest["upstream_tag"], "commit": manifest["upstream_commit"]}:
+            fail(f"{label} candidate upstream differs from the manifest")
+
+    files = report["files"]
+    if not isinstance(files, dict) or not files:
+        fail(f"{label}.files must bind the supporting observations")
+    for relative, entry in files.items():
+        require_string(relative, f"{label}.files path", pattern=re.compile(r"[A-Za-z0-9._/-]+\Z"))
+        pure = PurePosixPath(relative)
+        if not pure.parts or pure.is_absolute() or pure.as_posix() != relative or any(part in {".", ".."} for part in pure.parts):
+            fail(f"{label}.files path must be normalized and relative")
+        entry = require_exact_keys(entry, {"sha256", "size"}, {"sha256", "size"}, f"{label}.files[{relative}]")
+        require_string(entry["sha256"], f"{label}.files sha256", pattern=LOWER_SHA256)
+        require_int(entry["size"], f"{label}.files size", minimum=0)
+        if evidence_root is not None:
+            path = evidence_root / Path(*pure.parts)
+            if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(evidence_root.resolve()):
+                fail(f"{label} evidence file is missing or escapes its root: {relative}")
+            if path.stat().st_size != entry["size"] or sha256_file(path) != entry["sha256"]:
+                fail(f"{label} evidence file differs: {relative}")
+    require_string(build["target_record"], f"{label}.build.target_record")
+    if build["target_record"] not in files:
+        fail(f"{label}.build must reference the verified target record")
+    if evidence_root is not None:
+        record = load_json(evidence_root / build["target_record"])
+        expected_record = {
+            "schema": 2, "builder_repository": build["repository"], "runner": "windows-2025",
+            "source_commit": build["source_commit"], "request_id": build["request_id"],
+            "workflow_run_id": str(run_id), "target": report["target"],
+            "compat_id": report["compat_id"], "manifest_sha256": report["manifest_sha256"],
+            "upstream_commit": report["upstream_commit"],
+            "artifact": "bin/" + manifest["artifacts"][report["target"]]["filename"],
+            "sha256": candidate["sha256"], "size": candidate["size"],
+        }
+        require_int(record.get("size"), f"{label}.build target record size", minimum=1)
+        if record != expected_record:
+            fail(f"{label}.build target record differs from the report and artifact")
+
+    def proof(value: Any, name: str) -> dict[str, Any]:
+        if not isinstance(value, dict) or value.get("status") != "passed":
+            fail(f"{label}.{name} is missing, failed or unverified")
+        references = value.get("evidence")
+        if not isinstance(references, list) or not references or any(
+            not isinstance(item, str) or item not in files for item in references
+        ):
+            fail(f"{label}.{name} has missing evidence references")
+        return value
+
+    def interval(row: dict[str, Any], name: str) -> None:
+        try:
+            start = dt.datetime.fromisoformat(row["started_at"])
+            end = dt.datetime.fromisoformat(row["ended_at"])
+            if start.tzinfo is None or end.tzinfo is None or end < start:
+                raise ValueError("invalid process interval")
+        except (KeyError, TypeError, ValueError):
+            fail(f"{label}.{name} requires ordered timezone-aware start/end times")
+
+    cases = require_exact_keys(report["cases"], set(COLD_UNPLUG_MODES), set(COLD_UNPLUG_MODES), f"{label}.cases")
+    for mode in COLD_UNPLUG_MODES:
+        rows = require_exact_keys(cases[mode], set(COLD_UNPLUG_CASES), set(COLD_UNPLUG_CASES), f"{label}.cases.{mode}")
+        for case in COLD_UNPLUG_CASES:
+            proof(rows[case], f"cases.{mode}.{case}")
+        if rows["G"].get("presentation") != ("official-native" if mode == "legacy" else "native-wait") or rows["G"].get("canonical_join_verified") is not True:
+            fail(f"{label}.cases.{mode}.G requires native presentation and verified canonical Join records")
+
+    processes = report["processes"]
+    if not isinstance(processes, list) or not processes:
+        fail(f"{label}.processes must record both executables")
+    seen: set[str] = set()
+    coverage: set[tuple[str, str]] = set()
+    for process in processes:
+        row = proof(process, "processes")
+        identifier = require_string(row.get("id"), f"{label}.processes.id")
+        role, mode = row.get("role"), row.get("mode")
+        if identifier in seen or role not in ("official", "candidate") or mode not in COLD_UNPLUG_MODES:
+            fail(f"{label}.processes has invalid or duplicate identity")
+        seen.add(identifier)
+        coverage.add((role, mode))
+        if row.get("sha256") != report[role]["sha256"] or row.get("version") != report[role]["version"]:
+            fail(f"{label}.processes binary identity differs")
+        if row.get("normal_shutdown") is not True or require_int(row.get("exit_code"), f"{label}.processes.exit_code", minimum=0) != 0:
+            fail(f"{label}.processes requires normal successful shutdown")
+        interval(row, "processes")
+    if coverage != {(role, mode) for role in ("official", "candidate") for mode in COLD_UNPLUG_MODES}:
+        fail(f"{label}.processes must cover both binaries in both history modes")
+
+    terminal = report["terminal"]
+    if not isinstance(terminal, dict) or terminal.get("method") not in {"pty", "conpty"}:
+        fail(f"{label}.terminal requires a real PTY/ConPTY observation")
+    modes = require_exact_keys(terminal.get("modes"), set(COLD_UNPLUG_MOUSE_MODES), set(COLD_UNPLUG_MOUSE_MODES), f"{label}.terminal.modes")
+    for mode in COLD_UNPLUG_MOUSE_MODES:
+        row = proof(modes[mode], f"terminal.{mode}")
+        interval(row, f"terminal.{mode}")
+        if any(row.get(key) is not True for key in ("keyboard", "capture_cleanup", "normal_shutdown")):
+            fail(f"{label}.terminal.{mode} has incomplete keyboard/cleanup/shutdown observations")
+        if require_int(row.get("exit_code"), f"{label}.terminal.exit_code", minimum=0) != 0 or row.get("sha256") != candidate["sha256"] or row.get("version") != candidate["version"]:
+            fail(f"{label}.terminal.{mode} binary or exit result differs")
+        if require_int(row.get("warning_count"), f"{label}.terminal.warning_count", minimum=0) != (1 if mode == "invalid" else 0):
+            fail(f"{label}.terminal.{mode} warning count differs")
+        if row.get("effective_mode") != ("auto" if mode in {"unset", "invalid"} else mode):
+            fail(f"{label}.terminal.{mode} did not preserve the expected fallback")
+
+
 def validate_acceptance(
     path: Path,
     compat_id: str,
@@ -779,6 +954,7 @@ def resolve(
             profile_sha256,
             runtime_sha256,
         )
+        validate_cold_unplug(acceptance, manifest, load_json(runtime_path))
     else:
         if target_entry.get("acceptance_sha256") is not None:
             fail(f"acceptance_sha256 must be null when acceptance is absent: {compat_id}/{target}")
@@ -1312,6 +1488,10 @@ def accept_candidate(
         "accepted_by": accepted_by,
         "evidence": evidence,
     }
+    validate_cold_unplug(
+        acceptance, manifest, load_json(runtime_path),
+        evidence_root=evidence_path.resolve(strict=True).parent, candidate_record=candidate,
+    )
     write_new_or_equal(acceptance_path, acceptance)
     entry["manifest"] = manifest_rel
     entry["manifest_sha256"] = acceptance["manifest_sha256"]
