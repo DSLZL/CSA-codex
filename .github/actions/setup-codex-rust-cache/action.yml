@@ -90,6 +90,16 @@ runs:
         # Cache versions hash the literal path: restore and save must use this same value.
         $sccacheDir = [IO.Path]::GetFullPath($env:CSA_SCCACHE_DIR)
         "SCCACHE_DIR=$sccacheDir" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+        if ($env:CSA_TARGET -like '*-pc-windows-msvc') {
+          # LLVM COFF otherwise timestamps proc-macro DLLs, invalidating their dependants.
+          $sourceDateEpoch = & git -C $env:CSA_SOURCE_ROOT show -s --format=%ct HEAD
+          if ($LASTEXITCODE -ne 0 -or $sourceDateEpoch -notmatch '^[0-9]+$') {
+            throw 'Cannot determine the exact upstream source timestamp.'
+          }
+          "SOURCE_DATE_EPOCH=$sourceDateEpoch" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+          # cc-rs applies RUSTC_WRAPPER to explicit compilers, but skips its MSVC discovery path.
+          @('CC=cl.exe', 'CXX=cl.exe') | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+        }
         if ($env:CSA_CACHE_MODE -ne 'off') {
           $compiler = & rustc -Vv
           if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the Rust compiler for caching.' }
@@ -105,6 +115,10 @@ runs:
               $cacheInputs += (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
             }
             $cacheInputs += @($env:CFLAGS, $env:CXXFLAGS)
+          }
+          if ($env:CSA_TARGET -like '*-pc-windows-msvc') {
+            # Seed a new immutable archive containing deterministic DLL dependants.
+            $cacheInputs += "SOURCE_DATE_EPOCH=$sourceDateEpoch"
           }
           # ponytail: one dependency snapshot; add source identity only if workspace rebuilds dominate.
           $bytes = [Text.Encoding]::UTF8.GetBytes(($cacheInputs -join "`n"))

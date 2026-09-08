@@ -732,6 +732,7 @@ def test_compiler_cache_configuration(root: Path) -> None:
     script = root / "cache-setup.ps1"
     script.write_text(
         "function rustc { $global:LASTEXITCODE = 0; $env:TEST_COMPILER }\n"
+        + "function git { $global:LASTEXITCODE = [int]$env:TEST_GIT_EXIT; $env:TEST_SOURCE_EPOCH }\n"
         + "\n".join(line.removeprefix("        ") for line in block.splitlines()),
         encoding="utf-8",
     )
@@ -749,6 +750,8 @@ def test_compiler_cache_configuration(root: Path) -> None:
         "GITHUB_ENV": str(root / "github-env"),
         "GITHUB_OUTPUT": str(root / "github-output"),
         "TEST_COMPILER": "rustc pinned-compiler-a",
+        "TEST_SOURCE_EPOCH": "1770000000",
+        "TEST_GIT_EXIT": "0",
     }
 
     def configure(**overrides: str) -> tuple[dict[str, str], dict[str, str]]:
@@ -766,9 +769,19 @@ def test_compiler_cache_configuration(root: Path) -> None:
     settings, first = configure(GITHUB_RUN_ID="1")
     assert settings["SCCACHE_DIR"] == str((root / "c/k").resolve())
     assert settings["CARGO_HOME"] == str((root / "c/h").resolve())
+    assert settings["SOURCE_DATE_EPOCH"] == "1770000000"
+    assert settings["CC"] == settings["CXX"] == "cl.exe"
+    assert configure(CSA_TARGET="aarch64-pc-windows-msvc")[0] == settings
+    mac_settings, mac_fingerprint = configure(CSA_TARGET="aarch64-apple-darwin")
+    assert not {"SOURCE_DATE_EPOCH", "CC", "CXX"}.intersection(mac_settings)
+    assert configure(CSA_TARGET="aarch64-apple-darwin", TEST_GIT_EXIT="1")[1] == mac_fingerprint
     assert re.fullmatch(r"[0-9a-f]{64}", first["fingerprint"])
     assert configure(GITHUB_RUN_ID="2", GITHUB_RUN_ATTEMPT="2")[1] == first
     assert configure(TEST_COMPILER="rustc pinned-compiler-b")[1] != first
+    assert configure(TEST_SOURCE_EPOCH="1770000001")[1] != first
+    expect_error(lambda: configure(TEST_SOURCE_EPOCH=""), ValueError)
+    expect_error(lambda: configure(TEST_SOURCE_EPOCH="not-a-timestamp"), ValueError)
+    expect_error(lambda: configure(TEST_GIT_EXIT="1"), ValueError)
     for name in files:
         path = source / "codex-rs" / name
         before = path.read_bytes()
@@ -783,6 +796,8 @@ def test_compiler_cache_configuration(root: Path) -> None:
                  "CXX": str(wrappers[1]), "CFLAGS": "-pthread", "CXXFLAGS": "-pthread"}
     linux = configure(**linux_env)[1]
     assert linux != first
+    assert not {"SOURCE_DATE_EPOCH", "CC", "CXX"}.intersection(configure(**linux_env)[0])
+    assert configure(**linux_env, TEST_GIT_EXIT="1")[1] == linux
     assert configure(**linux_env, GITHUB_RUN_ID="another-run")[1] == linux
     for path in wrappers:
         before = path.read_bytes()
@@ -792,7 +807,8 @@ def test_compiler_cache_configuration(root: Path) -> None:
     assert configure(**{**linux_env, "CFLAGS": "-pthread -DCHANGED"})[1] != linux
     assert configure(**linux_env)[1] == linux
     expect_error(lambda: configure(**{**linux_env, "CC": str(root / "missing")}), ValueError)
-    assert configure(CSA_CACHE_MODE="off", CSA_SOURCE_ROOT=str(root / "absent"))[1] == {}
+    off_settings, off_outputs = configure(CSA_CACHE_MODE="off")
+    assert off_settings["SOURCE_DATE_EPOCH"] == "1770000000" and off_outputs == {}
     expect_error(lambda: configure(CSA_REF="refs/heads/untrusted"), ValueError)
     expect_error(lambda: configure(CSA_SCCACHE_DIR=str(root.parent / "outside")), ValueError)
 

@@ -65,3 +65,94 @@ so the measurements remain comparable.
 Sources: [exact upstream release profile](https://github.com/openai/codex/blob/657a993cbee87acf52d14b758ce49dbd46d1b8eb/codex-rs/Cargo.toml#L579),
 [Rust cache limitations](https://github.com/mozilla/sccache/blob/v0.16.0/docs/Rust.md),
 [Cargo timing interpretation](https://doc.rust-lang.org/cargo/reference/timings.html).
+
+## Completed follow-up: 34195085244
+
+The [follow-up run](https://github.com/DSLZL/CSA-codex/actions/runs/34195085244)
+at producer commit `69617011edceafac0f162b86bf8e4382b06690bf` succeeded for all six
+targets and the central aggregate. The following measurements come from its
+uploaded Cargo timing HTML and sccache JSON, rather than log-message timestamps.
+
+| Target | CLI Cargo duration | Rust hits / misses | Final `codex-cli` binary unit |
+| --- | --- | --- | --- |
+| Linux ARM64 | 17m 40s | 1083 / 15 | 14m 24s |
+| Linux x64 | 19m 34s | 1085 / 14 | 16m 09s |
+| macOS ARM64 | 45m 08s | 1069 / 0 | 42m 17s |
+| macOS x64 | 69m 53s | 1070 / 0 | 63m 32s |
+| Windows ARM64 | 50m 27s | 886 / 206 | 21m 08s |
+| Windows x64 | 77m 55s | 882 / 208 | 38m 48s |
+
+### Linux archive migration
+
+Each Linux shard had two large archives: the retained pre-fix baseline and the
+new baseline whose key includes the stable Zig wrappers. Their keys differed;
+each run saved only its new key. The obsolete archives (IDs `7440268769` and
+`7440386329`) were deleted after verifying the successful replacement archives
+(`7443184625` and `7443217918`). This released 7.82 GiB. Each shard now retains one
+large compiler archive plus its roughly 43–47 MiB Zig download archive.
+
+The new run's C/assembler entries missed during this one-time migration. A later
+run against the corrected archive is still needed to verify cross-run C hits.
+Routine identical builds reuse the exact immutable key and do not save another
+large archive. Future compiler/configuration migrations can leave an obsolete
+baseline until manual cleanup or GitHub eviction.
+
+### Windows repeated misses
+
+Windows repeated exactly the previous 206/208 Rust misses. Archive restore worked,
+cache read/write errors were zero, and local cache sizes were about 3.2 GiB, below
+the 10 GiB limit. This is not archive loss or local capacity eviction.
+
+The logs identify the selected linker as Rust 1.95's LLVM 22.1.2 `rust-lld`
+(through the upstream ARM64 wrapper where needed). That exact LLVM COFF driver
+defaults to `time(nullptr)` for PE/debug timestamps. sccache 0.16 hashes the full
+contents of `--extern` files, including freshly linked procedural-macro DLLs, so
+changing only their embedded timestamp invalidates dependent Rust cache entries.
+
+A local link-only reproduction used the same Rust 1.95 linker and one fixed COFF
+object. Two default links produced different DLL SHA-256 values and different PE
+timestamps. With `SOURCE_DATE_EPOCH=1770000000`, two links produced the same
+timestamp and byte-identical DLLs, including with PDB generation enabled. No Rust
+compilation was used for this reproduction.
+
+The shared action now sets `SOURCE_DATE_EPOCH` from the verified upstream Git
+commit for Windows, independently of cache mode, and incorporates it into the
+archive fingerprint. This removes the proven timestamp instability without
+changing Rust optimization flags. The first fixed build seeds a new baseline;
+the following build must measure reuse. The completed runs did not retain
+per-crate cache keys or procedural-macro DLLs, so attributing every one of the 206/208
+misses to this mechanism, or claiming a corrected hit rate, would be premature.
+
+There is also a C/C++ wrapper gap: x64 recorded no C or assembler cache requests,
+whereas ARM64 recorded 254 C hits and 21 assembler hits. In pinned cc-rs 1.2.55,
+the automatic MSVC discovery path returns its compiler without attaching
+`RUSTC_WRAPPER`; the explicit `CC`/`CXX` path does attach it. Windows now specifies
+`cl.exe` for both, using the upstream MSVC step's target-specific PATH and SDK
+environment. This allows cc-rs C/C++ work to enter sccache without changing the
+compiler or compilation flags; the next native run must confirm the requests.
+
+Sources: [exact LLVM timestamp handling](https://github.com/llvm/llvm-project/blob/llvmorg-22.1.2/lld/COFF/Driver.cpp#L1958),
+[sccache extern hashing](https://github.com/mozilla/sccache/blob/v0.16.0/src/compiler/rust.rs#L1384),
+[upstream Windows linker selection](https://github.com/openai/codex/blob/657a993cbee87acf52d14b758ce49dbd46d1b8eb/.github/actions/setup-msvc-env/setup-msvc-env.ps1#L99),
+[cc-rs compiler/wrapper selection](https://github.com/rust-lang/cc-rs/blob/cc-v1.2.55/src/lib.rs#L2904).
+
+### Remaining final-binary cost
+
+The final binary unit accounts for 94% of macOS ARM64 time and 91% of x64 time,
+despite 100% cacheable Rust hits. During that unit, Cargo's mean host CPU samples
+were 96% and 93%, respectively. ARM64 reported 3 CPUs / 7 GiB RAM and x64 reported
+4 CPUs / 14 GiB RAM. `/usr/bin/time -l` recorded zero swaps, with maximum resident
+sizes of 3.73 GiB and 6.73 GiB. Windows' final-unit mean host CPU samples were also
+about 94–95%.
+
+These measurements point to the final optimization/link workload on the hosted
+CPUs, rather than archive transfer, as the remaining bottleneck. Cargo reports
+this binary unit as one interval and cannot separate its frontend, ThinLTO, and
+system-linker time. Fixing Windows dependency misses will not eliminate its
+separate 21–39 minute final unit.
+
+The official ThinLTO/four-codegen-unit profile remains intact. Reusing the
+existing verified target set through `reuse_builds` avoids compilation when the
+exact build inputs are unchanged. Making a fresh optimized binary substantially
+faster requires measuring a different build profile or runner capacity; neither
+was changed as part of this cache repair.

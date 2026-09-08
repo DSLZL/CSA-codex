@@ -50,6 +50,14 @@ Archive keys combine target, sccache version, and a fingerprint of `rustc -Vv`,
 Linux additionally fingerprints its generated `CC`/`CXX` wrappers and C/C++ flags,
 after installing musl tools. Zig must use the stable tool-cache installation path;
 a per-run extraction directory changes both wrapper contents and header paths.
+Windows exports the verified upstream commit timestamp as `SOURCE_DATE_EPOCH`,
+including when caching is off. LLVM's COFF linker otherwise embeds the current
+time in procedural-macro DLLs, changing the inputs sccache hashes for their users.
+The timestamp is also part of the Windows archive fingerprint, so the first fixed
+build can save a deterministic baseline instead of repeatedly restoring the old one.
+Windows selects `CC=cl.exe` and `CXX=cl.exe` through the upstream MSVC environment:
+cc-rs attaches `RUSTC_WRAPPER` to explicit compilers, while its automatic MSVC
+discovery path in the pinned version can bypass the wrapper.
 Repeated runs and source-only patch revisions reuse the immutable dependency
 baseline; changed workspace crates still compile as needed. Compiler, dependency
 or build-configuration changes create a new snapshot, with the existing prefix
