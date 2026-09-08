@@ -97,7 +97,9 @@ runs:
             throw 'Cannot determine the exact upstream source timestamp.'
           }
           "SOURCE_DATE_EPOCH=$sourceDateEpoch" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
-          # cc-rs applies RUSTC_WRAPPER to explicit compilers, but skips its MSVC discovery path.
+        }
+        if ($env:CSA_TARGET -eq 'x86_64-pc-windows-msvc') {
+          # cc-rs skips the wrapper on automatic MSVC discovery. ARM64 must keep AWS-LC's Clang selection.
           @('CC=cl.exe', 'CXX=cl.exe') | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
         }
         if ($env:CSA_CACHE_MODE -ne 'off') {

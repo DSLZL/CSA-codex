@@ -55,9 +55,11 @@ including when caching is off. LLVM's COFF linker otherwise embeds the current
 time in procedural-macro DLLs, changing the inputs sccache hashes for their users.
 The timestamp is also part of the Windows archive fingerprint, so the first fixed
 build can save a deterministic baseline instead of repeatedly restoring the old one.
-Windows selects `CC=cl.exe` and `CXX=cl.exe` through the upstream MSVC environment:
+Windows x64 selects `CC=cl.exe` and `CXX=cl.exe` through the upstream MSVC environment:
 cc-rs attaches `RUSTC_WRAPPER` to explicit compilers, while its automatic MSVC
 discovery path in the pinned version can bypass the wrapper.
+Windows ARM64 must retain dependency-specific compiler discovery: AWS-LC uses
+Clang for its ARM64 C/assembly sources and cannot build them with `cl.exe`.
 Repeated runs and source-only patch revisions reuse the immutable dependency
 baseline; changed workspace crates still compile as needed. Compiler, dependency
 or build-configuration changes create a new snapshot, with the existing prefix
@@ -68,6 +70,9 @@ sccache Rust hit rate are separate observations.
 The producer sets no cache-size threshold and runs no automatic cache cleanup.
 GitHub owns quota enforcement and eviction. Cache archive restore/save failures
 remain non-fatal because an empty cache is a valid compiler-cache state.
+Save an immutable baseline only after the native build and artifact upload succeed.
+A failed build's partial archive must not become an exact hit that blocks later
+successful builds from saving their completed cache.
 
 The broker distinguishes a failed status request from a completed, failed build.
 After `gh run watch` exits unsuccessfully, it checks the same run's terminal

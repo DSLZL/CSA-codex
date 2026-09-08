@@ -126,10 +126,9 @@ misses to this mechanism, or claiming a corrected hit rate, would be premature.
 There is also a C/C++ wrapper gap: x64 recorded no C or assembler cache requests,
 whereas ARM64 recorded 254 C hits and 21 assembler hits. In pinned cc-rs 1.2.55,
 the automatic MSVC discovery path returns its compiler without attaching
-`RUSTC_WRAPPER`; the explicit `CC`/`CXX` path does attach it. Windows now specifies
-`cl.exe` for both, using the upstream MSVC step's target-specific PATH and SDK
-environment. This allows cc-rs C/C++ work to enter sccache without changing the
-compiler or compilation flags; the next native run must confirm the requests.
+`RUSTC_WRAPPER`; the explicit `CC`/`CXX` path does attach it. The first repair set
+both variables to `cl.exe` on both Windows targets. The next run confirmed C cache
+requests on x64, but exposed an ARM64 compiler-selection regression; see below.
 
 Sources: [exact LLVM timestamp handling](https://github.com/llvm/llvm-project/blob/llvmorg-22.1.2/lld/COFF/Driver.cpp#L1958),
 [sccache extern hashing](https://github.com/mozilla/sccache/blob/v0.16.0/src/compiler/rust.rs#L1384),
@@ -156,3 +155,53 @@ existing verified target set through `reuse_builds` avoids compilation when the
 exact build inputs are unchanged. Making a fresh optimized binary substantially
 faster requires measuring a different build profile or runner capacity; neither
 was changed as part of this cache repair.
+
+## Follow-up verification: 34205110729
+
+The [next run](https://github.com/DSLZL/CSA-codex/actions/runs/34205110729), at
+`66cd66ec6a63125535841493cf63326d728b5b45`, succeeded on five targets. Windows
+ARM64 failed while building AWS-LC, so the central aggregate was skipped.
+
+| Target | Result | CLI Cargo duration | Rust hits / misses | C hits / misses | Assembler hits / misses |
+| --- | --- | --- | --- | --- | --- |
+| Linux ARM64 | success | 15m 45s | 1097 / 1 | 1535 / 1 | 142 / 0 |
+| Linux x64 | success | 20m 32s | 1098 / 1 | 1534 / 1 | 162 / 0 |
+| macOS ARM64 | success | 43m 45s | 1069 / 0 | 375 / 0 | 120 / 0 |
+| macOS x64 | success | 56m 45s | 1070 / 0 | 379 / 0 | 122 / 0 |
+| Windows x64 | success | 74m 59s | 869 / 221 | 0 / 456 | no requests |
+| Windows ARM64 | failure | incomplete | no final statistics | no final statistics | no final statistics |
+
+Linux restored its corrected archives exactly and created no new large archives.
+Both Rust hit rates were 99.91%; C/assembly reuse is now demonstrated across runs.
+Each Linux shard still has one compiler archive and one small Zig archive. ARM64
+also reported one C cache error, with zero archive/cache read errors, timeouts,
+and cache write errors; the native build completed successfully.
+
+Windows x64 now sends its C work through sccache (456 first-time misses), and saved
+the new archive `7449183927`. This was the first build populating the deterministic
+timestamp baseline, so its 79.72% Rust hit rate does not establish the subsequent
+warm hit rate. A later identical-input build must verify that.
+
+### ARM64 regression and partial baseline
+
+Setting global `CC=cl.exe` / `CXX=cl.exe` on ARM64 overrode AWS-LC's compiler
+selection. AWS-LC requires Clang on this target; the log shows `cl.exe` attempting
+to preprocess `aes-xts-dec.S` and `aes-xts-enc.S`, failing with C2162. This was
+introduced by the preceding cache repair, not by a missing archive or the status
+watcher. The explicit compiler override is now restricted to Windows x64. Both
+Windows targets retain the deterministic timestamp setting.
+
+The failed job also saved partial archive `7446736435`, because the save condition
+only excluded cancellation. An exact hit on this immutable archive would prevent
+the next successful build from saving its completed cache. Saving now requires
+`success()`, after the build and artifact upload. The partial ARM64 archive was
+removed, while its previous usable archive `7440576603` was retained for prefix
+restore. Obsolete x64 archive `7441118935` was also removed after verifying its
+successful replacement. These two deletions released 4.65 GiB.
+
+The final binary units still took 41m 10s / 52m 45s on macOS ARM64 / x64 and
+36m 20s on Windows x64. Their mean host CPU samples were 96%, 91%, and 95%.
+The official release profile is unchanged; these remaining durations are not
+evidence that a compiler archive failed to restore.
+
+Source: [AWS-LC Windows ARM64 compiler requirements](https://github.com/aws/aws-lc-rs/blob/main/book/src/requirements/windows.md).

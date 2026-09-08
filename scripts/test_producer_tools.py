@@ -608,6 +608,8 @@ def test_workflow_contracts() -> None:
     assert "sccache_dir: ${{ runner.temp }}/c/k" in target
     assert "target: ${{ inputs.target }}" in target
     assert "steps.compiler_cache.outputs.cache_primary_key" in target
+    save_step = target.split("      - name: Save local compiler cache\n", 1)[1]
+    assert "if: ${{ success() &&" in save_step and "!cancelled()" not in save_step
     assert "use-tool-cache: true" in target
     assert target.index("Install upstream musl build tools") < target.index("- id: compiler_cache")
     assert "Upload build diagnostics" in target and "/cargo-timings/" in target
@@ -771,7 +773,9 @@ def test_compiler_cache_configuration(root: Path) -> None:
     assert settings["CARGO_HOME"] == str((root / "c/h").resolve())
     assert settings["SOURCE_DATE_EPOCH"] == "1770000000"
     assert settings["CC"] == settings["CXX"] == "cl.exe"
-    assert configure(CSA_TARGET="aarch64-pc-windows-msvc")[0] == settings
+    arm_settings, _ = configure(CSA_TARGET="aarch64-pc-windows-msvc")
+    assert arm_settings["SOURCE_DATE_EPOCH"] == settings["SOURCE_DATE_EPOCH"]
+    assert not {"CC", "CXX"}.intersection(arm_settings), "Preserve AWS-LC's ARM64 Clang selection"
     mac_settings, mac_fingerprint = configure(CSA_TARGET="aarch64-apple-darwin")
     assert not {"SOURCE_DATE_EPOCH", "CC", "CXX"}.intersection(mac_settings)
     assert configure(CSA_TARGET="aarch64-apple-darwin", TEST_GIT_EXIT="1")[1] == mac_fingerprint
