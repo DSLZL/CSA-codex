@@ -13,6 +13,10 @@ on:
         required: false
         default: read-only
         type: string
+      diagnose_cache:
+        required: false
+        default: false
+        type: boolean
       request_id:
         required: true
         type: string
@@ -193,6 +197,21 @@ jobs:
             echo "${target_no_jitter}=1"
           } >> "$GITHUB_ENV"
 
+      - name: Enable opt-in Windows compiler cache diagnostics
+        if: inputs.diagnose_cache
+        shell: pwsh
+        env:
+          TARGET: ${{ inputs.target }}
+          CACHE_MODE: ${{ inputs.cache_mode }}
+        run: |
+          if ($env:TARGET -ne 'x86_64-pc-windows-msvc' -or $env:CACHE_MODE -eq 'off') {
+            throw 'Compiler cache diagnostics require the Windows x64 shard with caching enabled.'
+          }
+          @(
+            'SCCACHE_LOG=sccache::compiler::compiler=debug'
+            "SCCACHE_ERROR_LOG=$([IO.Path]::GetFullPath("$env:RUNNER_TEMP/c/sccache-debug.log"))"
+          ) | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+
       - id: compiler_cache
         name: Configure repository-scoped sccache
         uses: ./.github/actions/setup-codex-rust-cache
@@ -295,6 +314,21 @@ jobs:
             --require-requests
           "$SCCACHE_PATH" --show-stats
 
+      - name: Diagnose Windows Rust cache inputs
+        if: ${{ always() && inputs.diagnose_cache && steps.compiler_cache.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: pwsh
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          python scripts/diagnose_compiler_cache.py `
+            --log "$env:SCCACHE_ERROR_LOG" `
+            --source-root "$env:SOURCE_ROOT" `
+            --target-dir "$env:CARGO_TARGET_DIR" `
+            --output "$env:RUNNER_TEMP/c/cache-diagnostics" --probe
+          exit $LASTEXITCODE
+
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -303,6 +337,7 @@ jobs:
           path: |
             ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
             ${{ env.SCCACHE_STATS }}
+            ${{ runner.temp }}/c/cache-diagnostics/
           if-no-files-found: warn
           retention-days: 7
 

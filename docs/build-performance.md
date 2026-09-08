@@ -247,3 +247,56 @@ about 95% of the CLI build, with mean host CPU samples of 96.42% (ARM64) and
 optimization, ThinLTO, and system linking. It cannot be attributed entirely to
 the system linker. The official release profile remains unchanged, and this
 round does not establish a fix for the final-binary cost on macOS or Windows.
+
+## XProtect/SIP investigation: 2026-09-09
+
+The macOS jobs above used image `20260829.0321.1` (ARM64) and
+`20260824.0482.1` (Intel), both macOS 15.7.9. Their image tags, rather than only
+the current runner-images branch, were inspected. Both templates invoke
+`configure-machine.sh`, which enables `DevToolsSecurity`; neither tag's macOS
+scripts record an XProtect exclusion for the runner's launcher or a
+`kTCCServiceDeveloperTool` grant. The conditional `csrutil status` check in that
+script does not establish which SIP state the actual job had. The jobs did not
+record live SIP status or XProtect process samples.
+
+The linked Rust performance article concerns repeated scans when launching newly
+built executables. Its Developer Tools exclusion is attached to the application
+launching the processes. Enabling `DevToolsSecurity` alone is not evidence that
+this launcher-specific permission was granted. GitHub's headless runner also
+cannot be assumed to inherit a Terminal.app permission. SIP protects system files
+and privileged operations; it is a separate mechanism from XProtect malware
+scanning. Historical reports of disabled SIP on macOS 13 do not establish the
+state of these macOS 15 images.
+
+| Measurement in the retained reports | macOS ARM64 | macOS Intel |
+| --- | ---: | ---: |
+| Build-script executions | 105 | 105 |
+| Median build-script duration | 0.03 s | 0.07 s |
+| Build scripts below 0.2 s | 93 | 80 |
+| Time before the final binary unit | 160.34 s | 240.19 s |
+| Final binary unit | 3028.26 s | 4064.73 s |
+
+This is not the article's widespread 0.48–3.88 second delay in trivial build
+scripts. The longest script is AWS-LC (55.79/43.82 seconds), which performs native
+build setup. Eliminating even the entire pre-binary interval would save only
+5.0%/5.6% if the final unit were unchanged. The final unit's high host CPU samples
+are not per-process attribution, so they cannot prove that XProtect contributes
+zero CPU time. The evidence does not identify XProtect or SIP as the main cause.
+
+The next useful measurement is per-process CPU and stack sampling during the
+final unit, covering rustc, the linker, XProtectService, and syspolicyd. If scans
+are demonstrated to dominate, compare the actual runner launcher's Developer
+Tools permission on a controlled runner; do not disable SIP or terminate security
+services as an unmeasured build optimization. With the official release profile
+preserved, a separate capacity comparison can use `macos-15-large` (12 Intel CPUs,
+30 GB) or `macos-15-xlarge` (5 M2 CPUs, 14 GB). Measure elapsed time and billed cost;
+neither more Cargo jobs nor more CPUs guarantees proportional speedup of the final
+unit. Exact, already verified build inputs can continue to use `reuse_builds`.
+
+Sources: [performance article](https://nnethercote.github.io/2025/09/04/faster-rust-builds-on-mac.html),
+[nextest's launcher-specific Developer Tools guidance](https://nexte.st/docs/installation/macos/),
+[ARM64 image configuration](https://github.com/actions/runner-images/blob/macos-15-arm64/20260829.0321/images/macos/scripts/build/configure-machine.sh),
+[Intel image configuration](https://github.com/actions/runner-images/blob/macos-15/20260824.0482/images/macos/scripts/build/configure-machine.sh),
+[Apple's SIP definition](https://support.apple.com/en-us/102149),
+[historical macOS 13 SIP issue](https://github.com/actions/runner-images/issues/8162),
+[GitHub larger runner specifications](https://docs.github.com/en/actions/reference/runners/larger-runners).

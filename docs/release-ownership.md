@@ -90,6 +90,18 @@ macOS also records CPU/memory configuration and `/usr/bin/time -l`
 resource statistics in the build log. See [build performance](build-performance.md)
 for the measured incident and the limits of the available evidence.
 
+Windows x64 dispatches can opt into `diagnose_cache`. The shared recipe records
+compiler-module cache events and publishes a per-crate miss ranking, cache keys,
+argument fingerprints, and native proc-macro DLL section hashes. Raw compiler
+debug logs and environment values are not uploaded. After the native build it
+runs two small, isolated proc-macro/consumer builds using the exact upstream
+toolchain, release profile, and Windows configuration. The report compares DLL
+bytes and consumer cache results and distinguishes a reproduced instability from
+a stable or incomplete probe. It does not rebuild the full CLI or change its
+artifact. Diagnostic errors are reported without replacing the native build's
+result; the reports and probe DLL snapshots share the seven-day diagnostics
+retention period.
+
 The child repositories contain no compatibility payload or publication job and
 receive no central credential. Cross-repository dispatch and artifact retrieval
 use the dedicated `BUILD_FANOUT_TOKEN` only inside trusted central broker steps.
