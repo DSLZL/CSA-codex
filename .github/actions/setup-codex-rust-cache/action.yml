@@ -36,7 +36,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Validate isolated cache configuration
+    - id: config
+      name: Validate isolated cache configuration
       shell: pwsh
       env:
         CSA_CACHE_MODE: ${{ inputs.cache_mode }}
@@ -85,6 +86,22 @@ runs:
         $cargoHome = [IO.Path]::GetFullPath($env:CSA_CARGO_HOME)
         New-Item -ItemType Directory -Force -Path $cargoHome | Out-Null
         "CARGO_HOME=$cargoHome" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+        # Cache versions hash the literal path: restore and save must use this same value.
+        $sccacheDir = [IO.Path]::GetFullPath($env:CSA_SCCACHE_DIR)
+        "SCCACHE_DIR=$sccacheDir" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+        if ($env:CSA_CACHE_MODE -ne 'off') {
+          $compiler = & rustc -Vv
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the Rust compiler for caching.' }
+          $cacheInputs = @($compiler)
+          foreach ($relative in @('Cargo.lock', 'Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml')) {
+            $path = Join-Path $env:CSA_SOURCE_ROOT "codex-rs/$relative"
+            $cacheInputs += (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+          }
+          # ponytail: one dependency snapshot; add source identity only if workspace rebuilds dominate.
+          $bytes = [Text.Encoding]::UTF8.GetBytes(($cacheInputs -join "`n"))
+          $fingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+          "fingerprint=$fingerprint" | Add-Content -Path $env:GITHUB_OUTPUT -Encoding utf8
+        }
 
     - name: Install exact sccache
       if: inputs.cache_mode != 'off'
@@ -99,8 +116,8 @@ runs:
       continue-on-error: true
       uses: actions/cache/restore@v6.1.0
       with:
-        path: ${{ inputs.sccache_dir }}
-        key: csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-${{ github.run_id }}
+        path: ${{ env.SCCACHE_DIR }}
+        key: csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-${{ steps.config.outputs.fingerprint }}
         restore-keys: |
           csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-
 
@@ -112,7 +129,6 @@ runs:
         CSA_CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
         CSA_CACHE_MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
         CSA_CACHE_PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
-        CSA_SCCACHE_DIR: ${{ inputs.sccache_dir }}
         CSA_SCCACHE_VERSION: ${{ inputs.sccache_version }}
         CSA_SOURCE_ROOT: ${{ inputs.source_root }}
       run: |
@@ -128,7 +144,7 @@ runs:
         if ($LASTEXITCODE -ne 0 -or $identity -cne "sccache $env:CSA_SCCACHE_VERSION") {
           throw "sccache identity mismatch: $identity"
         }
-        $sccacheDir = [IO.Path]::GetFullPath($env:CSA_SCCACHE_DIR)
+        $sccacheDir = $env:SCCACHE_DIR
         New-Item -ItemType Directory -Force -Path $sccacheDir | Out-Null
         $settings = [ordered]@{
           CARGO_INCREMENTAL = '0'

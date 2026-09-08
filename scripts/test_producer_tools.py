@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -579,7 +580,12 @@ def test_workflow_contracts() -> None:
     assert "SCCACHE_GHA_VERSION" not in cache_setup
     assert "SCCACHE_CACHE_SIZE" not in cache_setup
     assert "csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-" in cache_setup
-    assert "${{ github.run_id }}" in cache_setup
+    assert "github.run_id" not in cache_setup and "github.run_attempt" not in cache_setup
+    assert "${{ steps.config.outputs.fingerprint }}" in cache_setup
+    # actions/cache hashes path spelling into its version, before resolving filesystem paths.
+    assert "path: ${{ env.SCCACHE_DIR }}" in cache_setup
+    assert "path: ${{ env.SCCACHE_DIR }}" in target
+    assert "path: ${{ inputs.sccache_dir }}" not in cache_setup
 
     assert "uses: ./.github/actions/setup-codex-rust-cache" in target
     assert target.index("dtolnay/rust-toolchain@") < target.index(
@@ -648,6 +654,69 @@ def test_workflow_contracts() -> None:
         "compat_catalog.py validate",
     ):
         assert command in ci
+
+
+def test_compiler_cache_configuration(root: Path) -> None:
+    """Execute the real action setup, including Windows mixed-path normalization."""
+    pwsh = shutil.which("pwsh")
+    assert pwsh, "PowerShell 7 is required to check the shared build-cache action"
+    source = root / "source"
+    files = ("Cargo.lock", "Cargo.toml", ".cargo/config.toml", "rust-toolchain.toml")
+    for name in files:
+        path = source / "codex-rs" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"fixture {name}\n", encoding="utf-8")
+    action = (REPOSITORY / ".github/actions/setup-codex-rust-cache/action.yml").read_text(encoding="utf-8")
+    block = action.split("      run: |\n", 1)[1].split("\n    - ", 1)[0]
+    script = root / "cache-setup.ps1"
+    script.write_text(
+        "function rustc { $global:LASTEXITCODE = 0; $env:TEST_COMPILER }\n"
+        + "\n".join(line.removeprefix("        ") for line in block.splitlines()),
+        encoding="utf-8",
+    )
+    environment = {
+        **os.environ,
+        "RUNNER_TEMP": str(root),
+        "CSA_CARGO_HOME": str(root) + "/c/h",
+        "CSA_SCCACHE_DIR": str(root) + "/c/k",
+        "CSA_SOURCE_ROOT": str(source),
+        "CSA_CACHE_MODE": "read-write",
+        "CSA_DEFAULT_BRANCH": "main",
+        "CSA_EVENT_NAME": "workflow_dispatch",
+        "CSA_REF": "refs/heads/main",
+        "GITHUB_ENV": str(root / "github-env"),
+        "GITHUB_OUTPUT": str(root / "github-output"),
+        "TEST_COMPILER": "rustc pinned-compiler-a",
+    }
+
+    def configure(**overrides: str) -> tuple[dict[str, str], dict[str, str]]:
+        paths = [Path(environment[name]) for name in ("GITHUB_ENV", "GITHUB_OUTPUT")]
+        for path in paths:
+            path.write_text("", encoding="utf-8")
+        result = subprocess.run(
+            [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script)],
+            env={**environment, **overrides}, capture_output=True, text=True, encoding="utf-8",
+        )
+        if result.returncode:
+            raise ValueError(result.stderr)
+        return tuple(dict(line.split("=", 1) for line in path.read_text(encoding="utf-8-sig").splitlines()) for path in paths)
+
+    settings, first = configure(GITHUB_RUN_ID="1")
+    assert settings["SCCACHE_DIR"] == str((root / "c/k").resolve())
+    assert settings["CARGO_HOME"] == str((root / "c/h").resolve())
+    assert re.fullmatch(r"[0-9a-f]{64}", first["fingerprint"])
+    assert configure(GITHUB_RUN_ID="2", GITHUB_RUN_ATTEMPT="2")[1] == first
+    assert configure(TEST_COMPILER="rustc pinned-compiler-b")[1] != first
+    for name in files:
+        path = source / "codex-rs" / name
+        before = path.read_bytes()
+        path.write_bytes(before + b"changed\n")
+        assert configure()[1] != first, name
+        path.write_bytes(before)
+    assert configure()[1] == first
+    assert configure(CSA_CACHE_MODE="off", CSA_SOURCE_ROOT=str(root / "absent"))[1] == {}
+    expect_error(lambda: configure(CSA_REF="refs/heads/untrusted"), ValueError)
+    expect_error(lambda: configure(CSA_SCCACHE_DIR=str(root.parent / "outside")), ValueError)
 
 
 def test_cold_unplug_boundaries(root: Path) -> None:
@@ -782,6 +851,7 @@ def main() -> int:
         test_nextest_runner_mapping()
         test_release_matrix_and_pack(root / "pack")
         test_release_notes(root / "notes")
+        test_compiler_cache_configuration(root / "cache")
         test_cold_unplug_boundaries(root / "cold-unplug")
     test_workflow_contracts()
     print(json.dumps({"schema": 1, "result": "pass"}, indent=2))

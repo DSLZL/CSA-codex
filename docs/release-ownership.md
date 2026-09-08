@@ -39,6 +39,21 @@ install catalog.
 Compiler caches affect duration only. They never supply compatibility identity,
 artifact authority, or release eligibility.
 
+All six shards load the shared cache action from the requested producer source
+commit. Normalize `SCCACHE_DIR` once before restore, and use that exact string for
+both restore and save: GitHub includes the literal path in its cache version, so
+mixed Windows separators can make an existing cache invisible.
+See the [cache restore contract](https://github.com/actions/cache/blob/v6.1.0/restore/README.md).
+
+Archive keys combine target, sccache version, and a fingerprint of `rustc -Vv`,
+`Cargo.lock`, workspace `Cargo.toml`, `.cargo/config.toml`, and `rust-toolchain.toml`.
+Repeated runs and source-only patch revisions reuse the immutable dependency
+baseline; changed workspace crates still compile as needed. Compiler, dependency
+or build-configuration changes create a new snapshot, with the existing prefix
+fallback retaining useful older entries. Do not add a run ID to the key: that
+duplicates the full archive on every run. An exact archive hit and the actual
+sccache Rust hit rate are separate observations.
+
 The producer sets no cache-size threshold and runs no automatic cache cleanup.
 GitHub owns quota enforcement and eviction. Cache archive restore/save failures
 remain non-fatal because an empty cache is a valid compiler-cache state.
