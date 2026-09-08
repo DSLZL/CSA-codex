@@ -1,0 +1,124 @@
+diff --git a/codex-rs/core/src/config/config_tests.rs b/codex-rs/core/src/config/config_tests.rs
+--- a/codex-rs/core/src/config/config_tests.rs
++++ b/codex-rs/core/src/config/config_tests.rs
+@@ -11644,19 +11644,36 @@
+     let config = resolve_multi_agent_v2_config(&config_toml);
+     let concurrency_guidance = "There are 17 available concurrency slots, meaning that up to 17 agents can be active at once, including you.";
+     assert!(config.wait_agent_enabled);
+-    for wait_agent_enabled in [true, false] {
+-        let mut config = config.clone();
+-        config.wait_agent_enabled = wait_agent_enabled;
+-        let usage_hints = resolve_usage_hints(
+-            &config, /*catalog*/ None, /*omit_update_plan_instructions*/ false,
+-        );
+-        for hint in [usage_hints.root, usage_hints.subagent] {
+-            let hint = hint.expect("default usage hints should be present").body();
+-            assert!(hint.contains(concurrency_guidance));
+-            assert_eq!(
+-                hint.contains("When calling `wait_agent`, prefer longer waits"),
+-                wait_agent_enabled
++    let catalog = MultiAgentRoleMessages {
++        root: Some("Catalog root guidance.".to_string()),
++        subagent: Some("Catalog child guidance.".to_string()),
++    };
++    for catalog in [None, Some(&catalog)] {
++        for wait_agent_enabled in [true, false] {
++            let mut config = config.clone();
++            config.wait_agent_enabled = wait_agent_enabled;
++            let usage_hints = resolve_usage_hints(
++                &config, catalog, /*omit_update_plan_instructions*/ false,
+             );
++            for hint in [usage_hints.root, usage_hints.subagent] {
++                let hint = hint.expect("default usage hints should be present").body();
++                assert!(hint.contains(concurrency_guidance));
++                assert_eq!(
++                    hint.contains("When calling `wait_agent`, prefer longer waits"),
++                    wait_agent_enabled
++                );
++                for fragment in [
++                    "When replying to your parent,",
++                    "validation performed and its outcome",
++                    "remaining blockers",
++                    "not a transcript of your process",
++                ] {
++                    assert!(
++                        hint.contains(fragment),
++                        "missing child result guidance: {fragment}"
++                    );
++                }
++            }
+         }
+     }
+ 
+diff --git a/codex-rs/core/src/session/multi_agents.rs b/codex-rs/core/src/session/multi_agents.rs
+--- a/codex-rs/core/src/session/multi_agents.rs
++++ b/codex-rs/core/src/session/multi_agents.rs
+@@ -56,6 +56,8 @@
+ - All agents have access to the same container and filesystem as you.
+ - All agents use the same current working directory.
+ - As a result, edits made by one agent are immediately visible to all other agents.
++
++When replying to your parent, keep the final response compact and actionable. For exploration, return the answer or findings with useful file/symbol references. For implementation or review, return the result, changed files, validation performed and its outcome, and remaining blockers, as applicable. Distinguish verified facts from assumptions and unrun checks. Return conclusions and work state, not a transcript of your process.
+ "#;
+ 
+ #[derive(Clone, Debug, Default)]
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_spec.rs b/codex-rs/core/src/tools/handlers/multi_agents_spec.rs
+--- a/codex-rs/core/src/tools/handlers/multi_agents_spec.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_spec.rs
+@@ -738,7 +738,7 @@
+         (
+             "message".to_string(),
+             JsonSchema::string(Some(
+-                "Initial plain-text task for the new agent.".to_string(),
++                "Initial plain-text task for the new agent. Provide a self-contained handoff with the relevant goal, scope, known findings, constraints, and expected return.".to_string(),
+             ))
+             .with_encrypted(),
+         ),
+@@ -863,7 +863,14 @@
+ It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
+ The new agent's canonical task name will be provided to it along with the message.
+ 
+-Omitting `fork_turns` or passing `fork_turns="none"` starts the subagent with fresh context and no parent transcript. Include the task context it needs in `message`. Pass `fork_turns="all"` explicitly when it needs the full parent history, or a positive integer string to include only the most recent turns."#
++Omitting `fork_turns` or passing `fork_turns="none"` starts the subagent with fresh context and no parent transcript. Include the task context it needs in `message`. Pass `fork_turns="all"` explicitly when it needs the full parent history, or a positive integer string to include only the most recent turns.
++
++Handoff contract: include known, relevant information; omit unknown fields rather than inventing facts or filling empty sections.
++- Explorer: QUESTION, SCOPE, KNOWN ENTRY POINTS, CONSTRAINTS, RETURN.
++- Worker: GOAL, OWNERSHIP, TARGETS, KNOWN FINDINGS, DECISIONS, CURRENT STATE, CONSTRAINTS, VALIDATION, RETURN. Keep ownership explicit and preserve other contributors' changes.
++- For other roles, use the applicable fields and preserve the selected role's instructions.
++Pass explorer conclusions and evidence to the worker, not the exploration transcript. Pass the worker's change summary and validation results to the reviewer/checker. Send review findings to the original worker with `followup_task`, continuing the same child.
++Use ordinary message text; do not make an extra model call solely to summarize a handoff."#
+     );
+ 
+     if let Some(usage_hint_text) = usage_hint_text {
+diff --git a/codex-rs/core/src/tools/spec_plan_tests.rs b/codex-rs/core/src/tools/spec_plan_tests.rs
+--- a/codex-rs/core/src/tools/spec_plan_tests.rs
++++ b/codex-rs/core/src/tools/spec_plan_tests.rs
+@@ -2718,6 +2718,7 @@
+         );
+     }
+     assert!(!properties.contains_key("agent_type"));
++    assert!(!spawn_agent.description.contains("Handoff contract:"));
+ 
+     let v2 = probe(|turn| {
+         set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+@@ -2784,6 +2785,20 @@
+     assert!(spawn_agent_description.contains(
+         "Omitting `fork_turns` or passing `fork_turns=\"none\"` starts the subagent with fresh context and no parent transcript"
+     ));
++    for fragment in [
++        "Explorer: QUESTION, SCOPE, KNOWN ENTRY POINTS, CONSTRAINTS, RETURN",
++        "Worker: GOAL, OWNERSHIP, TARGETS, KNOWN FINDINGS, DECISIONS, CURRENT STATE, CONSTRAINTS, VALIDATION, RETURN",
++        "omit unknown fields rather than inventing facts",
++        "Pass explorer conclusions and evidence to the worker",
++        "Pass the worker's change summary and validation results to the reviewer/checker",
++        "original worker with `followup_task`, continuing the same child",
++        "do not make an extra model call solely to summarize a handoff",
++    ] {
++        assert!(
++            spawn_agent_description.contains(fragment),
++            "missing handoff guidance: {fragment}"
++        );
++    }
+ 
+     let direct_model_only = probe(|turn| {
+         set_features(
