@@ -205,3 +205,45 @@ The official release profile is unchanged; these remaining durations are not
 evidence that a compiler archive failed to restore.
 
 Source: [AWS-LC Windows ARM64 compiler requirements](https://github.com/aws/aws-lc-rs/blob/main/book/src/requirements/windows.md).
+
+## Completed verification: 34213949628
+
+The [completed run](https://github.com/DSLZL/CSA-codex/actions/runs/34213949628),
+at `816acacf8faa1c9675c1c3c995d2060552333ae4`, succeeded on all six targets and
+the central aggregate. Publication was skipped. The measurements below come from
+the uploaded Cargo timings and sccache statistics.
+
+| Target | CLI Cargo duration | Rust hits / misses | C hits / misses | Final binary unit |
+| --- | --- | --- | --- | --- |
+| Linux ARM64 | 15m 18s | 1097 / 1 | 1535 / 1 | 13m 56s |
+| Linux x64 | 19m 55s | 1098 / 1 | 1534 / 1 | 18m 05s |
+| macOS ARM64 | 53m 09s | 1069 / 0 | 375 / 0 | 50m 28s |
+| macOS x64 | 71m 45s | 1070 / 0 | 379 / 0 | 67m 45s |
+| Windows ARM64 | 49m 46s | 886 / 206 | 254 / 0 | 21m 11s |
+| Windows x64 | 74m 28s | 883 / 207 | 456 / 0 | 36m 52s |
+
+Linux again restored the exact compiler archives without creating new large
+archives. Each shard retains one compiler archive and one small Zig download
+archive. As in the preceding run, Linux ARM64 reported one C cache error, with
+zero cache read/write errors and timeouts; the build still succeeded.
+
+Windows ARM64 now builds successfully with its upstream compiler selection. It
+restored the old archive by prefix and saved the first successful timestamp-aware
+baseline `7451735451`; its warm Rust hit rate still needs a subsequent run.
+After verifying that replacement, obsolete archive `7440576603` was deleted,
+releasing 2.31 GiB. Only the successful replacement remains in that shard.
+
+Windows x64 restored its timestamp-aware baseline exactly. Its C work now hits
+all 456 entries, but Rust still misses 207 entries (81.01% hits). The log confirms
+both the expected Rust-bundled linker and `SOURCE_DATE_EPOCH=1788476668` in the
+build environment. The timestamp change therefore has not resolved the main
+recurring Rust misses. No per-crate cache-key log or procedural-macro DLLs were
+retained, so these reports cannot establish which input still changes. The next
+diagnostic must compare those inputs before choosing another compiler change.
+
+macOS has 100% cacheable Rust/C/assembler hits. The final binary unit still takes
+about 95% of the CLI build, with mean host CPU samples of 96.42% (ARM64) and
+90.27% (x64); both report zero swaps. This interval includes frontend work,
+optimization, ThinLTO, and system linking. It cannot be attributed entirely to
+the system linker. The official release profile remains unchanged, and this
+round does not establish a fix for the final-binary cost on macOS or Windows.
