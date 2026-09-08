@@ -82,8 +82,11 @@ Unavailable or non-terminal status retries the same watch up to five times with
 a build to recover a status-read failure.
 
 Each shard uploads `codex-build-diagnostics-<compat-id>-<target>` separately from
-the authoritative binary bundle. This contains Cargo timing reports and sccache
-statistics. macOS also records CPU/memory configuration and `/usr/bin/time -l`
+the authoritative binary bundle. This contains the HTML reports from Cargo
+`--timings` (Codex on all six targets, plus bwrap on Linux) and sccache statistics.
+Diagnostics are retained for seven days, independently of the binary bundle's
+`retention_days` input, and available reports are uploaded even if the build fails.
+macOS also records CPU/memory configuration and `/usr/bin/time -l`
 resource statistics in the build log. See [build performance](build-performance.md)
 for the measured incident and the limits of the available evidence.
 
