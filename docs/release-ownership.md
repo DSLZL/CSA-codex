@@ -47,6 +47,9 @@ See the [cache restore contract](https://github.com/actions/cache/blob/v6.1.0/re
 
 Archive keys combine target, sccache version, and a fingerprint of `rustc -Vv`,
 `Cargo.lock`, workspace `Cargo.toml`, `.cargo/config.toml`, and `rust-toolchain.toml`.
+Linux additionally fingerprints its generated `CC`/`CXX` wrappers and C/C++ flags,
+after installing musl tools. Zig must use the stable tool-cache installation path;
+a per-run extraction directory changes both wrapper contents and header paths.
 Repeated runs and source-only patch revisions reuse the immutable dependency
 baseline; changed workspace crates still compile as needed. Compiler, dependency
 or build-configuration changes create a new snapshot, with the existing prefix
@@ -57,6 +60,19 @@ sccache Rust hit rate are separate observations.
 The producer sets no cache-size threshold and runs no automatic cache cleanup.
 GitHub owns quota enforcement and eviction. Cache archive restore/save failures
 remain non-fatal because an empty cache is a valid compiler-cache state.
+
+The broker distinguishes a failed status request from a completed, failed build.
+After `gh run watch` exits unsuccessfully, it checks the same run's terminal
+status. A completed success proceeds; a completed failure or cancellation fails.
+Unavailable or non-terminal status retries the same watch up to five times with
+15/30/45/60-second backoff, within the existing job timeout. It never redispatches
+a build to recover a status-read failure.
+
+Each shard uploads `codex-build-diagnostics-<compat-id>-<target>` separately from
+the authoritative binary bundle. This contains Cargo timing reports and sccache
+statistics. macOS also records CPU/memory configuration and `/usr/bin/time -l`
+resource statistics in the build log. See [build performance](build-performance.md)
+for the measured incident and the limits of the available evidence.
 
 The child repositories contain no compatibility payload or publication job and
 receive no central credential. Cross-repository dispatch and artifact retrieval

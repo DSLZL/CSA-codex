@@ -402,10 +402,27 @@ jobs:
           RUN_ID: ${{ steps.child.outputs.run_id }}
         run: |
           set -euo pipefail
-          if ! gh run watch "$RUN_ID" --repo "$CHILD_REPOSITORY" --exit-status --interval 30; then
-            gh run view "$RUN_ID" --repo "$CHILD_REPOSITORY" --log-failed || true
-            exit 1
-          fi
+          for attempt in 1 2 3 4 5; do
+            if gh run watch "$RUN_ID" --repo "$CHILD_REPOSITORY" --exit-status --interval 30; then
+              exit 0
+            fi
+            # A failed status request does not establish a failed build.
+            state="$(gh run view "$RUN_ID" --repo "$CHILD_REPOSITORY" \
+              --json status,conclusion --jq '.status + "/" + (.conclusion // "")' || true)"
+            case "$state" in
+              completed/success) exit 0 ;;
+              completed/?*)
+                gh run view "$RUN_ID" --repo "$CHILD_REPOSITORY" --log-failed || true
+                exit 1
+                ;;
+            esac
+            if [[ "$attempt" == 5 ]]; then
+              echo "::error::Could not determine the exact child build result after five watch attempts."
+              exit 1
+            fi
+            echo "::warning::Child status unavailable; retrying the same run after $((attempt * 15)) seconds."
+            sleep "$((attempt * 15))"
+          done
 
       - name: Download and verify the exact child artifact
         shell: bash

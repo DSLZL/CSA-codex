@@ -608,6 +608,10 @@ def test_workflow_contracts() -> None:
     assert "sccache_dir: ${{ runner.temp }}/c/k" in target
     assert "target: ${{ inputs.target }}" in target
     assert "steps.compiler_cache.outputs.cache_primary_key" in target
+    assert "use-tool-cache: true" in target
+    assert target.index("Install upstream musl build tools") < target.index("- id: compiler_cache")
+    assert "Upload build diagnostics" in target and "/cargo-timings/" in target
+    assert '/usr/bin/time -l "${build[@]}"' in target
     assert "inputs.cache_mode == 'read-write'" in target
     assert target.count("continue-on-error: true") >= 2
     assert "CARGO_FRONTEND" not in target and "--cargo-frontend" not in target
@@ -656,6 +660,63 @@ def test_workflow_contracts() -> None:
         assert command in ci
 
 
+def test_build_wait_retries(root: Path) -> None:
+    """Run the actual broker shell with deterministic network/child outcomes."""
+    root.mkdir()
+    workflow = (REPOSITORY / ".github/workflows/release-patched-codex.yml").read_text(encoding="utf-8")
+    step = workflow.split("      - name: Wait for the exact child run\n", 1)[1].split("\n      - ", 1)[0]
+    block = step.split("        run: |\n", 1)[1]
+    body = "\n".join(line.removeprefix("          ") for line in block.splitlines())
+    stub = r'''
+watch_calls=0
+gh() {
+  [[ "$1 $3 $4 $5" == "run 1234 --repo DSLZL/CSA-codex-macos-x64" ]] || exit 99
+  if [[ "$2" == watch ]]; then
+    watch_calls=$((watch_calls + 1))
+    printf 'watch\n' >> "$EVENTS"
+    return "${WATCH_RESULTS[watch_calls-1]}"
+  fi
+  [[ "$2" == view ]] || exit 99
+  if [[ "$6" == --log-failed ]]; then
+    printf 'log-failed\n' >> "$EVENTS"
+    return 0
+  fi
+  state="${VIEW_RESULTS[watch_calls-1]:-unavailable}"
+  [[ "$state" != unavailable ]] || return 1
+  printf '%s\n' "$state"
+}
+sleep() { printf 'sleep %s\n' "$1" >> "$EVENTS"; }
+'''
+    cases = (
+        ((0,), (), 0, ()),
+        ((1, 0), ("in_progress/",), 0, (15,)),
+        ((1, 0), ("completed/",), 0, (15,)),
+        ((1,), ("completed/success",), 0, ()),
+        ((1,), ("completed/failure",), 1, ()),
+        ((1,), ("completed/cancelled",), 1, ()),
+        ((1, 1, 0), ("unavailable", "in_progress/"), 0, (15, 30)),
+        ((1, 1, 1, 1, 1), (), 1, (15, 30, 45, 60)),
+    )
+    for index, (watches, states, exit_code, delays) in enumerate(cases):
+        script = root / f"wait-{index}.sh"
+        events = root / f"events-{index}"
+        script.write_text(
+            "WATCH_RESULTS=(" + " ".join(map(str, watches)) + ")\n"
+            + "VIEW_RESULTS=(" + " ".join(states) + ")\n" + stub + body + "\n",
+            encoding="utf-8", newline="\n",
+        )
+        result = subprocess.run(
+            ["bash", str(script)], capture_output=True, text=True,
+            env={**os.environ, "EVENTS": events.as_posix(), "RUN_ID": "1234",
+                 "CHILD_REPOSITORY": "DSLZL/CSA-codex-macos-x64"},
+        )
+        assert result.returncode == exit_code, (index, result.stdout, result.stderr)
+        calls = events.read_text(encoding="utf-8").splitlines()
+        assert calls.count("watch") == len(watches), (index, calls)
+        assert [line for line in calls if line.startswith("sleep ")] == [f"sleep {delay}" for delay in delays]
+        assert ("log-failed" in calls) == (states in (("completed/failure",), ("completed/cancelled",)))
+
+
 def test_compiler_cache_configuration(root: Path) -> None:
     """Execute the real action setup, including Windows mixed-path normalization."""
     pwsh = shutil.which("pwsh")
@@ -680,6 +741,7 @@ def test_compiler_cache_configuration(root: Path) -> None:
         "CSA_CARGO_HOME": str(root) + "/c/h",
         "CSA_SCCACHE_DIR": str(root) + "/c/k",
         "CSA_SOURCE_ROOT": str(source),
+        "CSA_TARGET": TARGET,
         "CSA_CACHE_MODE": "read-write",
         "CSA_DEFAULT_BRANCH": "main",
         "CSA_EVENT_NAME": "workflow_dispatch",
@@ -714,6 +776,22 @@ def test_compiler_cache_configuration(root: Path) -> None:
         assert configure()[1] != first, name
         path.write_bytes(before)
     assert configure()[1] == first
+    wrappers = [root / "zigcc", root / "zigcxx"]
+    for path in wrappers:
+        path.write_text(f"exec /opt/toolcache/zig/0.14.0/zig {path.name}\n", encoding="utf-8")
+    linux_env = {"CSA_TARGET": "x86_64-unknown-linux-musl", "CC": str(wrappers[0]),
+                 "CXX": str(wrappers[1]), "CFLAGS": "-pthread", "CXXFLAGS": "-pthread"}
+    linux = configure(**linux_env)[1]
+    assert linux != first
+    assert configure(**linux_env, GITHUB_RUN_ID="another-run")[1] == linux
+    for path in wrappers:
+        before = path.read_bytes()
+        path.write_bytes(before + b"changed compiler path\n")
+        assert configure(**linux_env)[1] != linux
+        path.write_bytes(before)
+    assert configure(**{**linux_env, "CFLAGS": "-pthread -DCHANGED"})[1] != linux
+    assert configure(**linux_env)[1] == linux
+    expect_error(lambda: configure(**{**linux_env, "CC": str(root / "missing")}), ValueError)
     assert configure(CSA_CACHE_MODE="off", CSA_SOURCE_ROOT=str(root / "absent"))[1] == {}
     expect_error(lambda: configure(CSA_REF="refs/heads/untrusted"), ValueError)
     expect_error(lambda: configure(CSA_SCCACHE_DIR=str(root.parent / "outside")), ValueError)
@@ -852,6 +930,7 @@ def main() -> int:
         test_release_matrix_and_pack(root / "pack")
         test_release_notes(root / "notes")
         test_compiler_cache_configuration(root / "cache")
+        test_build_wait_retries(root / "wait")
         test_cold_unplug_boundaries(root / "cold-unplug")
     test_workflow_contracts()
     print(json.dumps({"schema": 1, "result": "pass"}, indent=2))

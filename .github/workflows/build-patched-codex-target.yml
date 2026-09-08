@@ -170,23 +170,14 @@ jobs:
               ;;
           esac
 
-      - id: compiler_cache
-        name: Configure repository-scoped sccache
-        uses: ./.github/actions/setup-codex-rust-cache
-        with:
-          cache_mode: ${{ inputs.cache_mode }}
-          cargo_home: ${{ runner.temp }}/c/h
-          sccache_dir: ${{ runner.temp }}/c/k
-          sccache_version: ${{ steps.authority.outputs.sccache_version }}
-          source_root: ${{ env.SOURCE_ROOT }}
-          target: ${{ inputs.target }}
-
       - name: Install Zig for musl
         if: contains(inputs.target, 'linux-musl')
         uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.14.0
           use-cache: false
+          # Stable compiler paths keep generated C/C++ wrappers and header paths cacheable.
+          use-tool-cache: true
 
       - name: Install upstream musl build tools
         if: contains(inputs.target, 'linux-musl')
@@ -201,6 +192,17 @@ jobs:
             target_no_jitter="AWS_LC_SYS_NO_JITTER_ENTROPY_${TARGET//-/_}"
             echo "${target_no_jitter}=1"
           } >> "$GITHUB_ENV"
+
+      - id: compiler_cache
+        name: Configure repository-scoped sccache
+        uses: ./.github/actions/setup-codex-rust-cache
+        with:
+          cache_mode: ${{ inputs.cache_mode }}
+          cargo_home: ${{ runner.temp }}/c/h
+          sccache_dir: ${{ runner.temp }}/c/k
+          sccache_version: ${{ steps.authority.outputs.sccache_version }}
+          source_root: ${{ env.SOURCE_ROOT }}
+          target: ${{ inputs.target }}
 
       - name: Configure rusty_v8 artifact overrides
         shell: bash
@@ -265,7 +267,13 @@ jobs:
           if [[ "$TARGET" == x86_64-pc-windows-msvc ]]; then
             export LIBSQLITE3_FLAGS=SQLITE_DISABLE_INTRINSIC
           fi
-          cargo build --target "$TARGET" --release --timings --bin codex
+          build=(cargo build --target "$TARGET" --release --timings --bin codex)
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            sysctl hw.ncpu hw.memsize hw.model
+            /usr/bin/time -l "${build[@]}"
+          else
+            "${build[@]}"
+          fi
           if [[ "$TARGET" == *-unknown-linux-musl ]]; then
             codex="$CARGO_TARGET_DIR/$TARGET/release/codex"
             before_size="$(stat -c %s "$codex")"
@@ -286,6 +294,17 @@ jobs:
             --github-step-summary "$GITHUB_STEP_SUMMARY" \
             --require-requests
           "$SCCACHE_PATH" --show-stats
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: codex-build-diagnostics-${{ inputs.compat_id }}-${{ inputs.target }}
+          path: |
+            ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+            ${{ env.SCCACHE_STATS }}
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
 
       - name: Stage exact target artifact
         shell: bash

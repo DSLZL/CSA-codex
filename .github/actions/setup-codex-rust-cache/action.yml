@@ -47,6 +47,7 @@ runs:
         CSA_REF: ${{ github.ref }}
         CSA_SCCACHE_DIR: ${{ inputs.sccache_dir }}
         CSA_SOURCE_ROOT: ${{ inputs.source_root }}
+        CSA_TARGET: ${{ inputs.target }}
       run: |
         $ErrorActionPreference = 'Stop'
         if ($env:CSA_CACHE_MODE -notin @('read-only', 'read-write', 'off')) {
@@ -96,6 +97,14 @@ runs:
           foreach ($relative in @('Cargo.lock', 'Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml')) {
             $path = Join-Path $env:CSA_SOURCE_ROOT "codex-rs/$relative"
             $cacheInputs += (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+          }
+          if ($env:CSA_TARGET -like '*-unknown-linux-musl') {
+            # Install musl tools first: wrapper contents include the pinned Zig path/target.
+            foreach ($variable in @('CC', 'CXX')) {
+              $path = [Environment]::GetEnvironmentVariable($variable)
+              $cacheInputs += (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            }
+            $cacheInputs += @($env:CFLAGS, $env:CXXFLAGS)
           }
           # ponytail: one dependency snapshot; add source identity only if workspace rebuilds dominate.
           $bytes = [Text.Encoding]::UTF8.GetBytes(($cacheInputs -join "`n"))
