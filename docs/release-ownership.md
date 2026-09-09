@@ -96,7 +96,7 @@ resource statistics in the build log. See [build performance](build-performance.
 for the measured incident and the limits of the available evidence.
 
 The macOS shards and central builder authority use `macos-26` (ARM64) and
-`macos-26-intel` (x64). After verified rusty_v8 downloads and `cargo fetch --locked`,
+`macos-26-intel` (x64). After verified rusty_v8 downloads and `cargo fetch --target`,
 the native recipe requests scanning/indexing shutdown immediately before Cargo
 build. The script requires a GitHub-hosted macOS 26 runner and validates every
 existing metadata root below `RUNNER_TEMP` before making changes. Service commands
@@ -104,6 +104,9 @@ are best effort: their output and remaining processes are recorded, rather than
 assuming protected services stopped. SIP/AMFI/TCC are not disabled. The Apple
 toolchain identity and shutdown log share the seven-day diagnostics retention.
 Changes to this script invalidate existing-build reuse.
+Prefetch uses the existing native build's lockfile policy: Cargo may reconcile
+`Cargo.lock`, and the resulting `cargo-lock.diff` is retained with diagnostics.
+Do not add `--locked` solely to prefetch while the native build permits updates.
 
 Windows x64 dispatches can opt into `diagnose_cache`. The shared recipe records
 compiler-module cache events and publishes a per-crate miss ranking, cache keys,

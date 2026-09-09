@@ -631,11 +631,12 @@ def test_workflow_contracts() -> None:
     assert target.index("Configure rusty_v8 artifact overrides") < mac_fetch < mac_shutdown < cli_build
     for step in (target[mac_fetch:mac_shutdown], target[mac_shutdown:cli_build]):
         assert "if: runner.os == 'macOS'" in step
-    assert 'cargo fetch --locked --target "$TARGET"' in target[mac_fetch:mac_shutdown]
+    assert 'cargo fetch --target "$TARGET"' in target[mac_fetch:mac_shutdown]
     assert "scripts/disable-macos-ci-security-services.sh" in target[mac_shutdown:cli_build]
     assert "disable-macos-ci-security-services.sh" not in cache_setup
     diagnostics = target.split("      - name: Upload build diagnostics\n", 1)[1].split("\n      - name:", 1)[0]
     assert "/c/apple-toolchain.txt" in diagnostics and "/c/macos-security.log" in diagnostics
+    assert "/c/cargo-lock.diff" in diagnostics
     assert "retention-days: 7" in diagnostics
 
     assert "matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}" in release
@@ -858,6 +859,49 @@ def test_compiler_cache_configuration(root: Path) -> None:
     expect_error(lambda: configure(CSA_SCCACHE_DIR=str(root.parent / "outside")), ValueError)
 
 
+def test_macos_prefetch_lockfile(root: Path) -> None:
+    """Real offline Cargo fetch must reconcile a stale lockfile without compiling."""
+    source = root / "source"
+    workspace = source / "codex-rs"
+    dependency = workspace / "dependency"
+    dependency.mkdir(parents=True)
+    (root / "c").mkdir()
+    manifest = '[package]\nname = "prefetch-fixture"\nversion = "0.1.0"\n[lib]\npath = "lib.rs"\n'
+    (workspace / "Cargo.toml").write_text(manifest, encoding="utf-8")
+    (dependency / "Cargo.toml").write_text(manifest.replace("prefetch-fixture", "prefetch-dependency"), encoding="utf-8")
+    for directory in (workspace, dependency):
+        # Invalid Rust makes an accidental compilation fail; fetch only needs the manifests.
+        (directory / "lib.rs").write_text("must never compile this fixture", encoding="utf-8")
+    environment = {
+        **os.environ, "CARGO_HOME": (root / "cargo-home").as_posix(),
+        "CARGO_TARGET_DIR": (root / "target").as_posix(), "CARGO_NET_OFFLINE": "true",
+        "SOURCE_ROOT": source.as_posix(), "RUNNER_TEMP": root.as_posix(),
+    }
+    subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=workspace, env=environment,
+                   check=True, capture_output=True, text=True)
+    lockfile = workspace / "Cargo.lock"
+    original = lockfile.read_bytes()
+    git(source, "init", "-q")
+    git(source, "add", "codex-rs/Cargo.lock")
+    git(source, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "initial lockfile")
+    (workspace / "Cargo.toml").write_text(manifest + '\n[dependencies]\nprefetch-dependency = { path = "dependency" }\n', encoding="utf-8")
+    workflow = (REPOSITORY / ".github/workflows/build-patched-codex-target.yml").read_text(encoding="utf-8")
+    step = workflow.split("      - name: Prefetch Cargo dependencies before macOS security shutdown\n", 1)[1].split("\n      - name:", 1)[0]
+    body = step.split("        run: |\n", 1)[1]
+    script = root / "prefetch.sh"
+    script.write_text("\n".join(line.removeprefix("          ") for line in body.splitlines()) + "\n", encoding="utf-8", newline="\n")
+    for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
+        lockfile.write_bytes(original)
+        result = subprocess.run(["cargo", "fetch", "--locked", "--target", target], cwd=workspace,
+                                env=environment, capture_output=True, text=True)
+        assert result.returncode != 0 and "--locked" in result.stderr, result.stderr
+        result = subprocess.run(["bash", str(script)], env={**environment, "TARGET": target},
+                                capture_output=True, text=True)
+        assert result.returncode == 0, (target, result.stdout, result.stderr)
+        assert "prefetch-dependency" in lockfile.read_text(encoding="utf-8")
+        assert "prefetch-dependency" in (root / "c/cargo-lock.diff").read_text(encoding="utf-8")
+
+
 def test_macos_security_shutdown(root: Path) -> None:
     """Exercise the real script with inert OS commands; never mutate the test host."""
     root.mkdir()
@@ -1048,6 +1092,7 @@ def main() -> int:
         test_release_matrix_and_pack(root / "pack")
         test_release_notes(root / "notes")
         test_compiler_cache_configuration(root / "cache")
+        test_macos_prefetch_lockfile(root / "macos-prefetch")
         test_macos_security_shutdown(root / "macos-security")
         test_build_wait_retries(root / "wait")
         test_cold_unplug_boundaries(root / "cold-unplug")

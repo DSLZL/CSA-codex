@@ -283,7 +283,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "$SOURCE_ROOT/codex-rs"
-          cargo fetch --locked --target "$TARGET"
+          # Match cargo build's existing lockfile policy; --locked rejects required reconciliation.
+          cargo fetch --target "$TARGET"
+          git diff -- Cargo.lock > "$RUNNER_TEMP/c/cargo-lock.diff"
 
       - name: Disable macOS security scanning and indexing
         if: runner.os == 'macOS'
@@ -357,6 +359,7 @@ jobs:
             ${{ runner.temp }}/c/cache-diagnostics/
             ${{ runner.temp }}/c/apple-toolchain.txt
             ${{ runner.temp }}/c/macos-security.log
+            ${{ runner.temp }}/c/cargo-lock.diff
           if-no-files-found: warn
           retention-days: 7
 

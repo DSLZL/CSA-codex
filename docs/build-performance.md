@@ -318,7 +318,7 @@ two macOS repositories' old v2 archives are removed for this migration, after
 publishing the new producer commit and updating their workflow pins. The first
 macOS 26 builds therefore start cold; a later identical environment can reuse v3.
 
-Before the native build, the recipe prefetches locked Cargo dependencies after
+Before the native build, the recipe prefetches Cargo dependencies after
 downloading and verifying rusty_v8. On disposable GitHub-hosted macOS 26 runners
 only, it then requests XProtect, Gatekeeper/SystemPolicy, trustd, and Spotlight
 shutdown and clears quarantine/provenance on validated temporary build roots.
@@ -330,6 +330,20 @@ This is an unmeasured configuration change, not evidence that XProtect caused th
 previous final-binary cost. Compare later warm v3 builds with the retained macOS
 15 reports; the first cold build cannot establish the effect of shutdown alone,
 and the OS/toolchain migration is another confounding change.
+
+The first macOS 26 runs, `34308165259` (ARM64) and `34308168694` (Intel), failed
+in prefetch: Cargo needed to update `Cargo.lock`, but the added `--locked` flag
+prohibited it. Both selected the new images and v3 cache prefixes successfully;
+neither reached security shutdown or compilation, and neither saved a compiler
+archive. These failures provide no scan-performance measurement.
+
+The repair removes the prefetch-only lock restriction, matching the existing
+`cargo build` policy, and retains `cargo-lock.diff` in the seven-day diagnostic
+artifact. The original failed jobs did not retain a resolved lockfile diff, so
+they do not identify a specific changed dependency. A real Cargo regression
+check uses a stale lockfile and local path dependency, confirms `--locked` fails,
+then runs the actual prefetch step offline for both macOS targets without
+compiling Rust.
 
 ## Diagnostic parser repair: 34253013907
 
