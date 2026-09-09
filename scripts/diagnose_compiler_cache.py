@@ -12,15 +12,45 @@ import shutil
 import struct
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 
 TARGET = "x86_64-pc-windows-msvc"
 CONSUMER = "csa_cache_probe_consumer"
+CACHE_EVENT = re.compile(r"\[([^\]\r\n]+)\]: (get_cached_or_compile: |Hash key: |Cache hit in |Cache miss in |Compiled in )([^\r\n]+)")
 
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def decode_arguments(body: str) -> list[str]:
+    """sccache logs Debug<Vec<OsString>>, whose Rust escapes are not all JSON escapes."""
+    def rust_escape(match: re.Match[str]) -> str:
+        token = match[0]
+        if token.startswith(r"\u{"):
+            return json.dumps(chr(int(token[3:-1], 16)))[1:-1]
+        if token == r"\0":
+            return r"\u0000"
+        if token == r"\'":
+            return "'"
+        return token
+
+    # Consume escaped backslashes too, so a literal path such as \\u{200e} stays literal.
+    body = re.sub(r"\\(?:[\"'\\bfnrt/]|0|u\{[0-9a-fA-F]{1,6}\})", rust_escape, body)
+    arguments = json.loads(body)
+    if not isinstance(arguments, list) or not all(isinstance(arg, str) for arg in arguments):
+        raise ValueError("invalid argument vector")
+    return arguments
+
+
+def write_events(path: Path, text: str) -> None:
+    """Retain only compiler cache events, excluding unrelated logs and environment dumps."""
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        for match in CACHE_EVENT.finditer(text):
+            stream.write(match[0] + "\n")
 
 
 def pe_identity(data: bytes) -> dict:
@@ -49,34 +79,31 @@ def pe_identity(data: bytes) -> dict:
     return result
 
 
-def summarize_log(text: str, roots: list[Path]) -> dict:
+def summarize_log(text: str, roots: list[Path], *, collect_dlls: bool = True) -> dict:
     """The logger identifies crates, not requests: retain variants without guessing pairings."""
     crates: dict[str, dict] = {}
     dlls: dict[str, dict] = {}
     malformed = 0
-    for line in text.splitlines():
-        match = re.search(r"\[([^\]\r\n]+)\]: (get_cached_or_compile: |Hash key: |Cache hit in |Cache miss in |Compiled in )(.+)", line)
-        if not match:
-            continue
+    errors: Counter[str] = Counter()
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    for match in CACHE_EVENT.finditer(text):
         name, event, body = match.groups()
         row = crates.setdefault(name, {"crate": name, "hits": 0, "misses": 0, "keys": set(), "commands": {}, "compile_seconds": 0.0})
         if event == "get_cached_or_compile: ":
             try:
-                arguments = json.loads(body)
-                if not isinstance(arguments, list) or not all(isinstance(arg, str) for arg in arguments):
-                    raise ValueError("invalid arguments")
+                arguments = decode_arguments(body)
                 if "--crate-name" not in arguments:
                     continue
                 if arguments[arguments.index("--crate-name") + 1] != name:
                     raise ValueError("crate name differs")
-                fingerprint = digest(json.dumps(arguments, ensure_ascii=False).encode())
+                fingerprint = digest(json.dumps(arguments, ensure_ascii=True).encode())
                 externs = []
                 for index, argument in enumerate(arguments[:-1]):
                     if argument != "--extern":
                         continue
                     _, separator, filename = arguments[index + 1].partition("=")
                     path = Path(filename)
-                    if not separator or path.suffix.lower() != ".dll":
+                    if not collect_dlls or not separator or path.suffix.lower() != ".dll":
                         continue
                     path = path.resolve(strict=True)
                     if not any(path.is_relative_to(root) for root in roots):
@@ -86,8 +113,11 @@ def summarize_log(text: str, roots: list[Path]) -> dict:
                         dlls[key] = pe_identity(path.read_bytes())
                     externs.append(key)
                 row["commands"][fingerprint] = {"arguments_sha256": fingerprint, "proc_macro_dlls": sorted(set(externs))}
-            except (ValueError, IndexError, OSError, struct.error):
+            except (ValueError, IndexError, OSError, struct.error) as error:
                 malformed += 1
+                # JSON errors omit the input itself; OS errors omit the potentially sensitive path.
+                reason = error.msg if isinstance(error, json.JSONDecodeError) else error.strerror if isinstance(error, OSError) else str(error)
+                errors[f"{type(error).__name__}: {reason}"] += 1
         elif event == "Hash key: " and re.fullmatch(r"[0-9a-f]{64}", body):
             row["keys"].add(body)
         elif event == "Cache hit in ":
@@ -106,7 +136,7 @@ def summarize_log(text: str, roots: list[Path]) -> dict:
         row["keys"] = sorted(row["keys"])
         row["compile_seconds"] = round(row["compile_seconds"], 3)
         rows.append(row)
-    return {"crates": sorted(rows, key=lambda row: row["compile_seconds"], reverse=True), "proc_macro_dlls": dlls, "unparsed_invocations": malformed}
+    return {"crates": sorted(rows, key=lambda row: row["compile_seconds"], reverse=True), "proc_macro_dlls": dlls, "unparsed_invocations": malformed, "parse_errors": dict(errors), "dll_capture": collect_dlls}
 
 
 def read_log(path: Path, offset: int = 0) -> str:
@@ -185,6 +215,8 @@ def run_probe(source: Path, output: Path, log: Path) -> dict:
         offset = log.stat().st_size
         completed = subprocess.run(command, cwd=probe, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
         (output / f"probe-{number}.log").write_text(completed.stdout + completed.stderr, encoding="utf-8")
+        events = read_log(log, offset)
+        write_events(output / f"probe-{number}-cache-events.log", events)
         if completed.returncode:
             return {"status": "incomplete", "failed_pass": number, "exit_code": completed.returncode, "passes": passes}
         dlls = list((target / "release/deps").glob("csa_cache_probe_macro-*.dll"))
@@ -195,7 +227,7 @@ def run_probe(source: Path, output: Path, log: Path) -> dict:
         inputs = {name: digest((probe / name).read_bytes()) for name in (*files, "Cargo.lock")}
         for name in ("SOURCE_DATE_EPOCH", "CARGO_INCREMENTAL", "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER", "RUSTC_WRAPPER", "RUSTUP_TOOLCHAIN", "CC", "CXX", "LIB", "INCLUDE", "PATH"):
             inputs["env:" + name] = digest(os.environ.get(name, "").encode())
-        passes.append({"inputs_sha256": digest(json.dumps(inputs, sort_keys=True).encode()), "input_fingerprints": inputs, "dll": pe_identity(data), "cache": summarize_log(read_log(log, offset), [probe.resolve(strict=True)])})
+        passes.append({"inputs_sha256": digest(json.dumps(inputs, sort_keys=True).encode()), "input_fingerprints": inputs, "dll": pe_identity(data), "cache": summarize_log(events, [probe.resolve(strict=True)])})
     return {**probe_result(passes), "passes": passes}
 
 
@@ -206,6 +238,10 @@ def write_report(output: Path, report: dict) -> None:
     for row in native.get("crates", [])[:25]:
         if row["misses"]:
             lines.append(f"| `{row['crate']}` | {row['hits']} | {row['misses']} | {row['compile_seconds']:.3f} |")
+    if report.get("replay"):
+        lines += ["", "Events-only replay: no compiler was run and no DLL files were read. DLL reproducibility is not verified by this report."]
+    for reason, count in native.get("parse_errors", {}).items():
+        lines += ["", f"Parse failure ({count} invocations): {reason}"]
     lines += ["", "The JSON report contains per-crate keys, argument fingerprints and native proc-macro DLL section hashes. Concurrent invocations of the same crate are grouped; keys are not guessed to belong to particular argument variants.", "", "The small probe uses the reviewed release profile and Windows configuration. It rebuilds only its own target directory with identical source/path settings. A stable probe does not establish that every Codex proc macro or cache input is stable. A reproduced difference identifies a mechanism, not how many native misses it caused."]
     probe = report.get("probe", {})
     explanations = {
@@ -218,6 +254,10 @@ def write_report(output: Path, report: dict) -> None:
     }
     if probe:
         lines += ["", explanations.get(probe["status"], "Probe was not completed.")]
+        if probe.get("reason"):
+            lines += ["", f"Probe detail: {probe['reason']}"]
+        if probe.get("error"):
+            lines += ["", f"Probe error: {probe['error']}"]
         if "same_dll" in probe:
             lines += [f"- DLL byte identity: {probe['same_dll']}", f"- COFF timestamp changed: {probe['coff_timestamp_changed']}", f"- Changed PE sections: {', '.join(probe['changed_sections']) or 'none'}", f"- Second consumer: {probe['consumer_hits']} hits / {probe['consumer_misses']} misses"]
     if "error" in report:
@@ -232,23 +272,36 @@ def write_report(output: Path, report: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", required=True, type=Path)
-    parser.add_argument("--source-root", required=True, type=Path)
-    parser.add_argument("--target-dir", required=True, type=Path)
+    parser.add_argument("--source-root", type=Path)
+    parser.add_argument("--target-dir", type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--probe", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--probe", action="store_true")
+    mode.add_argument("--replay", action="store_true", help="replay saved cache events without accessing build roots or running a compiler")
     args = parser.parse_args()
+    if not args.replay and (args.source_root is None or args.target_dir is None):
+        parser.error("--source-root and --target-dir are required unless --replay is used")
     args.output.mkdir(parents=True, exist_ok=True)
     report = {"schema": 1, "status": "incomplete", "source_commit": os.environ.get("SOURCE_COMMIT"), "run_id": os.environ.get("GITHUB_RUN_ID"), "source_date_epoch": os.environ.get("SOURCE_DATE_EPOCH")}
+    native_ok = False
     try:
-        roots = [args.source_root.resolve(strict=True), args.target_dir.resolve(strict=True), Path(os.environ["CARGO_HOME"]).resolve(strict=True)]
-        report["native"] = summarize_log(read_log(args.log), roots)
+        events = read_log(args.log)
+        write_events(args.output / "native-cache-events.log", events)
+        roots = [] if args.replay else [args.source_root.resolve(strict=True), args.target_dir.resolve(strict=True), Path(os.environ["CARGO_HOME"]).resolve(strict=True)]
+        report["replay"] = args.replay
+        report["native"] = summarize_log(events, roots, collect_dlls=not args.replay)
         if not report["native"]["crates"]:
             raise ValueError("native Rust cache events missing")
-        if args.probe:
-            report["probe"] = run_probe(args.source_root, args.output, args.log)
-        report["status"] = "collected" if not report["native"]["unparsed_invocations"] and report.get("probe", {}).get("status") != "incomplete" else "incomplete"
+        native_ok = not report["native"]["unparsed_invocations"]
     except (OSError, ValueError, KeyError, struct.error, subprocess.SubprocessError) as error:
         report["error"] = str(error)
+    # Native log failure must not suppress the independent, small reproducibility experiment.
+    if args.probe:
+        try:
+            report["probe"] = run_probe(args.source_root, args.output, args.log)
+        except (OSError, ValueError, KeyError, struct.error, subprocess.SubprocessError) as error:
+            report["probe"] = {"status": "incomplete", "error": str(error)}
+    report["status"] = "collected" if native_ok and report.get("probe", {}).get("status") != "incomplete" else "incomplete"
     write_report(args.output, report)
     print(json.dumps({"status": report["status"], "probe": report.get("probe", {}).get("status")}))
     return 0 if report["status"] == "collected" else 2

@@ -92,8 +92,9 @@ for the measured incident and the limits of the available evidence.
 
 Windows x64 dispatches can opt into `diagnose_cache`. The shared recipe records
 compiler-module cache events and publishes a per-crate miss ranking, cache keys,
-argument fingerprints, and native proc-macro DLL section hashes. Raw compiler
-debug logs and environment values are not uploaded. After the native build it
+argument fingerprints, and native proc-macro DLL section hashes. Only selected
+cache event lines (including compiler arguments) are retained; full debug logs
+and environment dumps are not uploaded. After the native build it
 runs two small, isolated proc-macro/consumer builds using the exact upstream
 toolchain, release profile, and Windows configuration. The report compares DLL
 bytes and consumer cache results and distinguishes a reproduced instability from
@@ -101,6 +102,18 @@ a stable or incomplete probe. It does not rebuild the full CLI or change its
 artifact. Diagnostic errors are reported without replacing the native build's
 result; the reports and probe DLL snapshots share the seven-day diagnostics
 retention period.
+
+Argument decoding accepts Rust Debug escapes, including `\u{...}`, and reports
+parse failure reasons. A native-log failure does not suppress the independent
+small probe. Downloaded `native-cache-events.log` can be analyzed without the
+original runner or another compilation:
+
+```sh
+python scripts/diagnose_compiler_cache.py --replay --log native-cache-events.log --output replay-report
+```
+
+Replay recovers cache-event/argument analysis only; it does not read native DLLs
+or establish DLL reproducibility. Inspect the original probe report for that.
 
 The child repositories contain no compatibility payload or publication job and
 receive no central credential. Cross-repository dispatch and artifact retrieval

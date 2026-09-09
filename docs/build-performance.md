@@ -300,3 +300,27 @@ Sources: [performance article](https://nnethercote.github.io/2025/09/04/faster-r
 [Apple's SIP definition](https://support.apple.com/en-us/102149),
 [historical macOS 13 SIP issue](https://github.com/actions/runner-images/issues/8162),
 [GitHub larger runner specifications](https://docs.github.com/en/actions/reference/runners/larger-runners).
+
+## Diagnostic parser repair: 34253013907
+
+The Windows x64 run at producer `4d0fc46036ad58621289bcc03bd89c7892b20c0f`
+completed its native build, but its diagnostic report recorded 1088 unparsed
+invocations and no native rows. The resulting `native Rust cache events missing`
+error prevented the independent small probe from starting. Attempt 2 was
+cancelled before applying this repair, as requested.
+
+The original raw events were not retained, so the precise failure of those 1088
+invocations cannot be reconstructed. A format defect was reproduced with the
+official Windows sccache 0.16.0 binary: Rust Debug escapes such as `\u{200e}` are
+valid log output but invalid JSON. The decoder now handles these escapes while
+preserving literal Windows backslashes, and records parse failure reasons.
+Native-log errors no longer prevent the small probe from running; incomplete
+native evidence still produces an incomplete diagnostic result.
+
+Selected compiler cache events now accompany the seven-day reports. Their
+arguments and hit/miss/key events can be replayed locally with `--replay`, without
+reading DLLs or invoking a compiler. Replay cannot establish DLL reproducibility.
+Offline tests cover escaping, replay, failure isolation, and filtered log retention.
+Real sccache log-format checks used a tiny C translation unit and a C-written
+compiler-protocol stub that refuses compilation; no local Rust compilation was
+performed. Another native run has not been started to validate this repair.
