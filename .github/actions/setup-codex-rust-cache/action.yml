@@ -106,6 +106,34 @@ runs:
           $compiler = & rustc -Vv
           if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the Rust compiler for caching.' }
           $cacheInputs = @($compiler)
+          if (-not $env:RUNNER_OS -or -not $env:RUNNER_ARCH) {
+            throw 'Runner OS and architecture are required for cache isolation.'
+          }
+          $environmentInputs = @("RUNNER_OS=$env:RUNNER_OS", "RUNNER_ARCH=$env:RUNNER_ARCH")
+          if ($env:RUNNER_OS -eq 'macOS') {
+            $appleCommands = [ordered]@{
+              MACOS_VERSION = @('sw_vers', '-productVersion')
+              MACOS_BUILD = @('sw_vers', '-buildVersion')
+              MACOS_SDK_VERSION = @('xcrun', '--sdk', 'macosx', '--show-sdk-version')
+              XCODE_VERSION = @('xcodebuild', '-version')
+              APPLE_CLANG_VERSION = @('xcrun', 'clang', '--version')
+            }
+            foreach ($entry in $appleCommands.GetEnumerator()) {
+              $command = $entry.Value[0]
+              $arguments = $entry.Value[1..($entry.Value.Count - 1)]
+              $identity = (& $command @arguments | Out-String).Trim()
+              if ($LASTEXITCODE -ne 0 -or -not $identity) {
+                throw "Cannot identify $($entry.Key) for cache isolation."
+              }
+              $environmentInputs += "$($entry.Key)=$identity"
+            }
+            $environmentInputs | Set-Content -LiteralPath (Join-Path $runnerTemp 'c/apple-toolchain.txt') -Encoding utf8
+          }
+          # The restore prefix must bind the environment too; a full-key hash alone is insufficient.
+          $environmentBytes = [Text.Encoding]::UTF8.GetBytes(($environmentInputs -join "`n"))
+          $environmentFingerprint = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($environmentBytes)).ToLowerInvariant()
+          "environment_fingerprint=$environmentFingerprint" | Add-Content -Path $env:GITHUB_OUTPUT -Encoding utf8
+          $cacheInputs += $environmentInputs
           foreach ($relative in @('Cargo.lock', 'Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml')) {
             $path = Join-Path $env:CSA_SOURCE_ROOT "codex-rs/$relative"
             $cacheInputs += (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
@@ -142,9 +170,9 @@ runs:
       uses: actions/cache/restore@v6.1.0
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-${{ steps.config.outputs.fingerprint }}
+        key: csa-sccache-local-v3-${{ inputs.target }}-${{ inputs.sccache_version }}-${{ steps.config.outputs.environment_fingerprint }}-${{ steps.config.outputs.fingerprint }}
         restore-keys: |
-          csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-
+          csa-sccache-local-v3-${{ inputs.target }}-${{ inputs.sccache_version }}-${{ steps.config.outputs.environment_fingerprint }}-
 
     - name: Configure repository compiler cache
       if: inputs.cache_mode != 'off'

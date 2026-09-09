@@ -233,6 +233,7 @@ jobs:
               .github/actions/setup-codex-rust-cache/action.yml \
               .github/workflows/build-patched-codex-target.yml \
               scripts/check_sccache_stats.py scripts/compat_catalog.py \
+              scripts/disable-macos-ci-security-services.sh \
               scripts/compat_release.py scripts/verify_patch_payload.py || {
               echo "Existing builds cannot be reused after their build inputs changed." >&2
               exit 2

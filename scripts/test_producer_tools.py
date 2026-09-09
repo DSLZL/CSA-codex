@@ -579,7 +579,10 @@ def test_workflow_contracts() -> None:
     assert "SCCACHE_GHA_RW_MODE" not in cache_setup
     assert "SCCACHE_GHA_VERSION" not in cache_setup
     assert "SCCACHE_CACHE_SIZE" not in cache_setup
-    assert "csa-sccache-local-v2-${{ inputs.target }}-${{ inputs.sccache_version }}-" in cache_setup
+    cache_prefix = "csa-sccache-local-v3-${{ inputs.target }}-${{ inputs.sccache_version }}-${{ steps.config.outputs.environment_fingerprint }}-"
+    assert f"key: {cache_prefix}${{{{ steps.config.outputs.fingerprint }}}}" in cache_setup
+    assert f"restore-keys: |\n          {cache_prefix}\n" in cache_setup
+    assert "csa-sccache-local-v2-" not in cache_setup
     assert "github.run_id" not in cache_setup and "github.run_attempt" not in cache_setup
     assert "${{ steps.config.outputs.fingerprint }}" in cache_setup
     # actions/cache hashes path spelling into its version, before resolving filesystem paths.
@@ -591,6 +594,8 @@ def test_workflow_contracts() -> None:
     assert target.index("dtolnay/rust-toolchain@") < target.index(
         "uses: ./.github/actions/setup-codex-rust-cache"
     )
+    toolchain_step = target.split("      - name: Install exact compatibility Rust toolchain\n", 1)[1].split("\n      - name:", 1)[0]
+    assert "          toolchain:" not in toolchain_step
     assert "scripts/check_sccache_stats.py" in target
     assert "--require-requests" in target and "--require-clean" not in target
     assert "cache_mode" in target and "sccache_version" in target
@@ -618,6 +623,20 @@ def test_workflow_contracts() -> None:
     assert target.count("continue-on-error: true") >= 2
     assert "CARGO_FRONTEND" not in target and "--cargo-frontend" not in target
     assert target.count("--timings") == 2
+    assert TARGET_BUILDERS["aarch64-apple-darwin"]["runner"] == "macos-26"
+    assert TARGET_BUILDERS["x86_64-apple-darwin"]["runner"] == "macos-26-intel"
+    mac_fetch = target.index("      - name: Prefetch Cargo dependencies")
+    mac_shutdown = target.index("      - name: Disable macOS security scanning")
+    cli_build = target.index("      - name: Build patched Codex CLI")
+    assert target.index("Configure rusty_v8 artifact overrides") < mac_fetch < mac_shutdown < cli_build
+    for step in (target[mac_fetch:mac_shutdown], target[mac_shutdown:cli_build]):
+        assert "if: runner.os == 'macOS'" in step
+    assert 'cargo fetch --locked --target "$TARGET"' in target[mac_fetch:mac_shutdown]
+    assert "scripts/disable-macos-ci-security-services.sh" in target[mac_shutdown:cli_build]
+    assert "disable-macos-ci-security-services.sh" not in cache_setup
+    diagnostics = target.split("      - name: Upload build diagnostics\n", 1)[1].split("\n      - name:", 1)[0]
+    assert "/c/apple-toolchain.txt" in diagnostics and "/c/macos-security.log" in diagnostics
+    assert "retention-days: 7" in diagnostics
 
     assert "matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}" in release
     assert "matrix.repository" in release and "matrix.workflow" in release
@@ -625,6 +644,7 @@ def test_workflow_contracts() -> None:
     assert "      reuse_builds:" in release
     assert 'response.get("id" if reuse else "workflow_run_id")' in release
     assert "Existing builds cannot be reused after their build inputs changed." in release
+    assert "scripts/disable-macos-ci-security-services.sh" in release.split("git diff --quiet", 1)[1].split("||", 1)[0]
     assert "reused target set differs" in release
     assert "needs.plan.outputs.artifact_source_commit" in release
     assert "gh run watch" in release and "gh run download" in release
@@ -735,6 +755,9 @@ def test_compiler_cache_configuration(root: Path) -> None:
     script.write_text(
         "function rustc { $global:LASTEXITCODE = 0; $env:TEST_COMPILER }\n"
         + "function git { $global:LASTEXITCODE = [int]$env:TEST_GIT_EXIT; $env:TEST_SOURCE_EPOCH }\n"
+        + "function sw_vers { $global:LASTEXITCODE = [int]$env:TEST_APPLE_EXIT; if ($args[0] -eq '-productVersion') { $env:TEST_MACOS_VERSION } else { $env:TEST_MACOS_BUILD } }\n"
+        + "function xcodebuild { $global:LASTEXITCODE = [int]$env:TEST_APPLE_EXIT; $env:TEST_XCODE_VERSION }\n"
+        + "function xcrun { $global:LASTEXITCODE = [int]$env:TEST_APPLE_EXIT; if ($args[0] -eq 'clang') { $env:TEST_CLANG_VERSION } else { $env:TEST_SDK_VERSION } }\n"
         + "\n".join(line.removeprefix("        ") for line in block.splitlines()),
         encoding="utf-8",
     )
@@ -754,6 +777,14 @@ def test_compiler_cache_configuration(root: Path) -> None:
         "TEST_COMPILER": "rustc pinned-compiler-a",
         "TEST_SOURCE_EPOCH": "1770000000",
         "TEST_GIT_EXIT": "0",
+        "RUNNER_OS": "Windows",
+        "RUNNER_ARCH": "X64",
+        "TEST_APPLE_EXIT": "0",
+        "TEST_MACOS_VERSION": "26.0",
+        "TEST_MACOS_BUILD": "25A354",
+        "TEST_XCODE_VERSION": "Xcode 26.0\nBuild version 17A324",
+        "TEST_CLANG_VERSION": "Apple clang version 17.0.0",
+        "TEST_SDK_VERSION": "26.0",
     }
 
     def configure(**overrides: str) -> tuple[dict[str, str], dict[str, str]]:
@@ -776,9 +807,19 @@ def test_compiler_cache_configuration(root: Path) -> None:
     arm_settings, _ = configure(CSA_TARGET="aarch64-pc-windows-msvc")
     assert arm_settings["SOURCE_DATE_EPOCH"] == settings["SOURCE_DATE_EPOCH"]
     assert not {"CC", "CXX"}.intersection(arm_settings), "Preserve AWS-LC's ARM64 Clang selection"
-    mac_settings, mac_fingerprint = configure(CSA_TARGET="aarch64-apple-darwin")
+    mac_env = {"CSA_TARGET": "aarch64-apple-darwin", "RUNNER_OS": "macOS", "RUNNER_ARCH": "ARM64"}
+    mac_settings, mac_fingerprint = configure(**mac_env)
     assert not {"SOURCE_DATE_EPOCH", "CC", "CXX"}.intersection(mac_settings)
-    assert configure(CSA_TARGET="aarch64-apple-darwin", TEST_GIT_EXIT="1")[1] == mac_fingerprint
+    assert configure(**mac_env, TEST_GIT_EXIT="1", GITHUB_RUN_ID="new-run")[1] == mac_fingerprint
+    for name in ("TEST_MACOS_VERSION", "TEST_MACOS_BUILD", "TEST_XCODE_VERSION", "TEST_CLANG_VERSION", "TEST_SDK_VERSION"):
+        changed = configure(**mac_env, **{name: environment[name] + "-changed"})[1]
+        assert changed["environment_fingerprint"] != mac_fingerprint["environment_fingerprint"], name
+        assert changed["fingerprint"] != mac_fingerprint["fingerprint"], name
+        expect_error(lambda: configure(**mac_env, **{name: ""}), ValueError)
+    expect_error(lambda: configure(**mac_env, TEST_APPLE_EXIT="1"), ValueError)
+    assert configure(**{**mac_env, "RUNNER_ARCH": "X64"})[1]["environment_fingerprint"] != mac_fingerprint["environment_fingerprint"]
+    assert configure(**mac_env, TEST_COMPILER="changed compiler")[1]["environment_fingerprint"] == mac_fingerprint["environment_fingerprint"]
+    assert "MACOS_VERSION=26.0" in (root / "c/apple-toolchain.txt").read_text(encoding="utf-8")
     assert re.fullmatch(r"[0-9a-f]{64}", first["fingerprint"])
     assert configure(GITHUB_RUN_ID="2", GITHUB_RUN_ATTEMPT="2")[1] == first
     assert configure(TEST_COMPILER="rustc pinned-compiler-b")[1] != first
@@ -796,7 +837,7 @@ def test_compiler_cache_configuration(root: Path) -> None:
     wrappers = [root / "zigcc", root / "zigcxx"]
     for path in wrappers:
         path.write_text(f"exec /opt/toolcache/zig/0.14.0/zig {path.name}\n", encoding="utf-8")
-    linux_env = {"CSA_TARGET": "x86_64-unknown-linux-musl", "CC": str(wrappers[0]),
+    linux_env = {"CSA_TARGET": "x86_64-unknown-linux-musl", "RUNNER_OS": "Linux", "CC": str(wrappers[0]),
                  "CXX": str(wrappers[1]), "CFLAGS": "-pthread", "CXXFLAGS": "-pthread"}
     linux = configure(**linux_env)[1]
     assert linux != first
@@ -815,6 +856,63 @@ def test_compiler_cache_configuration(root: Path) -> None:
     assert off_settings["SOURCE_DATE_EPOCH"] == "1770000000" and off_outputs == {}
     expect_error(lambda: configure(CSA_REF="refs/heads/untrusted"), ValueError)
     expect_error(lambda: configure(CSA_SCCACHE_DIR=str(root.parent / "outside")), ValueError)
+
+
+def test_macos_security_shutdown(root: Path) -> None:
+    """Exercise the real script with inert OS commands; never mutate the test host."""
+    root.mkdir()
+    script = root / "shutdown-test.sh"
+    script.write_text(r'''
+record() { printf '%s\n' "$*" >> "$EVENTS"; return 1; }
+sw_vers() { printf '%s\n' "$TEST_MACOS_VERSION"; }
+id() { printf '1001\n'; }
+sudo() { record sudo "$@"; }
+defaults() { record defaults "$@"; }
+launchctl() { record launchctl "$@"; }
+csrutil() { record csrutil "$@"; }
+spctl() { record spctl "$@"; }
+mdutil() { record mdutil "$@"; }
+pgrep() { record pgrep "$@"; }
+source "$SHUTDOWN_SCRIPT"
+''', encoding="utf-8", newline="\n")
+    runner_temp = root / "runner"
+    environment = {
+        **os.environ, "GITHUB_ACTIONS": "true", "RUNNER_OS": "macOS",
+        "RUNNER_ENVIRONMENT": "github-hosted", "TEST_MACOS_VERSION": "26.0",
+        "RUNNER_TEMP": runner_temp.as_posix(), "EVENTS": (root / "events").as_posix(),
+        "SHUTDOWN_SCRIPT": (SCRIPTS / "disable-macos-ci-security-services.sh").as_posix(),
+    }
+    for name, suffix in (("SOURCE_ROOT", "s"), ("CARGO_HOME", "h"), ("SCCACHE_DIR", "k"),
+                         ("CARGO_TARGET_DIR", "t"), ("TARGET_BUNDLE", "b")):
+        path = runner_temp / "c" / suffix
+        environment[name] = path.as_posix()
+        if suffix not in ("t", "b"):
+            path.mkdir(parents=True)
+    (runner_temp / "rusty_v8").mkdir()
+
+    def execute(**overrides: str) -> tuple[subprocess.CompletedProcess, str]:
+        events = Path(environment["EVENTS"])
+        events.write_text("", encoding="utf-8")
+        result = subprocess.run(["bash", str(script)], env={**environment, **overrides},
+                                capture_output=True, text=True)
+        return result, events.read_text(encoding="utf-8")
+
+    for invalid in ({"GITHUB_ACTIONS": "false"}, {"RUNNER_ENVIRONMENT": "self-hosted"},
+                    {"RUNNER_OS": "Linux"}, {"TEST_MACOS_VERSION": "15.7.9"},
+                    {"SOURCE_ROOT": root.as_posix()}, {"SOURCE_ROOT": runner_temp.as_posix()}):
+        result, calls = execute(**invalid)
+        assert result.returncode == 2 and not calls, (invalid, result.stderr, calls)
+    result, calls = execute()
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "Best-effort command returned 1" in result.stdout
+    assert "sudo -n spctl --global-disable" in calls and "sudo -n mdutil -a -i off" in calls
+    assert "sudo -n launchctl bootout system/com.apple.XProtect.daemon.scan" in calls
+    assert "launchctl bootout gui/1001/com.apple.trustd.agent" in calls
+    assert "sudo -n pkill -9 -x trustd" in calls and "sudo -n pkill -9 -f XProtect" in calls
+    assert calls.count("sudo -n xattr -drs com.apple.quarantine ") == 4
+    assert calls.count("sudo -n xattr -drs com.apple.provenance ") == 4
+    assert "csrutil status" in calls and "csrutil disable" not in calls
+    assert "pgrep -lf XProtect|syspolicyd|trustd|mds|mdworker" in calls
 
 
 def test_cold_unplug_boundaries(root: Path) -> None:
@@ -950,6 +1048,7 @@ def main() -> int:
         test_release_matrix_and_pack(root / "pack")
         test_release_notes(root / "notes")
         test_compiler_cache_configuration(root / "cache")
+        test_macos_security_shutdown(root / "macos-security")
         test_build_wait_retries(root / "wait")
         test_cold_unplug_boundaries(root / "cold-unplug")
     test_workflow_contracts()

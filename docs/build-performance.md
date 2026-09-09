@@ -283,11 +283,11 @@ build setup. Eliminating even the entire pre-binary interval would save only
 are not per-process attribution, so they cannot prove that XProtect contributes
 zero CPU time. The evidence does not identify XProtect or SIP as the main cause.
 
-The next useful measurement is per-process CPU and stack sampling during the
+The investigation recommended per-process CPU and stack sampling during the
 final unit, covering rustc, the linker, XProtectService, and syspolicyd. If scans
 are demonstrated to dominate, compare the actual runner launcher's Developer
-Tools permission on a controlled runner; do not disable SIP or terminate security
-services as an unmeasured build optimization. With the official release profile
+Tools permission on a controlled runner. These measurements did not establish a
+benefit from terminating security services. With the official release profile
 preserved, a separate capacity comparison can use `macos-15-large` (12 Intel CPUs,
 30 GB) or `macos-15-xlarge` (5 M2 CPUs, 14 GB). Measure elapsed time and billed cost;
 neither more Cargo jobs nor more CPUs guarantees proportional speedup of the final
@@ -300,6 +300,36 @@ Sources: [performance article](https://nnethercote.github.io/2025/09/04/faster-r
 [Apple's SIP definition](https://support.apple.com/en-us/102149),
 [historical macOS 13 SIP issue](https://github.com/actions/runner-images/issues/8162),
 [GitHub larger runner specifications](https://docs.github.com/en/actions/reference/runners/larger-runners).
+
+## Requested macOS 26 migration
+
+The subsequent maintainer-requested migration selects `macos-26` for ARM64 and
+`macos-26-intel` for Intel, updating both shard wrappers and the central runner
+binding. These explicit labels are listed in
+[runner-images](https://github.com/actions/runner-images/blob/main/README.md).
+Rust targets, exact toolchain, upstream profile, and the Cargo/local-sccache/archive
+architecture remain the same.
+
+The shared archive namespace becomes v3 for all targets. macOS product/build,
+SDK, Xcode, Apple clang, and runner OS/architecture form an environment fingerprint
+included in the full key and its restore prefix. A changed Apple environment
+cannot restore an older environment's archive through prefix fallback. Only the
+two macOS repositories' old v2 archives are removed for this migration, after
+publishing the new producer commit and updating their workflow pins. The first
+macOS 26 builds therefore start cold; a later identical environment can reuse v3.
+
+Before the native build, the recipe prefetches locked Cargo dependencies after
+downloading and verifying rusty_v8. On disposable GitHub-hosted macOS 26 runners
+only, it then requests XProtect, Gatekeeper/SystemPolicy, trustd, and Spotlight
+shutdown and clears quarantine/provenance on validated temporary build roots.
+SIP/AMFI/TCC are not disabled. Protected, absent, or relaunched services remain a
+possible outcome: command results, disabled-service state, remaining processes,
+and Apple toolchain identity accompany the seven-day timing diagnostics.
+
+This is an unmeasured configuration change, not evidence that XProtect caused the
+previous final-binary cost. Compare later warm v3 builds with the retained macOS
+15 reports; the first cold build cannot establish the effect of shutdown alone,
+and the OS/toolchain migration is another confounding change.
 
 ## Diagnostic parser repair: 34253013907
 

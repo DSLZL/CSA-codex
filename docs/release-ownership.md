@@ -45,8 +45,13 @@ both restore and save: GitHub includes the literal path in its cache version, so
 mixed Windows separators can make an existing cache invisible.
 See the [cache restore contract](https://github.com/actions/cache/blob/v6.1.0/restore/README.md).
 
-Archive keys combine target, sccache version, and a fingerprint of `rustc -Vv`,
+Archive keys use the shared `csa-sccache-local-v3-` namespace and combine target,
+sccache version, runner environment, and a fingerprint of `rustc -Vv`,
 `Cargo.lock`, workspace `Cargo.toml`, `.cargo/config.toml`, and `rust-toolchain.toml`.
+Runner OS/architecture are always included. macOS additionally records its product
+and build versions, macOS SDK, Xcode, and Apple clang versions. The environment
+hash is present in both the primary key and the restore prefix, so a fallback
+cannot cross an Apple environment boundary. No v3 key falls back to v2.
 Linux additionally fingerprints its generated `CC`/`CXX` wrappers and C/C++ flags,
 after installing musl tools. Zig must use the stable tool-cache installation path;
 a per-run extraction directory changes both wrapper contents and header paths.
@@ -62,8 +67,8 @@ Windows ARM64 must retain dependency-specific compiler discovery: AWS-LC uses
 Clang for its ARM64 C/assembly sources and cannot build them with `cl.exe`.
 Repeated runs and source-only patch revisions reuse the immutable dependency
 baseline; changed workspace crates still compile as needed. Compiler, dependency
-or build-configuration changes create a new snapshot, with the existing prefix
-fallback retaining useful older entries. Do not add a run ID to the key: that
+or build-configuration changes create a new snapshot, with prefix fallback
+retaining useful older entries within the same environment. Do not add a run ID to the key: that
 duplicates the full archive on every run. An exact archive hit and the actual
 sccache Rust hit rate are separate observations.
 
@@ -89,6 +94,16 @@ Diagnostics are retained for seven days, independently of the binary bundle's
 macOS also records CPU/memory configuration and `/usr/bin/time -l`
 resource statistics in the build log. See [build performance](build-performance.md)
 for the measured incident and the limits of the available evidence.
+
+The macOS shards and central builder authority use `macos-26` (ARM64) and
+`macos-26-intel` (x64). After verified rusty_v8 downloads and `cargo fetch --locked`,
+the native recipe requests scanning/indexing shutdown immediately before Cargo
+build. The script requires a GitHub-hosted macOS 26 runner and validates every
+existing metadata root below `RUNNER_TEMP` before making changes. Service commands
+are best effort: their output and remaining processes are recorded, rather than
+assuming protected services stopped. SIP/AMFI/TCC are not disabled. The Apple
+toolchain identity and shutdown log share the seven-day diagnostics retention.
+Changes to this script invalidate existing-build reuse.
 
 Windows x64 dispatches can opt into `diagnose_cache`. The shared recipe records
 compiler-module cache events and publishes a per-crate miss ranking, cache keys,

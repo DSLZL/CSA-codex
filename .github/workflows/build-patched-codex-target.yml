@@ -146,7 +146,6 @@ jobs:
       - name: Install exact compatibility Rust toolchain
         uses: dtolnay/rust-toolchain@1.95.0
         with:
-          toolchain: ${{ steps.authority.outputs.rust_toolchain }}
           targets: ${{ inputs.target }}
 
       - name: Verify exact Rust compiler identity
@@ -276,6 +275,24 @@ jobs:
           strip --strip-debug --strip-unneeded "$bwrap"
           echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >> "$GITHUB_ENV"
 
+      - name: Prefetch Cargo dependencies before macOS security shutdown
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_ROOT/codex-rs"
+          cargo fetch --locked --target "$TARGET"
+
+      - name: Disable macOS security scanning and indexing
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/disable-macos-ci-security-services.sh 2>&1 | tee "$RUNNER_TEMP/c/macos-security.log"
+
       - name: Build patched Codex CLI
         shell: bash
         env:
@@ -338,6 +355,8 @@ jobs:
             ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
             ${{ env.SCCACHE_STATS }}
             ${{ runner.temp }}/c/cache-diagnostics/
+            ${{ runner.temp }}/c/apple-toolchain.txt
+            ${{ runner.temp }}/c/macos-security.log
           if-no-files-found: warn
           retention-days: 7
 

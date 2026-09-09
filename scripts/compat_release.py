@@ -50,11 +50,11 @@ REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 TARGET_BUILDERS = {
     "aarch64-apple-darwin": {
         "repository": "DSLZL/CSA-codex-macos-arm64",
-        "runner": "macos-15",
+        "runner": "macos-26",
     },
     "x86_64-apple-darwin": {
         "repository": "DSLZL/CSA-codex-macos-x64",
-        "runner": "macos-15-intel",
+        "runner": "macos-26-intel",
     },
     "aarch64-unknown-linux-musl": {
         "repository": "DSLZL/CSA-codex-linux-arm64",
