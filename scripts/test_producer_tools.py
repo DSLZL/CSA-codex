@@ -921,10 +921,11 @@ source "$SHUTDOWN_SCRIPT"
 ''', encoding="utf-8", newline="\n")
     runner_temp = root / "runner"
     environment = {
-        **os.environ, "GITHUB_ACTIONS": "true", "RUNNER_OS": "macOS",
+        **os.environ, "GITHUB_ACTIONS": "true", "RUNNER_OS": "macOS", "RUNNER_ARCH": "ARM64",
         "RUNNER_ENVIRONMENT": "github-hosted", "TEST_MACOS_VERSION": "26.0",
         "RUNNER_TEMP": runner_temp.as_posix(), "EVENTS": (root / "events").as_posix(),
         "SHUTDOWN_SCRIPT": (SCRIPTS / "disable-macos-ci-security-services.sh").as_posix(),
+        "TEST_PROTOC_BEFORE": "0", "TEST_PROTOC_AFTER": "0",
     }
     for name, suffix in (("SOURCE_ROOT", "s"), ("CARGO_HOME", "h"), ("SCCACHE_DIR", "k"),
                          ("CARGO_TARGET_DIR", "t"), ("TARGET_BUNDLE", "b")):
@@ -933,30 +934,55 @@ source "$SHUTDOWN_SCRIPT"
         if suffix not in ("t", "b"):
             path.mkdir(parents=True)
     (runner_temp / "rusty_v8").mkdir()
+    for arch in ("aarch_64", "x86_64"):
+        protoc = Path(environment["CARGO_HOME"]) / f"registry/src/test/protoc-bin-vendored-macos-{arch}-3.2.0/bin/protoc"
+        protoc.parent.mkdir(parents=True)
+        protoc.write_text(r'''#!/usr/bin/env bash
+if [[ -e "$EVENTS.protoc" ]]; then
+  phase=after; status="$TEST_PROTOC_AFTER"
+else
+  : > "$EVENTS.protoc"
+  phase=before; status="$TEST_PROTOC_BEFORE"
+fi
+printf 'protoc %s %s %s\n' "$0" "$phase" "$*" >> "$EVENTS"
+exit "$status"
+''', encoding="utf-8", newline="\n")
+        protoc.chmod(0o755)
 
     def execute(**overrides: str) -> tuple[subprocess.CompletedProcess, str]:
         events = Path(environment["EVENTS"])
         events.write_text("", encoding="utf-8")
+        events.with_name(events.name + ".protoc").unlink(missing_ok=True)
         result = subprocess.run(["bash", str(script)], env={**environment, **overrides},
                                 capture_output=True, text=True)
         return result, events.read_text(encoding="utf-8")
 
     for invalid in ({"GITHUB_ACTIONS": "false"}, {"RUNNER_ENVIRONMENT": "self-hosted"},
-                    {"RUNNER_OS": "Linux"}, {"TEST_MACOS_VERSION": "15.7.9"},
+                    {"RUNNER_OS": "Linux"}, {"RUNNER_ARCH": "X86"}, {"TEST_MACOS_VERSION": "15.7.9"},
                     {"SOURCE_ROOT": root.as_posix()}, {"SOURCE_ROOT": runner_temp.as_posix()}):
         result, calls = execute(**invalid)
         assert result.returncode == 2 and not calls, (invalid, result.stderr, calls)
-    result, calls = execute()
-    assert result.returncode == 0, (result.stdout, result.stderr)
+    for runner_arch, protoc_arch in (("ARM64", "aarch_64"), ("X64", "x86_64")):
+        result, calls = execute(RUNNER_ARCH=runner_arch)
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        probes = [line for line in calls.splitlines() if line.startswith("protoc ")]
+        assert len(probes) == 2 and all(f"macos-{protoc_arch}-3.2.0" in line for line in probes)
+        assert probes[0].endswith("before --version") and probes[1].endswith("after --version")
+        mutations = [line for line in calls.splitlines() if line.startswith(("sudo ", "launchctl "))]
+        for forbidden in ("syspolicy", "trustd", "XprotectFramework.PluginService", "pkill", "spctl --global-disable"):
+            assert all(forbidden not in line for line in mutations), mutations
     assert "Best-effort command returned 1" in result.stdout
-    assert "sudo -n spctl --global-disable" in calls and "sudo -n mdutil -a -i off" in calls
+    assert "sudo -n mdutil -a -i off" in calls
     assert "sudo -n launchctl bootout system/com.apple.XProtect.daemon.scan" in calls
-    assert "launchctl bootout gui/1001/com.apple.trustd.agent" in calls
-    assert "sudo -n pkill -9 -x trustd" in calls and "sudo -n pkill -9 -f XProtect" in calls
+    assert "launchctl bootout gui/1001/com.apple.XProtect.agent.scan" in calls
     assert calls.count("sudo -n xattr -drs com.apple.quarantine ") == 4
     assert calls.count("sudo -n xattr -drs com.apple.provenance ") == 4
     assert "csrutil status" in calls and "csrutil disable" not in calls
     assert "pgrep -lf XProtect|syspolicyd|trustd|mds|mdworker" in calls
+    for phase in ("before", "after"):
+        result, calls = execute(**{f"TEST_PROTOC_{phase.upper()}": "137"})
+        assert result.returncode == 137 and f"({phase}) failed with exit status 137" in result.stderr
+        assert ("sudo " in calls) == (phase == "after"), calls
 
 
 def test_cold_unplug_boundaries(root: Path) -> None:

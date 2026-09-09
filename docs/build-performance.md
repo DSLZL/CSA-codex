@@ -320,11 +320,12 @@ macOS 26 builds therefore start cold; a later identical environment can reuse v3
 
 Before the native build, the recipe prefetches Cargo dependencies after
 downloading and verifying rusty_v8. On disposable GitHub-hosted macOS 26 runners
-only, it then requests XProtect, Gatekeeper/SystemPolicy, trustd, and Spotlight
-shutdown and clears quarantine/provenance on validated temporary build roots.
-SIP/AMFI/TCC are not disabled. Protected, absent, or relaunched services remain a
-possible outcome: command results, disabled-service state, remaining processes,
-and Apple toolchain identity accompany the seven-day timing diagnostics.
+only, it then requests background XProtect scan shutdown, disables Spotlight
+indexing, and clears quarantine/provenance on validated temporary build roots.
+Execution-assessment services remain available. SIP/AMFI/TCC are not disabled.
+Protected, absent, or relaunched background services remain a possible outcome:
+command results, disabled-service state, remaining processes, and Apple toolchain
+identity accompany the seven-day timing diagnostics.
 
 This is an unmeasured configuration change, not evidence that XProtect caused the
 previous final-binary cost. Compare later warm v3 builds with the retained macOS
@@ -344,6 +345,37 @@ they do not identify a specific changed dependency. A real Cargo regression
 check uses a stale lockfile and local path dependency, confirms `--locked` fails,
 then runs the actual prefetch step offline for both macOS targets without
 compiling Rust.
+
+The next runs, [34328219499 (ARM64)](https://github.com/DSLZL/CSA-codex-macos-arm64/actions/runs/34328219499)
+and [34328223687 (Intel)](https://github.com/DSLZL/CSA-codex-macos-x64/actions/runs/34328223687),
+passed prefetch but failed in `codex-code-mode-protocol` with an empty
+`protoc failed:` message. The retained Intel lockfile diff contains only workspace
+version reconciliation from `0.0.0` to `0.153.2`, not external dependency upgrades.
+ARM64 also failed to upload diagnostics and run Node action cleanup, without a
+useful error message. Intel uploaded its timing and security logs successfully.
+
+Both security logs show `spctl --global-disable` refusing to disable assessment
+without System Settings confirmation, followed by successful removal of syspolicyd
+and trustd. Assessment still reported enabled. This inconsistent state is a
+concrete recipe defect and the leading explanation for the execution failures,
+not a proven signal-level diagnosis: the pinned
+[prost-build error path](https://github.com/tokio-rs/prost/blob/v0.14.3/prost-build/src/config.rs#L972-L988)
+discards the unsuccessful child status and reports only stderr. The jobs did not
+retain crash reports or system execution-denial logs. Apple's
+[Gatekeeper description](https://support.apple.com/guide/security/gatekeeper-and-runtime-protection-sec5599b66df/web)
+describes its role in deciding whether downloaded code may execute.
+
+The repair stops only the named background XProtect scan jobs, uses `mdutil` for
+Spotlight, and removes the global disable attempt, execution-assessment service
+unloads, and broad process kills. syspolicyd, trustd, and the on-demand XProtect
+plugin are preserved. The script executes the host architecture's vendored
+`protoc --version` before and after the adjustment, recording its path and real
+exit status in `macos-security.log`. Probe failures are fatal; optional background
+service failures remain best effort. This checks the binary upstream selects
+explicitly rather than substituting a different `protoc` from PATH. Local shell
+regressions use inert services and a fake protoc for both architectures, including
+exit 137 before/after the adjustment. Hosted compilation is still required to
+validate the repair and does not establish a performance improvement by itself.
 
 ## Diagnostic parser repair: 34253013907
 

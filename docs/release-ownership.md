@@ -97,12 +97,17 @@ for the measured incident and the limits of the available evidence.
 
 The macOS shards and central builder authority use `macos-26` (ARM64) and
 `macos-26-intel` (x64). After verified rusty_v8 downloads and `cargo fetch --target`,
-the native recipe requests scanning/indexing shutdown immediately before Cargo
-build. The script requires a GitHub-hosted macOS 26 runner and validates every
-existing metadata root below `RUNNER_TEMP` before making changes. Service commands
-are best effort: their output and remaining processes are recorded, rather than
-assuming protected services stopped. SIP/AMFI/TCC are not disabled. The Apple
-toolchain identity and shutdown log share the seven-day diagnostics retention.
+the native recipe requests background XProtect scanning shutdown and disables
+Spotlight indexing immediately before Cargo build. Gatekeeper execution assessment,
+syspolicyd, trustd, and the on-demand XProtect plugin remain available; do not kill
+them or assume an unsuccessful `spctl --global-disable` disabled assessment.
+The script requires a GitHub-hosted macOS 26 runner and validates every existing
+metadata root below `RUNNER_TEMP` before clearing quarantine/provenance. Background
+service commands are best effort and their output and remaining processes are
+recorded. The native vendored `protoc --version` runs before and after these
+changes; a failed probe reports its exit status and stops before Rust compilation.
+SIP/AMFI/TCC are not disabled. The Apple toolchain identity and shutdown/probe log
+share the seven-day diagnostics retention.
 Changes to this script invalidate existing-build reuse.
 Prefetch uses the existing native build's lockfile policy: Cargo may reconcile
 `Cargo.lock`, and the resulting `cargo-lock.diff` is retained with diagnostics.
