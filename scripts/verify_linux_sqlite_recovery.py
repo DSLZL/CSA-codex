@@ -52,7 +52,7 @@ def main() -> None:
         target = compat_release.release_target(args.candidate_manifest, TARGET)
         candidate_record = compat_release.verify_target_bundle(
             args.candidate_manifest, args.candidate_bundle,
-            request_id=f"{run['id']}_{run['run_attempt']}", source_commit=run["head_sha"],
+            request_id=f"{run['id']}-{run['run_attempt']}", source_commit=run["head_sha"],
             repository=target["repository"], runner=target["runner"], target=TARGET,
             workflow_run_id=record["workflow_run_id"],
         )
