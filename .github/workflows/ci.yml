@@ -32,5 +32,6 @@ jobs:
           python scripts/test_check_sccache_stats.py
           python scripts/test_compiler_cache_diagnostics.py
           python scripts/test_producer_tools.py
+          python scripts/test_recover_sqlite_migrations.py
           python scripts/compat_catalog.py validate --repository .
           python scripts/compat_catalog.py guard-workflows .github/workflows/*.yml .github/actions/setup-codex-rust-cache/action.yml
