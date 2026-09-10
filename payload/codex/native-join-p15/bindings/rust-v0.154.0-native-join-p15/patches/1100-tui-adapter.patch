@@ -2845,8 +2845,18 @@ index 21eaf5207bd83a07a74a6fa0d7886ecb5c4218b4..00000000000000000000000000000000
 -• Finished waiting
 -  └ Robie [explorer]: Completed - Done
 -    Ada [reviewer]: Running
+diff --git a/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap b/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap
+index b4a338a29cfd9033ab4ea8f6d91e35c088ef0868..977f6004ff9472d0c5bdb81c014d0cb0c0c390a2 100644
+--- a/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap
++++ b/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap
+@@ -4,4 +4,4 @@ expression: "render_bottom_popup(&chat, 100)"
+ ---
+ › Ask Codex to do anything
+ 
+-  gpt-5.6-sol default · /tmp/project · renaming... ⠋
++  gpt-5.6-sol default · /tmp/project · renaming... ⠁
 diff --git a/codex-rs/tui/src/chatwidget/status_surfaces.rs b/codex-rs/tui/src/chatwidget/status_surfaces.rs
-index 17f437c48899cb5394d6413fad41240de29c15e9..a87e95a6380c22f1c211c1f23ce402ee085513eb 100644
+index 17f437c48899cb5394d6413fad41240de29c15e9..15135309851c08c91fd2fcd73a8083c0d7701e5b 100644
 --- a/codex-rs/tui/src/chatwidget/status_surfaces.rs
 +++ b/codex-rs/tui/src/chatwidget/status_surfaces.rs
 @@ -10,6 +10,8 @@ use crate::chatwidget::limit_label_for_window;
@@ -2872,6 +2882,15 @@ index 17f437c48899cb5394d6413fad41240de29c15e9..a87e95a6380c22f1c211c1f23ce402ee
  /// Time between action-required blink phases in the terminal title.
  const TERMINAL_TITLE_ACTION_REQUIRED_INTERVAL: Duration = Duration::from_secs(1);
  
+@@ -407,7 +402,7 @@ impl ChatWidget {
+                 )
+             }))
+         {
+-            return Some(TERMINAL_TITLE_SPINNER_INTERVAL);
++            return Some(ORBIT_FRAME_INTERVAL);
+         }
+         if self.local_settings.tui.animations
+             && self.terminal_title_shows_action_required_with_selections(selections)
 @@ -416,7 +411,7 @@ impl ChatWidget {
          }
  
@@ -2952,8 +2971,33 @@ index af912ae51fb7164c360037dd0046f90dd799cb09..c3f4a1c8962508cd69e592e19e13fee5
          handle_turn_started(&mut chat, "turn-1");
          let payload = paste_hidden_shell_payload(&mut chat);
  
+diff --git a/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap b/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap
+index e1b2adba20ab6869b4e1fcd004199c92fe1378b4..07052c58fca9db4b625c6342b12452b843d9c598 100644
+--- a/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap
++++ b/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap
+@@ -8,14 +8,14 @@ title:  | 550e8400-e29b-41d4-a716-446655440000 | 550e8400-e29b-41d4-a716-44665..
+ default title: project
+ 
+ name=None, pending=true
+-status: renaming... ⠋ | 550e8400-e29b-41d4-a716-446655440000 ⠋ | 550e8400-e29b-41d4-a716-446655440000 ⠋
+-title: renaming... ⠋ | 550e8400-e29b-41d4-a716-446655440000 ⠋ | 550e8400-e29b-41d4-a716-44665... ⠋
+-default title: renaming... ⠋ | project
++status: renaming... ⠁ | 550e8400-e29b-41d4-a716-446655440000 ⠁ | 550e8400-e29b-41d4-a716-446655440000 ⠁
++title: renaming... ⠁ | 550e8400-e29b-41d4-a716-446655440000 ⠁ | 550e8400-e29b-41d4-a716-44665... ⠁
++default title: renaming... ⠁ | project
+ 
+ name=Some("Fix login timeout"), pending=true
+-status: Fix login timeout ⠋ | Fix login timeout ⠋ | 550e8400-e29b-41d4-a716-446655440000 ⠋
+-title: Fix login timeout ⠋ | Fix login timeout ⠋ | 550e8400-e29b-41d4-a716-44665... ⠋
+-default title: Fix login timeout ⠋ | project
++status: Fix login timeout ⠁ | Fix login timeout ⠁ | 550e8400-e29b-41d4-a716-446655440000 ⠁
++title: Fix login timeout ⠁ | Fix login timeout ⠁ | 550e8400-e29b-41d4-a716-44665... ⠁
++default title: Fix login timeout ⠁ | project
+ 
+ name=Some("Fix login timeout"), pending=false
+ status: Fix login timeout | Fix login timeout | 550e8400-e29b-41d4-a716-446655440000
 diff --git a/codex-rs/tui/src/chatwidget/tests/terminal_title.rs b/codex-rs/tui/src/chatwidget/tests/terminal_title.rs
-index d310031d4854eb5b65798cd3820691eb5f31a0bb..a628b886ce510f29801f153b889a497dece78934 100644
+index d310031d4854eb5b65798cd3820691eb5f31a0bb..d03fb15373222faf0e850aca2039c36cf4088205 100644
 --- a/codex-rs/tui/src/chatwidget/tests/terminal_title.rs
 +++ b/codex-rs/tui/src/chatwidget/tests/terminal_title.rs
 @@ -70,7 +70,7 @@ async fn terminal_title_shows_action_required_while_exec_approval_is_pending() {
@@ -2965,6 +3009,84 @@ index d310031d4854eb5b65798cd3820691eb5f31a0bb..a628b886ce510f29801f153b889a497d
      assert!(
          (before_refresh + spinner_interval..=Instant::now() + spinner_interval)
              .contains(&chat.terminal_title_next_refresh.expect("spinner deadline"))
+@@ -304,22 +304,27 @@ async fn thread_title_progress_animates_when_main_turn_is_idle() {
+     chat.local_settings.tui.terminal_title = Some(Vec::new());
+     chat.local_settings.tui.status_line = Some(vec!["thread-name".to_string()]);
+     chat.bottom_pane.set_task_running(/*running*/ false);
++    let before_refresh = Instant::now();
+     chat.set_thread_title_generation_pending(/*pending*/ true);
+-    assert!(chat.terminal_title_next_refresh.is_some());
++    let spinner_interval = crate::motion::ORBIT_FRAME_INTERVAL;
++    assert!(
++        (before_refresh + spinner_interval..=Instant::now() + spinner_interval).contains(
++            &chat
++                .terminal_title_next_refresh
++                .expect("title progress deadline")
++        )
++    );
+     while draw_rx.try_recv().is_ok() {}
+ 
+     let now = Instant::now();
+     chat.terminal_title_animation_origin = now;
+     assert_eq!(
+         chat.terminal_title_value_for_item(TerminalTitleItem::ThreadName, now),
+-        Some("renaming... ⠋".to_string())
++        Some("renaming... ⠁".to_string())
+     );
+     assert_eq!(
+-        chat.terminal_title_value_for_item(
+-            TerminalTitleItem::ThreadName,
+-            now + Duration::from_millis(/*millis*/ 100)
+-        ),
+-        Some("renaming... ⠙".to_string())
++        chat.terminal_title_value_for_item(TerminalTitleItem::ThreadName, now + spinner_interval),
++        Some("renaming... ⠈".to_string())
+     );
+     chat.refresh_thread_title_progress_for_time_tick();
+     assert!(draw_rx.try_recv().is_ok());
+@@ -335,7 +340,11 @@ async fn thread_title_progress_animates_when_main_turn_is_idle() {
+     chat.local_settings.tui.animations = false;
+     chat.refresh_status_surfaces();
+     assert!(chat.terminal_title_next_refresh.is_none());
+-    assert_eq!(chat.last_terminal_title, Some("renaming... ⠋".to_string()));
++    assert_eq!(chat.last_terminal_title, Some("renaming... ⠁".to_string()));
++    assert_eq!(
++        chat.terminal_title_value_for_item(TerminalTitleItem::ThreadName, now + spinner_interval),
++        Some("renaming... ⠁".to_string())
++    );
+     chat.local_settings.tui.animations = true;
+     chat.set_thread_title_generation_pending(/*pending*/ false);
+     assert_eq!(chat.last_terminal_title, None);
+@@ -357,7 +366,7 @@ async fn thread_title_progress_preserves_suffix_after_truncation_and_in_default_
+         let title = chat
+             .terminal_title_value_for_item(item, Instant::now())
+             .unwrap();
+-        assert!(title.ends_with("... ⠋"), "{title}");
++        assert!(title.ends_with("... ⠁"), "{title}");
+         assert_eq!(title.chars().count(), 50);
+     }
+ }
+diff --git a/codex-rs/tui/src/chatwidget/thread_title_status.rs b/codex-rs/tui/src/chatwidget/thread_title_status.rs
+index e1c061c46406c12447e4407294e5ec5c25021e8e..69853fa027232396c6a51a7b30b88ceabeb28011 100644
+--- a/codex-rs/tui/src/chatwidget/thread_title_status.rs
++++ b/codex-rs/tui/src/chatwidget/thread_title_status.rs
+@@ -4,7 +4,6 @@
+ //! lives here; the existing terminal-title timer also redraws the footer while it is pending.
+ 
+ use super::ChatWidget;
+-use super::status_surfaces::TERMINAL_TITLE_SPINNER_FRAMES;
+ use crate::bottom_pane::StatusLineItem;
+ use std::time::Instant;
+ 
+@@ -40,7 +39,7 @@ impl ChatWidget {
+         let spinner = if self.local_settings.tui.animations {
+             self.terminal_title_spinner_frame_at(now)
+         } else {
+-            TERMINAL_TITLE_SPINNER_FRAMES[0]
++            self.terminal_title_spinner_frame_at(self.terminal_title_animation_origin)
+         };
+         let value = value.unwrap_or_else(|| "renaming...".to_string());
+         Some(format!("{value} {spinner}"))
 diff --git a/codex-rs/tui/src/custom_terminal.rs b/codex-rs/tui/src/custom_terminal.rs
 index 64e163f18b22dcdae60de1b6757ec0d97f4e7645..3440075f75a6d63bf043f7b28bcd56de11872de3 100644
 --- a/codex-rs/tui/src/custom_terminal.rs

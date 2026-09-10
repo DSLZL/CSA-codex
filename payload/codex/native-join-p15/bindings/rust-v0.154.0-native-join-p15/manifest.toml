@@ -10,7 +10,7 @@ rust_toolchain = "1.95.0"
 rustc_commit = "59807616e1fa2540724bfbac14d7976d7e4a3860"
 build_target = "x86_64-pc-windows-msvc"
 source_hashes = "expected/source-hashes.json"
-source_hashes_sha256 = "2effe22d9cae9234b43d2cab650d4b703da27d81876d2bc0a4045aa52f735e67"
+source_hashes_sha256 = "ce56ccb8fae44d89bb346f315545f32dd56a563aced98217fa5b8c5b7db067ca"
 preimage_absent = [
   "codex-rs/core/src/agent/completion.rs",
   "codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs",
@@ -48,7 +48,7 @@ sha256 = "1e7384dbb03e78054cfc8fa27e32916235f953474f22ca706fc071ca311a7b7d"
 
 [[patches]]
 path = "patches/1100-tui-adapter.patch"
-sha256 = "ad931055ee46faf236deb2e78b3d1036140ebfc4dd37acb84c91f33a7532d066"
+sha256 = "b670e46c9e77fbec2afeccc8338fb2aa60747dcad3e6bdac3aafbca97567fe4a"
 
 [[patches]]
 path = "patches/1200-runtime-state-adapter.patch"
@@ -134,10 +134,13 @@ sha256 = "15eab347cd3edc45ad1b633cb916e1a52a449c3e52718c9289ef341e08dfdd30"
 "codex-rs/tui/src/chatwidget/rendering.rs" = "bf785d97789425e97b306d880388d8fc4d5f9d89cdfbeb72698e23599b0a9e5c"
 "codex-rs/tui/src/chatwidget/rendering_tests.rs" = "777aa2cebc53e43a7b9c1dbb2907c185497edc740c8f6658a258b739f3fb4649"
 "codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__app_server_collab_wait_items_render_history.snap" = "1e1c42d9406dc581206a0a2494d5f56ef692f9ec9e0342d05649b239d7df46e6"
+"codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap" = "49adb973d04eaa8b15bb1541c98960bb946d158566ed04ff54536aa5e456397a"
 "codex-rs/tui/src/chatwidget/status_surfaces.rs" = "f8e32fa54e3634597806ce8c4d89d089ea8a1e7b69897ce9777ff43e0163343f"
 "codex-rs/tui/src/chatwidget/tests/app_server.rs" = "225e36309f8a0eeabd4d09d1dfe13e941be2639473913bd12f1f076cc6ec83e6"
 "codex-rs/tui/src/chatwidget/tests/composer_submission.rs" = "298d25a2c310e6f11bc66aa328665d19677011a1aa5da8d68cda9c9725bafa7e"
+"codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap" = "34c6b5acecc9ef894f077bcb2371bed64d860c7126b54b1b483e9ed38903197c"
 "codex-rs/tui/src/chatwidget/tests/terminal_title.rs" = "f2634598e4325ed1d9cdf90cbeb024c5d8328715c2eef41d2da95c73e3644917"
+"codex-rs/tui/src/chatwidget/thread_title_status.rs" = "538b30aa9cb1af17683ad445a67e90fefd9f9554cc60474924ca7f1d792a26cb"
 "codex-rs/tui/src/custom_terminal.rs" = "e8d8780fd5e7f091612271c46a54ecc33f00055073c3d81446da4ccc74f88e26"
 "codex-rs/tui/src/cwd_prompt.rs" = "0d8b394d9ed764924e7a76138a2bcc69dcb62e915b1d3198fa53b562d0e2fe21"
 "codex-rs/tui/src/external_agent_config_migration/mod.rs" = "4c64d96e3df60630a453f7dd7958d17fe846f521b0421742ebe9d0dad280f8ce"
