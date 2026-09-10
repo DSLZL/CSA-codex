@@ -62,7 +62,7 @@ def file_record(path: Path) -> dict[str, Any]:
 
 
 def binary_identity(path: Path, env: dict[str, str] | None = None) -> dict[str, Any]:
-    result = subprocess.run(["rtk", "proxy", str(path), "--version"], env=env, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+    result = subprocess.run([str(path), "--version"], env=env, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
     require(result.returncode == 0, f"absolute executable version check failed: {path}")
     return {**file_record(path), "version": result.stdout.strip()}
 
@@ -304,7 +304,7 @@ class AppServer:
         ]
         if sqlite_home is not None:
             config.append("sqlite_home=" + json.dumps(str(sqlite_home)))
-        argv = ["rtk", "proxy", str(executable), "app-server"]
+        argv = [str(executable), "app-server"]
         for value in config:
             argv.extend(["-c", value])
         self.record = {"id": f"{mode}-{label}", "role": role, "mode": mode, **binary_identity(executable, env), "started_at": utc_now(), "status": "NOT VERIFIED", "normal_shutdown": False, "evidence": [f"{label}.rpc.jsonl", f"{label}.stderr.txt"]}
@@ -427,7 +427,7 @@ class AppServer:
             forced = True
             # Only this owned process tree is eligible for forced cleanup; it fails the gate.
             if os.name == "nt":
-                subprocess.run(["rtk", "proxy", "taskkill", "/PID", str(self.process.pid), "/T", "/F"], capture_output=True, check=False)
+                subprocess.run(["taskkill", "/PID", str(self.process.pid), "/T", "/F"], capture_output=True, check=False)
             else:
                 self.process.kill()
             code = self.process.wait(timeout=10)

@@ -41,6 +41,7 @@ py -3 scripts/test_verify_patch_payload.py
 py -3 scripts/test_compat_catalog.py
 py -3 scripts/test_verify_release_asset_set.py
 py -3 scripts/test_producer_tools.py
+py -3 scripts/test_recover_sqlite_migrations.py
 py -3 scripts/compat_catalog.py validate --repository .
 ```
 
@@ -54,3 +55,7 @@ bound to an exact upstream tag and commit, reviewed payload bytes, build target,
 artifact digest, provenance descriptor, and checksums. See
 [release ownership](docs/release-ownership.md) for the authority and migration
 rules.
+
+For an official Codex migration-checksum error after using p10, follow the
+[SQLite recovery procedure](docs/sqlite-migration-recovery.md). The tool audits
+explicit inputs and creates recovered copies without editing the original home.

@@ -6,9 +6,19 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+    inputs:
+      candidate_run:
+        description: "Optional successful central candidate build run ID"
+        type: string
+        default: ""
+      candidate_manifest:
+        description: "Repository manifest path for the optional candidate"
+        type: string
+        default: ""
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: csa-codex-ci-${{ github.ref }}
@@ -32,5 +42,61 @@ jobs:
           python scripts/test_check_sccache_stats.py
           python scripts/test_compiler_cache_diagnostics.py
           python scripts/test_producer_tools.py
+          python scripts/test_recover_sqlite_migrations.py
           python scripts/compat_catalog.py validate --repository .
           python scripts/compat_catalog.py guard-workflows .github/workflows/*.yml .github/actions/setup-codex-rust-cache/action.yml
+
+  linux-recovery:
+    name: Linux recovery ${{ matrix.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["0.153.0", "0.153.2"]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Fetch exact official inputs
+        env:
+          CODEX_VERSION: ${{ matrix.version }}
+        run: |
+          git clone --bare --depth 1 --branch "rust-v$CODEX_VERSION" https://github.com/openai/codex.git "$RUNNER_TEMP/upstream.git"
+          python - <<'PY'
+          import os
+          import urllib.request
+          from pathlib import Path
+          url = f"https://registry.npmjs.org/@openai/codex/-/codex-{os.environ['CODEX_VERSION']}-linux-x64.tgz"
+          urllib.request.urlretrieve(url, Path(os.environ["RUNNER_TEMP"]) / "official.tgz")
+          PY
+      - name: Recover fixture home and resume official Codex
+        env:
+          CODEX_VERSION: ${{ matrix.version }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+          CANDIDATE_MANIFEST: ${{ inputs.candidate_manifest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=()
+          if [[ -n "$CANDIDATE_RUN$CANDIDATE_MANIFEST" && "$CODEX_VERSION" == 0.153.2 ]]; then
+            [[ "$CANDIDATE_RUN" =~ ^[1-9][0-9]*$ && -n "$CANDIDATE_MANIFEST" ]]
+            compat_id="$(python -c 'import sys,tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["compat_id"])' "$CANDIDATE_MANIFEST")"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN" > "$RUNNER_TEMP/candidate-run.json"
+            gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" \
+              --name "patched-codex-target-${compat_id}-x86_64-unknown-linux-musl" --dir "$RUNNER_TEMP/candidate"
+            args+=(--candidate-manifest "$GITHUB_WORKSPACE/$CANDIDATE_MANIFEST" --candidate-bundle "$RUNNER_TEMP/candidate" --candidate-run "$RUNNER_TEMP/candidate-run.json")
+          fi
+          python scripts/verify_linux_sqlite_recovery.py \
+            --manifest "$GITHUB_WORKSPACE/payload/codex/native-join-p10/bindings/rust-v${CODEX_VERSION}-native-join-p10/manifest.toml" \
+            --source "$RUNNER_TEMP/upstream.git" --official-archive "$RUNNER_TEMP/official.tgz" \
+            --run-root "$RUNNER_TEMP/native-recovery" "${args[@]}"
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: linux-recovery-${{ matrix.version }}
+          path: ${{ runner.temp }}/native-recovery/evidence
+          if-no-files-found: warn
+          retention-days: 7
