@@ -1,0 +1,2232 @@
+{
+  "schema": 1,
+  "status": "accepted",
+  "compat_id": "rust-v0.154.0-native-join-p15",
+  "target": "x86_64-pc-windows-msvc",
+  "artifact_filename": "codex.exe",
+  "artifact_sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+  "artifact_size": 298206208,
+  "manifest_sha256": "eae7196c4dcb851292916c203119592175dbde208467bd79614f0cdb864029db",
+  "build_profile_sha256": "be3194ff9dab2c69914ef0751f700d8d4114a0bd53528bd5b566c61fdf05df13",
+  "runtime_lock_sha256": "9445c9f826a8283345ef9fc32b5866aea68fbfeb94274d329d82f46e33a38994",
+  "recorded_at": "2026-09-10",
+  "accepted_by": "DSLZL",
+  "evidence": {
+    "cold_unplug": {
+      "schema": 1,
+      "status": "passed",
+      "fixture_kind": "loopback-responses",
+      "cases": {
+        "legacy": {
+          "A": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          },
+          "B": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          },
+          "C": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          },
+          "D": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          },
+          "E": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          },
+          "F": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          },
+          "G": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ],
+            "presentation": "official-native",
+            "canonical_join_verified": true
+          },
+          "H": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          },
+          "I": {
+            "status": "passed",
+            "evidence": [
+              "legacy/observations.json"
+            ]
+          }
+        },
+        "paginated": {
+          "A": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          },
+          "B": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          },
+          "C": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          },
+          "D": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          },
+          "E": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          },
+          "F": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          },
+          "G": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ],
+            "presentation": "native-wait",
+            "canonical_join_verified": true
+          },
+          "H": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          },
+          "I": {
+            "status": "passed",
+            "evidence": [
+              "paginated/observations.json"
+            ]
+          }
+        }
+      },
+      "processes": [
+        {
+          "id": "legacy-official-seed",
+          "role": "official",
+          "mode": "legacy",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:16.725960+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "legacy/official-seed.rpc.jsonl",
+            "legacy/official-seed.stderr.txt"
+          ],
+          "pid": 12468,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:17.030162+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "legacy-candidate-work",
+          "role": "candidate",
+          "mode": "legacy",
+          "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+          "size": 298206208,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:17.411429+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "legacy/candidate-work.rpc.jsonl",
+            "legacy/candidate-work.stderr.txt"
+          ],
+          "pid": 26260,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\candidate\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:18.779228+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "legacy-candidate-cold-restore",
+          "role": "candidate",
+          "mode": "legacy",
+          "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+          "size": 298206208,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:19.124017+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "legacy/candidate-cold-restore.rpc.jsonl",
+            "legacy/candidate-cold-restore.stderr.txt"
+          ],
+          "pid": 80464,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\candidate\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:19.433563+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "legacy-official-reopen",
+          "role": "official",
+          "mode": "legacy",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:19.789054+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "legacy/official-reopen.rpc.jsonl",
+            "legacy/official-reopen.stderr.txt"
+          ],
+          "pid": 71724,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:20.347504+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-seed",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:23.595538+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-seed.rpc.jsonl",
+            "paginated/official-seed.stderr.txt"
+          ],
+          "pid": 50824,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:23.920262+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-candidate-work",
+          "role": "candidate",
+          "mode": "paginated",
+          "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+          "size": 298206208,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:24.291700+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/candidate-work.rpc.jsonl",
+            "paginated/candidate-work.stderr.txt"
+          ],
+          "pid": 4248,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\candidate\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:25.673964+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-candidate-cold-restore",
+          "role": "candidate",
+          "mode": "paginated",
+          "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+          "size": 298206208,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:26.057474+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/candidate-cold-restore.rpc.jsonl",
+            "paginated/candidate-cold-restore.stderr.txt"
+          ],
+          "pid": 65224,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\candidate\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:26.351371+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reopen",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:26.725896+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reopen.rpc.jsonl",
+            "paginated/official-reopen.stderr.txt"
+          ],
+          "pid": 39592,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false"
+          ],
+          "ended_at": "2026-09-10T18:48:27.286587+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reproject-0",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:27.648227+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reproject-0.rpc.jsonl",
+            "paginated/official-reproject-0.stderr.txt"
+          ],
+          "pid": 79340,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "sqlite_home=\"C:\\\\Users\\\\Long\\\\AppData\\\\Local\\\\CSA-codex-validation\\\\issue12-release-154-cold-unplug\\\\paginated\\\\rebuilt-databases\""
+          ],
+          "ended_at": "2026-09-10T18:48:27.876669+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reproject-1",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:28.216010+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reproject-1.rpc.jsonl",
+            "paginated/official-reproject-1.stderr.txt"
+          ],
+          "pid": 80980,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "sqlite_home=\"C:\\\\Users\\\\Long\\\\AppData\\\\Local\\\\CSA-codex-validation\\\\issue12-release-154-cold-unplug\\\\paginated\\\\rebuilt-databases\""
+          ],
+          "ended_at": "2026-09-10T18:48:28.445035+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reproject-2",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:28.854496+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reproject-2.rpc.jsonl",
+            "paginated/official-reproject-2.stderr.txt"
+          ],
+          "pid": 52928,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "sqlite_home=\"C:\\\\Users\\\\Long\\\\AppData\\\\Local\\\\CSA-codex-validation\\\\issue12-release-154-cold-unplug\\\\paginated\\\\rebuilt-databases\""
+          ],
+          "ended_at": "2026-09-10T18:48:29.046297+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reproject-3",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:29.364485+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reproject-3.rpc.jsonl",
+            "paginated/official-reproject-3.stderr.txt"
+          ],
+          "pid": 8488,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "sqlite_home=\"C:\\\\Users\\\\Long\\\\AppData\\\\Local\\\\CSA-codex-validation\\\\issue12-release-154-cold-unplug\\\\paginated\\\\rebuilt-databases\""
+          ],
+          "ended_at": "2026-09-10T18:48:29.587435+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reproject-4",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:29.923447+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reproject-4.rpc.jsonl",
+            "paginated/official-reproject-4.stderr.txt"
+          ],
+          "pid": 56200,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "sqlite_home=\"C:\\\\Users\\\\Long\\\\AppData\\\\Local\\\\CSA-codex-validation\\\\issue12-release-154-cold-unplug\\\\paginated\\\\rebuilt-databases\""
+          ],
+          "ended_at": "2026-09-10T18:48:30.114790+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reproject-5",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:30.447806+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reproject-5.rpc.jsonl",
+            "paginated/official-reproject-5.stderr.txt"
+          ],
+          "pid": 77492,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "sqlite_home=\"C:\\\\Users\\\\Long\\\\AppData\\\\Local\\\\CSA-codex-validation\\\\issue12-release-154-cold-unplug\\\\paginated\\\\rebuilt-databases\""
+          ],
+          "ended_at": "2026-09-10T18:48:30.678611+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        },
+        {
+          "id": "paginated-official-reproject-6",
+          "role": "official",
+          "mode": "paginated",
+          "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+          "size": 298169136,
+          "version": "codex-cli 0.154.0",
+          "started_at": "2026-09-10T18:48:31.041390+00:00",
+          "status": "passed",
+          "normal_shutdown": true,
+          "evidence": [
+            "paginated/official-reproject-6.rpc.jsonl",
+            "paginated/official-reproject-6.stderr.txt"
+          ],
+          "pid": 72056,
+          "argv": [
+            "C:\\Users\\Long\\AppData\\Local\\CSA-codex-validation\\issue12-release-154-cold-unplug\\runtime\\official\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe",
+            "app-server",
+            "-c",
+            "model_provider=\"cold_unplug\"",
+            "-c",
+            "model=\"test-gpt-5.1-codex\"",
+            "-c",
+            "model_providers.cold_unplug={name=\"Cold unplug fixture\",base_url=\"http://127.0.0.1:34665/v1\",wire_api=\"responses\",env_key=\"CSA_COLD_UNPLUG_TEST_KEY\"}",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "sandbox_mode=\"danger-full-access\"",
+            "-c",
+            "features.collab=true",
+            "-c",
+            "features.multi_agent_v2=true",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "sqlite_home=\"C:\\\\Users\\\\Long\\\\AppData\\\\Local\\\\CSA-codex-validation\\\\issue12-release-154-cold-unplug\\\\paginated\\\\rebuilt-databases\""
+          ],
+          "ended_at": "2026-09-10T18:48:31.242477+00:00",
+          "exit_code": 0,
+          "forced_cleanup": false,
+          "stream_error": null
+        }
+      ],
+      "terminal": {
+        "method": "conpty",
+        "modes": {
+          "unset": {
+            "status": "passed",
+            "started_at": "2026-09-10T17:32:47.870Z",
+            "ended_at": "2026-09-10T17:32:50.419Z",
+            "exit_code": 0,
+            "normal_shutdown": true,
+            "keyboard": true,
+            "capture_cleanup": true,
+            "warning_count": 0,
+            "effective_mode": "auto",
+            "evidence": [
+              "terminal/unset/01-parent.txt",
+              "terminal/unset/02-child-highlighted.txt",
+              "terminal/unset/02-picker.txt",
+              "terminal/unset/03-child.txt",
+              "terminal/unset/04-parent-return.txt",
+              "terminal/unset/05-raw.txt",
+              "terminal/unset/06-restored.txt",
+              "terminal/unset/07-exit.txt",
+              "terminal/unset/capture.vt",
+              "terminal/unset/native-log/codex-tui.log",
+              "terminal/unset/terminal-events.jsonl",
+              "terminal/unset/terminal-result.json"
+            ],
+            "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+            "version": "codex-cli 0.154.0"
+          },
+          "auto": {
+            "status": "passed",
+            "started_at": "2026-09-10T17:32:50.859Z",
+            "ended_at": "2026-09-10T17:32:53.378Z",
+            "exit_code": 0,
+            "normal_shutdown": true,
+            "keyboard": true,
+            "capture_cleanup": true,
+            "warning_count": 0,
+            "effective_mode": "auto",
+            "evidence": [
+              "terminal/auto/01-parent.txt",
+              "terminal/auto/02-child-highlighted.txt",
+              "terminal/auto/02-picker.txt",
+              "terminal/auto/03-child.txt",
+              "terminal/auto/04-parent-return.txt",
+              "terminal/auto/05-raw.txt",
+              "terminal/auto/06-restored.txt",
+              "terminal/auto/07-exit.txt",
+              "terminal/auto/capture.vt",
+              "terminal/auto/native-log/codex-tui.log",
+              "terminal/auto/terminal-events.jsonl",
+              "terminal/auto/terminal-result.json"
+            ],
+            "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+            "version": "codex-cli 0.154.0"
+          },
+          "on": {
+            "status": "passed",
+            "started_at": "2026-09-10T17:32:53.844Z",
+            "ended_at": "2026-09-10T17:32:56.333Z",
+            "exit_code": 0,
+            "normal_shutdown": true,
+            "keyboard": true,
+            "capture_cleanup": true,
+            "warning_count": 0,
+            "effective_mode": "on",
+            "evidence": [
+              "terminal/on/01-parent.txt",
+              "terminal/on/02-child-highlighted.txt",
+              "terminal/on/02-picker.txt",
+              "terminal/on/03-child.txt",
+              "terminal/on/04-parent-return.txt",
+              "terminal/on/05-raw.txt",
+              "terminal/on/06-restored.txt",
+              "terminal/on/07-exit.txt",
+              "terminal/on/capture.vt",
+              "terminal/on/native-log/codex-tui.log",
+              "terminal/on/terminal-events.jsonl",
+              "terminal/on/terminal-result.json"
+            ],
+            "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+            "version": "codex-cli 0.154.0"
+          },
+          "off": {
+            "status": "passed",
+            "started_at": "2026-09-10T17:32:56.787Z",
+            "ended_at": "2026-09-10T17:32:59.342Z",
+            "exit_code": 0,
+            "normal_shutdown": true,
+            "keyboard": true,
+            "capture_cleanup": true,
+            "warning_count": 0,
+            "effective_mode": "off",
+            "evidence": [
+              "terminal/off/01-parent.txt",
+              "terminal/off/02-child-highlighted.txt",
+              "terminal/off/02-picker.txt",
+              "terminal/off/03-child.txt",
+              "terminal/off/04-parent-return.txt",
+              "terminal/off/05-raw.txt",
+              "terminal/off/06-restored.txt",
+              "terminal/off/07-exit.txt",
+              "terminal/off/capture.vt",
+              "terminal/off/native-log/codex-tui.log",
+              "terminal/off/terminal-events.jsonl",
+              "terminal/off/terminal-result.json"
+            ],
+            "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+            "version": "codex-cli 0.154.0"
+          },
+          "invalid": {
+            "status": "passed",
+            "started_at": "2026-09-10T17:32:59.766Z",
+            "ended_at": "2026-09-10T17:33:02.295Z",
+            "exit_code": 0,
+            "normal_shutdown": true,
+            "keyboard": true,
+            "capture_cleanup": true,
+            "warning_count": 1,
+            "effective_mode": "auto",
+            "evidence": [
+              "terminal/invalid/01-parent.txt",
+              "terminal/invalid/02-child-highlighted.txt",
+              "terminal/invalid/02-picker.txt",
+              "terminal/invalid/03-child.txt",
+              "terminal/invalid/04-parent-return.txt",
+              "terminal/invalid/05-raw.txt",
+              "terminal/invalid/06-restored.txt",
+              "terminal/invalid/07-exit.txt",
+              "terminal/invalid/capture.vt",
+              "terminal/invalid/native-log/codex-tui.log",
+              "terminal/invalid/terminal-events.jsonl",
+              "terminal/invalid/terminal-result.json"
+            ],
+            "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+            "version": "codex-cli 0.154.0"
+          }
+        }
+      },
+      "files": {
+        "build/github-result.json": {
+          "sha256": "0cedf1870e86539365e15077a2f51be43d68226bec34fd77335e9f21dc1dfdf6",
+          "size": 690
+        },
+        "build/target-record.json": {
+          "sha256": "e2ef3784a08ed9131083243e6be05ba16e4347cfb1bbaf000fced89c41604998",
+          "size": 620
+        },
+        "execution.json": {
+          "sha256": "a3ff13f59404f6df972b678b0148af45bb76733539927e39e45496b148a40fae",
+          "size": 178
+        },
+        "legacy/candidate-cold-restore.process.json": {
+          "sha256": "3c8939d5c1def26becada4415989359d4adde627dd3e304a602cb4a6c130c103",
+          "size": 1293
+        },
+        "legacy/candidate-cold-restore.rpc.jsonl": {
+          "sha256": "c80e034a90227a069b38c043dd8ef1165c8cc1cdda9fd646dd7c1150479efaa1",
+          "size": 58888
+        },
+        "legacy/candidate-cold-restore.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "legacy/candidate-work.process.json": {
+          "sha256": "13a32e7cda95543ae2e2a279f11818163396e9d61266c15009f06b353882e986",
+          "size": 1269
+        },
+        "legacy/candidate-work.rpc.jsonl": {
+          "sha256": "3a617b031d5a7b6b0262a9e32b3ee147f34b1f162fc72a7a5425385a85807b8a",
+          "size": 150894
+        },
+        "legacy/candidate-work.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "legacy/checksum-negative-candidate-control.process.json": {
+          "sha256": "82eb84a5529cf34678ea1dfd8d58b8e1534b820803ef4d5d1f7bbdb7e4166448",
+          "size": 1332
+        },
+        "legacy/checksum-negative-candidate-control.rpc.jsonl": {
+          "sha256": "013e57437acd8e8a2411dc4ac010129652f11218a8283b25059f6e30214b47d5",
+          "size": 1058
+        },
+        "legacy/checksum-negative-candidate-control.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "legacy/checksum-negative-candidate.process.json": {
+          "sha256": "273b942231dffbffc36eed59c998c15ee14300f12ccea113b90ce09002f325dd",
+          "size": 1308
+        },
+        "legacy/checksum-negative-candidate.rpc.jsonl": {
+          "sha256": "ee6a6a0b60ac0a569d17d906b31bd60c038e9b596bd60d91cba9d5a84e4153d9",
+          "size": 232
+        },
+        "legacy/checksum-negative-candidate.stderr.txt": {
+          "sha256": "4ec4069a43f601227326e89f7e0c9bbfe00531545eda1434271c6f016bc8b63c",
+          "size": 326
+        },
+        "legacy/checksum-negative-official-control.process.json": {
+          "sha256": "58c98c5e86788b5305cb2e96f7052addaa58b67a464eaa89fc0ff0ed294d3dff",
+          "size": 1327
+        },
+        "legacy/checksum-negative-official-control.rpc.jsonl": {
+          "sha256": "643eeeae0199c9ad44f4b4bd660c448c1d3b72e3252cf28136ead8f2ff12be9a",
+          "size": 1057
+        },
+        "legacy/checksum-negative-official-control.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "legacy/checksum-negative-official.process.json": {
+          "sha256": "2644aae58e36fb46dfbfe06aec2d6737e70cf67e2fff98723988d262aa1791c5",
+          "size": 1304
+        },
+        "legacy/checksum-negative-official.rpc.jsonl": {
+          "sha256": "bddc517dd8b3b3ca1e4712c441792ec2591b2059808697877f8232eeaf2fddbb",
+          "size": 232
+        },
+        "legacy/checksum-negative-official.stderr.txt": {
+          "sha256": "89ed56bd6ab37b2d4ddb57b464c64d64f5959437b6ab219cac9609f4390b67aa",
+          "size": 324
+        },
+        "legacy/observations.json": {
+          "sha256": "917f36f511feaeda99fae7f476ef4f9b15d985fd1cefe0b7ab73ac2be248b723",
+          "size": 1525043
+        },
+        "legacy/official-reopen.process.json": {
+          "sha256": "35884adc4c7e1f72d89713f5983e48526eba9457d6a36cac61bd9cb94bc2d489",
+          "size": 1270
+        },
+        "legacy/official-reopen.rpc.jsonl": {
+          "sha256": "9931817a014fbd881ff812b2833018b34b808892956a27d34e0363c804659b81",
+          "size": 120134
+        },
+        "legacy/official-reopen.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "legacy/official-seed.process.json": {
+          "sha256": "e1404a2ae0d0fe1a67af4156f96a723c15889ce509482fdfa20994c27bcfb44b",
+          "size": 1264
+        },
+        "legacy/official-seed.rpc.jsonl": {
+          "sha256": "ae05330c32230b3f4072a144c64b72f23b98c5fd3c0b1dfd43d17942ee77ea3a",
+          "size": 18581
+        },
+        "legacy/official-seed.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/candidate-cold-restore.process.json": {
+          "sha256": "596af580aadda9124970d0ba5cdb425bce33d656ae075bad505fe5982072c5e8",
+          "size": 1299
+        },
+        "paginated/candidate-cold-restore.rpc.jsonl": {
+          "sha256": "47d35c248e50bd36190f0a654654e71e5c4f3513c722d72bae5fc6dba11b1cb0",
+          "size": 55626
+        },
+        "paginated/candidate-cold-restore.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/candidate-work.process.json": {
+          "sha256": "6d936133639a8c22c8f3ba6affc0afef4107017bc4c786de1ea8346e5bec2b11",
+          "size": 1274
+        },
+        "paginated/candidate-work.rpc.jsonl": {
+          "sha256": "74714f7ee89749bd8c380f8dafb9e77a05f349d080feb67ff84598053e01d7b7",
+          "size": 151392
+        },
+        "paginated/candidate-work.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/checksum-negative-candidate-control.process.json": {
+          "sha256": "97ea9504e85ef6c2555a995c3084fda762cf728b47ae4f3ce230c9a86f9bf5d3",
+          "size": 1338
+        },
+        "paginated/checksum-negative-candidate-control.rpc.jsonl": {
+          "sha256": "a388255a644190e1b053bd6f81c636dd83364c35a7587281a0a5f6f5a3df7cbb",
+          "size": 1061
+        },
+        "paginated/checksum-negative-candidate-control.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/checksum-negative-candidate.process.json": {
+          "sha256": "548133b99860e3a0a176d624a9187b1db00f908182c0d0d370a80d0fa9bfb840",
+          "size": 1315
+        },
+        "paginated/checksum-negative-candidate.rpc.jsonl": {
+          "sha256": "c2d1505c8e6be036940fe23b7b1bc3a10f9d0513cc051310a06740fe86a1315a",
+          "size": 232
+        },
+        "paginated/checksum-negative-candidate.stderr.txt": {
+          "sha256": "1e76ff2c42332baca33fc3f2a40f832a4aae0da527666ae0ef6c8782be93822c",
+          "size": 332
+        },
+        "paginated/checksum-negative-official-control.process.json": {
+          "sha256": "8461a2cc2ba4fea57672a6c079a603667dd06b0c40f6f87d2639bf5d252094a6",
+          "size": 1333
+        },
+        "paginated/checksum-negative-official-control.rpc.jsonl": {
+          "sha256": "01a6b511b1997312ffa424966d13929f50d719b6de3ef627ee14f81570049c4c",
+          "size": 1060
+        },
+        "paginated/checksum-negative-official-control.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/checksum-negative-official.process.json": {
+          "sha256": "fa4bf4970b856918aa3e19a1f8a3cceb37504f1003e7193e6098724d35c83b6f",
+          "size": 1310
+        },
+        "paginated/checksum-negative-official.rpc.jsonl": {
+          "sha256": "6c035cbf47e67bf3a2c9b8acc3ecccd24d1d32d0a31c2e52a93f9ef9edd3891f",
+          "size": 232
+        },
+        "paginated/checksum-negative-official.stderr.txt": {
+          "sha256": "17e91a20de8a1c19c97f9d56319a7a57d4e1db9a3680309df355221fc8587889",
+          "size": 330
+        },
+        "paginated/observations.json": {
+          "sha256": "2fcd671af9b5b96908b8612b67fc9f2be60f6048ddc805a43c87a5144c63a964",
+          "size": 1640708
+        },
+        "paginated/official-reopen.process.json": {
+          "sha256": "8ed4582ae0515842e88717210b2fc8f0217e87ddb92484bc0a5017db9de3b7ea",
+          "size": 1276
+        },
+        "paginated/official-reopen.rpc.jsonl": {
+          "sha256": "806a2bd70bc335a377f5e0d04db15128a1ffd9b01764a01d2b377ec46def0f63",
+          "size": 223187
+        },
+        "paginated/official-reopen.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-reproject-0.process.json": {
+          "sha256": "06e56c4e053409d74170b46130a1bb57ed7c17191427e1fef8a04b49b9717477",
+          "size": 1459
+        },
+        "paginated/official-reproject-0.rpc.jsonl": {
+          "sha256": "c2a3948634e48da1503e492812d8368258d7c84a997515797bfb5df8435c393a",
+          "size": 40320
+        },
+        "paginated/official-reproject-0.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-reproject-1.process.json": {
+          "sha256": "269b2651c68dd2c7122eb6c65fad2b2d24a65c84ab0ce90ec8fa98420b81ba97",
+          "size": 1459
+        },
+        "paginated/official-reproject-1.rpc.jsonl": {
+          "sha256": "857f077bab02c986fbdd6fbd1f6468fdcd5a870a6bb4849e6572a27020f988f5",
+          "size": 118640
+        },
+        "paginated/official-reproject-1.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-reproject-2.process.json": {
+          "sha256": "1f9b743eb58811bfc0c08f9d551c8a4bafb5722226ac93e22e9b60113979a44c",
+          "size": 1459
+        },
+        "paginated/official-reproject-2.rpc.jsonl": {
+          "sha256": "5cc38fff529bcf80acba5eb017feab804d92192a425bc37fd6ef5289e324fbbd",
+          "size": 38830
+        },
+        "paginated/official-reproject-2.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-reproject-3.process.json": {
+          "sha256": "d6fb3a0516e3216d8d7085dd1c3f6b6830516a166d3d6f6e3e4fff6d8815dc81",
+          "size": 1458
+        },
+        "paginated/official-reproject-3.rpc.jsonl": {
+          "sha256": "69a720e47e878017a974fd8d0f88a20adb7aa579e924ffafa9e61b8cf8b603a7",
+          "size": 48800
+        },
+        "paginated/official-reproject-3.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-reproject-4.process.json": {
+          "sha256": "33467c47bdfa325e407c33873eae23b4d654b63caca1e7835be189b5deef1453",
+          "size": 1459
+        },
+        "paginated/official-reproject-4.rpc.jsonl": {
+          "sha256": "e2bb37d89644098c8fc0b64db0d34513a3c9bac6b50dc7c494daecb647868ff2",
+          "size": 38568
+        },
+        "paginated/official-reproject-4.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-reproject-5.process.json": {
+          "sha256": "c55412d9ee3c50d78ad0659940b39ce9401c5dd9728c2526243a4bf6d6d23cff",
+          "size": 1459
+        },
+        "paginated/official-reproject-5.rpc.jsonl": {
+          "sha256": "59e43efb433ad60ed77d462a5717ba926ce84b3a99557bb832f1e728352ce8e8",
+          "size": 38592
+        },
+        "paginated/official-reproject-5.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-reproject-6.process.json": {
+          "sha256": "abd2096247c918aa2c94edc7857dfe5fe76c594184ca797c01f23031b8306bf5",
+          "size": 1459
+        },
+        "paginated/official-reproject-6.rpc.jsonl": {
+          "sha256": "b85df8055ac9bf516c87f3a682c7297e698f54eec30cdadb10f88e7be4de6c0b",
+          "size": 41377
+        },
+        "paginated/official-reproject-6.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "paginated/official-seed.process.json": {
+          "sha256": "116b014b1690d71c2941d5d2ef55b85ca4009dd64a950e34a7da34e8427c3a64",
+          "size": 1270
+        },
+        "paginated/official-seed.rpc.jsonl": {
+          "sha256": "bf2e8fe7802a6e8431dbc6b6271d08ba029dd4e055b6ed048288efac20ede7d5",
+          "size": 19157
+        },
+        "paginated/official-seed.stderr.txt": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "preflight.json": {
+          "sha256": "1d46819625a5b4d16b728a596fe7b099ac3d11e13bca06b16f25e34e858df153",
+          "size": 6579
+        },
+        "provider-0000.json": {
+          "sha256": "d10399be0501d8d11546aecb88185ecc13e8ed5f31590d5d4b38555858412094",
+          "size": 48923
+        },
+        "provider-0000.sse": {
+          "sha256": "cb158503e147105a5e53f16b8170f599b97ee46d8b7c019016e13d8c22f6f652",
+          "size": 564
+        },
+        "provider-0001.json": {
+          "sha256": "454d1fd12e96a970b30c16ebc3d26db22733f2c80ecea5f2ebf489a2bad362c0",
+          "size": 49422
+        },
+        "provider-0001.sse": {
+          "sha256": "09dca07c92968c1342f9f10e702a1583683b01f275205b66832176af0e80eca7",
+          "size": 564
+        },
+        "provider-0002.json": {
+          "sha256": "6193567d4c92d6a5e64c94d1b50e2a2d1acd1bda1618faf1fdfebc99d5bef96f",
+          "size": 57615
+        },
+        "provider-0002.sse": {
+          "sha256": "d091cb6e1df86afacd8cc7ffc6e3c3720a90e835383b84fc86b6309e34fad7cb",
+          "size": 566
+        },
+        "provider-0003.json": {
+          "sha256": "dab455d8872b5a3aa5ce9816fdea17719c7490864a20c9e4aa59b56298a7383c",
+          "size": 53145
+        },
+        "provider-0003.sse": {
+          "sha256": "afca001e70537c0275309a137b55aa32fbf7f2dac52c880481157569b5ea8047",
+          "size": 564
+        },
+        "provider-0004.json": {
+          "sha256": "7cdf49b5707b4adf44b35e8a15a29386214ebab1510dcb38348aeca1927e8587",
+          "size": 53637
+        },
+        "provider-0004.sse": {
+          "sha256": "7a91d3885e39be289a80b25b6fbbebe4f720b13d85bc11f0cf9f65b695270bda",
+          "size": 771
+        },
+        "provider-0005.json": {
+          "sha256": "3adda567c9238f2efda628d0b5d7cea7df90d9ed7e74ba88712371f752c7378f",
+          "size": 54429
+        },
+        "provider-0005.sse": {
+          "sha256": "601ef9bb78e6c4ae8462fabf8780fdeb6aa3f950b1aa210675c479f23981bc09",
+          "size": 611
+        },
+        "provider-0006.json": {
+          "sha256": "f0fb927af72196d58451590e6fc3290ff4b50b660428553352ede1b5a62ae227",
+          "size": 41823
+        },
+        "provider-0006.sse": {
+          "sha256": "085daa8306c2d5b61e07b9013cf584de49727fccf9d61841af8662560377671c",
+          "size": 610
+        },
+        "provider-0007.json": {
+          "sha256": "b47789c7bb17362133561625778b8f321fb31bc52e32f382c7aeb73e2101dcee",
+          "size": 55665
+        },
+        "provider-0007.sse": {
+          "sha256": "b2c6660a769d50ff6d3b11267121348979531432ded7cb43490c051ba629fc8b",
+          "size": 558
+        },
+        "provider-0008.json": {
+          "sha256": "24b2a51832b32dc87bd6e454a98eae3d7f7db989f1380bd55b2ba39e852f242d",
+          "size": 56156
+        },
+        "provider-0008.sse": {
+          "sha256": "da0c306727eaf362b07d9d83f430fa5f74628fe008c15e68550051fe3b1f9fbe",
+          "size": 895
+        },
+        "provider-0009.json": {
+          "sha256": "376bc5bea72ec1e3bc0db67a71d22485a87b53ecb8201d65b7ec35bfd86572e6",
+          "size": 57072
+        },
+        "provider-0009.sse": {
+          "sha256": "f5cd438329e7ddf8606628159301e825c14404a22ee8468a9d2fc4f760a8d08b",
+          "size": 564
+        },
+        "provider-0010.json": {
+          "sha256": "0375b3b1245891677c7ebb707dcf2f73d118d3e86a4595a33f6eb86377f3acbf",
+          "size": 41950
+        },
+        "provider-0010.sse": {
+          "sha256": "583760438bd5225256c2f8c63be96fbc5028b85041fdcabfa90a39bb79611b92",
+          "size": 558
+        },
+        "provider-0011.json": {
+          "sha256": "2f652e948c4027ef286ee14c3f394891d2b48e3baf4e148b2f6037d39bd7e1ad",
+          "size": 57571
+        },
+        "provider-0011.sse": {
+          "sha256": "0f9d77f4d46735740be4799c5cdceaacb9612db10da86527052e5faa52deda49",
+          "size": 682
+        },
+        "provider-0012.json": {
+          "sha256": "b76b9ce77dc221a75605c0e2f3d17fe40257b02b14118e33b26bfb2ce8d5faed",
+          "size": 58184
+        },
+        "provider-0012.sse": {
+          "sha256": "b6e49ab95925b4228a0036ee10b8d1acf61dd9ab6dc26a2d4e4e91ed91e83f2f",
+          "size": 551
+        },
+        "provider-0013.json": {
+          "sha256": "6c657178d6651949f8808df1e32d9332ae151dacb75387641e5a2c4cc9a26e3d",
+          "size": 58961
+        },
+        "provider-0013.sse": {
+          "sha256": "5ce7a0266a94e831ad2272d1b234fddb8742f6333667599270c7a4d79cbc0280",
+          "size": 570
+        },
+        "provider-0014.json": {
+          "sha256": "a513efd912a6d0da333d23b162815108ad61b47e13b97bb23ae36b28e6c39fb5",
+          "size": 60000
+        },
+        "provider-0014.sse": {
+          "sha256": "e16d37656759d4a7be29611088614384c7e5b8d5040f975a56870bca353b2e07",
+          "size": 551
+        },
+        "provider-0015.json": {
+          "sha256": "d6c511ab42519b4d06177e07db0d05a58fc6a393e16ae5c16821c7a025b37756",
+          "size": 42734
+        },
+        "provider-0015.sse": {
+          "sha256": "386d4b242039c40bc63cbdbd5890c81c30bf658a38ce280e5d524c816cf384ed",
+          "size": 562
+        },
+        "provider-0016.json": {
+          "sha256": "ac009b619eefebea30d5e227101da70ba4a530ebbb0259ea249d347a0b3eef12",
+          "size": 60777
+        },
+        "provider-0016.sse": {
+          "sha256": "668e517ca3da13c4942a10e7282f893c40c98a24a5f8cef3201aecbd74bc49f1",
+          "size": 570
+        },
+        "provider-0017.json": {
+          "sha256": "6cd125b60c186243e9a84f9ffd50f49a3faaf3877ae6fe61ac4bfa3f5ebe831c",
+          "size": 61820
+        },
+        "provider-0017.sse": {
+          "sha256": "c93648404a2ed490e92972ef44aa228ffe0c4299cec5b656b16aefe16a86e6ad",
+          "size": 551
+        },
+        "provider-0018.json": {
+          "sha256": "029743d7c202c12a9c305275d87c97536deb758c29e29e7b3a676f56952400dd",
+          "size": 62634
+        },
+        "provider-0018.sse": {
+          "sha256": "f2e037fedd655db16f8ef45bef7bcf367c3f5d73629ac806bc8db806b79ab038",
+          "size": 584
+        },
+        "provider-0019.json": {
+          "sha256": "6da7eb62f6566f04faab11bf381f5613fb54f023fa2015ae7a31df0dcd01f088",
+          "size": 63157
+        },
+        "provider-0019.sse": {
+          "sha256": "2ba71c6cbf1c5ee543e7c1dba3291e245e448b267748147e053fb74ab7319a96",
+          "size": 688
+        },
+        "provider-0020.json": {
+          "sha256": "2c8c315ecd1544b013307ea28941704a656f271282373f8ff429776abf8a4b4d",
+          "size": 63776
+        },
+        "provider-0020.sse": {
+          "sha256": "23a36e47a094848476626c9c3f6e99044ed42564a2b94ae9c7bb7153ff684797",
+          "size": 551
+        },
+        "provider-0021.json": {
+          "sha256": "a0179cad2c93490cfb6f8412fae2d20dcb55c18c51e53dee0a921324833a07c2",
+          "size": 43528
+        },
+        "provider-0021.sse": {
+          "sha256": "4d8278c3c5171b2855a1c5e631c4e5754e824555bae8f9a5f480f30be28812e0",
+          "size": 567
+        },
+        "provider-0022.json": {
+          "sha256": "7c6ef4a69acea7dce3f10fc2755fb63eb9e237557caa040261ef9135cd8c63f0",
+          "size": 64553
+        },
+        "provider-0022.sse": {
+          "sha256": "81f648d02237b63909c95a566080b773aba6fbbf182627689aa2c6af49399735",
+          "size": 570
+        },
+        "provider-0023.json": {
+          "sha256": "01aa118baa73b87039dd0e0476a800230b4bc7a08bdf2a028e43d5cb1a0a0cba",
+          "size": 65601
+        },
+        "provider-0023.sse": {
+          "sha256": "50e13d6134529391309dc533eab41f8f8773ca171c21bb46ff992aa88e208abd",
+          "size": 551
+        },
+        "provider-0024.json": {
+          "sha256": "bf6af486ac590fe9fcbfbe02e8f6eb33fdb06b597018c7326a7eac14c0327a28",
+          "size": 66420
+        },
+        "provider-0024.sse": {
+          "sha256": "f7a709b08492ccf03c937c6b5b62f17cd67905b1c0505880c3c22df1ea07539a",
+          "size": 589
+        },
+        "provider-0025.json": {
+          "sha256": "fb1a278214af66c4ccf479929cf2cb7bc7a8590f8385e8202edabda43629d70e",
+          "size": 66940
+        },
+        "provider-0025.sse": {
+          "sha256": "31c2cd52ca52478b972ba2dfe8b5b86693d96e5d5ada418a0738d35fdc99a2fd",
+          "size": 701
+        },
+        "provider-0026.json": {
+          "sha256": "1e62be1b7ccf279bf09b2d1f1b1598f55ca5434de1d93667120689c60447b97c",
+          "size": 67654
+        },
+        "provider-0026.sse": {
+          "sha256": "880e7522f7d89045c8b3d7b63a6e40a43c476f413b9b442d33f13726a03e92c9",
+          "size": 701
+        },
+        "provider-0027.json": {
+          "sha256": "6cc0203d1f99f67064e3f5c828b7de609c32f25469af90723650c064972bbc80",
+          "size": 41740
+        },
+        "provider-0027.sse": {
+          "sha256": "ad7dcb5c31e1a48a26c9c12b75b34035c14e1e97b155a21bd0935a648e73bc4b",
+          "size": 564
+        },
+        "provider-0028.json": {
+          "sha256": "7977484461973f641eddaf9649dee4ccd5603754638d0dc4067be90e6f69e83b",
+          "size": 68775
+        },
+        "provider-0028.sse": {
+          "sha256": "f19c636544f53bf98cb3399c192305d565ee409573e4d2dcc08f186b0e044c1c",
+          "size": 705
+        },
+        "provider-0029.json": {
+          "sha256": "8f74f97bf542e9a0e5bb62891e6a1b7955dd115fc53139b21b499720b60fe6c5",
+          "size": 41740
+        },
+        "provider-0029.sse": {
+          "sha256": "8f930ead413a20eed2e834d0c0749ed6f832a26d3263e3fed9ba97787a0e3340",
+          "size": 564
+        },
+        "provider-0030.json": {
+          "sha256": "5cd69328df14e928389b106a03638c3caf06b9bfbb0f6074d26f4197d6ebf1fb",
+          "size": 70190
+        },
+        "provider-0030.sse": {
+          "sha256": "60e465bf26ec038373b0a04f24da65c93433e6141875651e64cfa14ecfc0dcf8",
+          "size": 561
+        },
+        "provider-0031.json": {
+          "sha256": "aa7e5c324bead7d7a5659092f6030d0fc245121ae7c1a15ab13e46c9b3a2ff75",
+          "size": 70687
+        },
+        "provider-0031.sse": {
+          "sha256": "7a2cde2b4d84803237fa585bf09359cd3cc79ef762154fc76dc07e9a653a7033",
+          "size": 727
+        },
+        "provider-0032.json": {
+          "sha256": "69d2957279e709acced5cbc3a556eaad0e52d4c2d68aa603b637f7b9ae7f6a7d",
+          "size": 71429
+        },
+        "provider-0032.sse": {
+          "sha256": "b4cf38a38113eca14594a2a753ad8a708282953ab6912ad111e0e7603329a7f2",
+          "size": 605
+        },
+        "provider-0033.json": {
+          "sha256": "81a997a3bc02b5d79edd268f9e885c1f04aecf2230cba67575f77cae36b69348",
+          "size": 43646
+        },
+        "provider-0033.sse": {
+          "sha256": "8cbff98d78a6dd4c6e02b5e497496165f398a21f20d70cf28acd8ada6d8b4b13",
+          "size": 568
+        },
+        "provider-0034.json": {
+          "sha256": "2e76fcb981e41d6a7fdfef300c156a2fc4bea0506e4dbef0ed0574e0cbbbdc39",
+          "size": 72557
+        },
+        "provider-0034.sse": {
+          "sha256": "23ab850b1436367112368dd0fe425c8d994d99fd7c750e8c6cd2d75bafb2c4f8",
+          "size": 566
+        },
+        "provider-0035.json": {
+          "sha256": "1b344507a4d071649e73f1ba12757d914f515dfca0e2abae8154b8f43b431073",
+          "size": 73057
+        },
+        "provider-0035.sse": {
+          "sha256": "85307b334d78c3650349e27c0f6e6df35b89bbaa53955160633370c95627aeae",
+          "size": 701
+        },
+        "provider-0036.json": {
+          "sha256": "b88588f62f4b0314f5c3f42ad8ae1722bc430b1b3e3c14ed6f9009417256e7ce",
+          "size": 73689
+        },
+        "provider-0036.sse": {
+          "sha256": "53ece59c45136ddd244c1bd9b84c9bd7fa5b4fad1a714bf45a995b103092f448",
+          "size": 551
+        },
+        "provider-0037.json": {
+          "sha256": "0a8a9dd825c60ccb0f19c56002550e5ac196f0f430bb5055c177c0d30447b6d6",
+          "size": 44340
+        },
+        "provider-0037.sse": {
+          "sha256": "8b252af473db48d21cafa4b908935da7c89461509a43bbc4c7153f143d5d7583",
+          "size": 562
+        },
+        "provider-0038.json": {
+          "sha256": "1919e385e95a41f3aca4e3f23363dd9eb3fde6e429305a2f38461a675b6ba8e5",
+          "size": 74767
+        },
+        "provider-0038.sse": {
+          "sha256": "afd49e117f2595ebe0100da7f626b3cd4c8d0c8c114c9e4821210366f17e2bf2",
+          "size": 584
+        },
+        "provider-0039.json": {
+          "sha256": "8d2e50e96b2e0580b4671950fdabf872326080e23716cc6161303e942e8429f4",
+          "size": 57092
+        },
+        "provider-0039.sse": {
+          "sha256": "b55e8396dbfb9d58629044221f770bbd6d4ae686b9625c28f75ecabf4a458a46",
+          "size": 564
+        },
+        "provider-0040.json": {
+          "sha256": "d935c0fcf31f3cfe0b291f1b38d9af367b834f3d9f1d074bd78d3a04e4dec857",
+          "size": 74269
+        },
+        "provider-0040.sse": {
+          "sha256": "82541b7065eb8682675d17c3b8f9266f575c7bc74b55a3330f8a51381b1aa165",
+          "size": 702
+        },
+        "provider-0041.json": {
+          "sha256": "f508fab988150b4b645ca473491c3dd89f92d352daa9bfce1629aa35c678eed5",
+          "size": 74902
+        },
+        "provider-0041.sse": {
+          "sha256": "ab89e499a025b03af8f204dab25c2701c4714da064a73bcbe9986d01906b8fd0",
+          "size": 551
+        },
+        "provider-0042.json": {
+          "sha256": "19f62d84cbcb41b74f9f90e17febf5ad4eebc3f5b12c0334aff402f616f0b95c",
+          "size": 47504
+        },
+        "provider-0042.sse": {
+          "sha256": "ce32667f159ae27e19aadf039163dfc989a8ff9c8f22382ce6ea1d682cf89351",
+          "size": 576
+        },
+        "provider-0043.json": {
+          "sha256": "c95adcbf72f0d820c8bc6bff5a8500fa7d5275751b0a4811b855d38c80d10fc6",
+          "size": 75516
+        },
+        "provider-0043.sse": {
+          "sha256": "380461e8e614d545e076a64909d29c6ca7ad1f88ecf45e9e599c5a60ab9c7fb2",
+          "size": 570
+        },
+        "provider-0044.json": {
+          "sha256": "8c69cf2adb07750fc7e8699453adcc2204d369fd2cda48e0254e43926612863e",
+          "size": 76561
+        },
+        "provider-0044.sse": {
+          "sha256": "0fe0686a612a8c46223d2b27ef452c99d337576064c4bf1213d092ac381f5674",
+          "size": 551
+        },
+        "provider-0045.json": {
+          "sha256": "112064b9464bfce377025c0175c1f14abc34d6a3730659319e20fce98fa755b7",
+          "size": 77226
+        },
+        "provider-0045.sse": {
+          "sha256": "ac83b214d4391a7b9588ace5ecdf89524cf53dc6d59217dd90f6512c914af362",
+          "size": 593
+        },
+        "provider-0046.json": {
+          "sha256": "6f917dccfe2bf37c420e2016d05ec808df640dfb4fc199e731711b5d5ff58a11",
+          "size": 48936
+        },
+        "provider-0046.sse": {
+          "sha256": "9cee066c104c1e32a3243a264ca309b1e33cfdf8c0a34c67a1fb878713cbda60",
+          "size": 567
+        },
+        "provider-0047.json": {
+          "sha256": "334ce2364023c2659cbbe403e0c5010b66c97fb81864f2f20e9a79bcca7a0b68",
+          "size": 49441
+        },
+        "provider-0047.sse": {
+          "sha256": "bf87822d473aff526fd67e7f3efd07dad7e96df39e4b74dadbadac7c8cbdc96a",
+          "size": 567
+        },
+        "provider-0048.json": {
+          "sha256": "893fdbc80cc582556d957d9f946957362003a0eda72130441909c7b14c488f86",
+          "size": 57640
+        },
+        "provider-0048.sse": {
+          "sha256": "548c6934ee8a889252a5d7a8f896c9bca67a1f52a94e1b18cd7a83301ea6da09",
+          "size": 569
+        },
+        "provider-0049.json": {
+          "sha256": "a9a4fd85ae8bece726289e8e12ad347f289aae93c095d8397998e21e97e58cdc",
+          "size": 53158
+        },
+        "provider-0049.sse": {
+          "sha256": "f9f6123551c4f5bf8031c3547015ffe6002bed1f71a83a7551fb61ff89f591f0",
+          "size": 567
+        },
+        "provider-0050.json": {
+          "sha256": "a713863dd68a18325502f93362cdb6b0871e188a2a0d055d046ffd728f9f11f5",
+          "size": 53656
+        },
+        "provider-0050.sse": {
+          "sha256": "3e8a9beea6284550c4a3078305e5932b04abf555b41da4f2c4ede4da46657a4d",
+          "size": 774
+        },
+        "provider-0051.json": {
+          "sha256": "a1c26c03c46d83f90fbeaee9987fd975e54e871c2cb6f8101b937c1f8cc02f68",
+          "size": 41836
+        },
+        "provider-0051.sse": {
+          "sha256": "5b40a99028b0757b511bb13bb083c8313ec28f9cdd8e7ac04995cd243737d5d9",
+          "size": 613
+        },
+        "provider-0052.json": {
+          "sha256": "3b5364c7b2229bb0c99ed9fc0472b4b916393321d088cc33df974d2b1ecefada",
+          "size": 54451
+        },
+        "provider-0052.sse": {
+          "sha256": "37e8ed9d1b4b571eccd225831495da2190f2bf55e1b43b304d55da144b02eb65",
+          "size": 611
+        },
+        "provider-0053.json": {
+          "sha256": "39365d85d1eb2e143b8f74b07ddb6b123d0c69fb71544aa7b0b9bb63c60e6d55",
+          "size": 55693
+        },
+        "provider-0053.sse": {
+          "sha256": "ba88ad6a5226d03b12621010a6ea0e89f01e2cbcd7d2ad51faf5f9b73f8f5758",
+          "size": 561
+        },
+        "provider-0054.json": {
+          "sha256": "24f270adad55e89fd438a5086dc82ad778a5f985b4a348c28dd84e78f167b7ab",
+          "size": 56190
+        },
+        "provider-0054.sse": {
+          "sha256": "1a364ac47c9ddbcbb1d1a89606094b768f86196c6ef4c617d8ad9f2ca2954009",
+          "size": 901
+        },
+        "provider-0055.json": {
+          "sha256": "9d6a76a947d860cc3df98191d4436cf3f64aa76d71c60ff068b580389beb4aef",
+          "size": 57112
+        },
+        "provider-0055.sse": {
+          "sha256": "b31648a09c0acecf1853f9c585ac8636df7426fe5d40e59b138f8a848055faef",
+          "size": 567
+        },
+        "provider-0056.json": {
+          "sha256": "1f53198cbb6748aee265e8716f961d9169502d72e410786f39eb074a49ba6961",
+          "size": 41965
+        },
+        "provider-0056.sse": {
+          "sha256": "bb933d4a929323fda82eb16847a117365c417aeba59918ef05709ccfe4009836",
+          "size": 561
+        },
+        "provider-0057.json": {
+          "sha256": "1a27030183bd37bbc1df97854207f447d756ea7cc617a7de46ca5ddb96c8cc23",
+          "size": 57616
+        },
+        "provider-0057.sse": {
+          "sha256": "1e4fbdb47ea1b79b255d4c279ec64d3a1b76fe7d8f82d5f9ec80d1b5e98e73a1",
+          "size": 685
+        },
+        "provider-0058.json": {
+          "sha256": "31329d7c70c364b572aa5388036f5d5b213f615b343aa12f015d9786bcd2ed33",
+          "size": 58232
+        },
+        "provider-0058.sse": {
+          "sha256": "1ac571f9309fed389f351316ff1f930d004d11ef583433b570eefd10383a2849",
+          "size": 551
+        },
+        "provider-0059.json": {
+          "sha256": "04bd5bf7b5c0db39fc8a458f309505ecaf3d0a7296763822cfa64a231c920434",
+          "size": 59432
+        },
+        "provider-0059.sse": {
+          "sha256": "9ae496b5d4eef62d4acfc1c9127d6d58d438d31c08efa74b4808ef0b4b6d2735",
+          "size": 570
+        },
+        "provider-0060.json": {
+          "sha256": "0c1b1f4378aed298b8909e489f46597008061a15ba1b6401131384fc3ce55ee5",
+          "size": 42755
+        },
+        "provider-0060.sse": {
+          "sha256": "477c3d559db97858f788ee0be6c23f06a5258d05aed8e5d458a4dc712c56fc57",
+          "size": 565
+        },
+        "provider-0061.json": {
+          "sha256": "1b68e4ced6f7092c51cb5f1aa06b74576a24a173050202b358fe650446a9dc5e",
+          "size": 60478
+        },
+        "provider-0061.sse": {
+          "sha256": "7565b9951c752410133c6b9baf6ac8a5e76bd49f5e74975a13c39e27146b7dbe",
+          "size": 551
+        },
+        "provider-0062.json": {
+          "sha256": "50a1137c86a125bf6fd9a22debef7b9b74d31cf02fd0d01e87a1ea7db6549793",
+          "size": 61298
+        },
+        "provider-0062.sse": {
+          "sha256": "85fdd01701bd0f3dac3cf4f6acb140731aa300885e85615380a7197bf9e9ea14",
+          "size": 587
+        },
+        "provider-0063.json": {
+          "sha256": "95e3c184bdf9633e513598bdc2b53076fe5552e7ff2089c7595b3ef2839c4cea",
+          "size": 61827
+        },
+        "provider-0063.sse": {
+          "sha256": "704b0e24a6f476c5cd570b1c1efe4d28e8cb03123dbe0fb272ee9e5c642d9353",
+          "size": 691
+        },
+        "provider-0064.json": {
+          "sha256": "d64759390380423f8f89efeb8c50a10f7864debcc3ee4c2ba7b4bb3ba6668c85",
+          "size": 62449
+        },
+        "provider-0064.sse": {
+          "sha256": "b6269bbdc0d66de06e2c47b766b622dcf2fd82bf06237eef9b20e1abd0bd7154",
+          "size": 551
+        },
+        "provider-0065.json": {
+          "sha256": "13e50c82d1b6386851d2af2de00eff1ead3528904a80b8cca8d6c05606ba7318",
+          "size": 43555
+        },
+        "provider-0065.sse": {
+          "sha256": "2e17a041efd7c018047b073e341dbb97c9878531405620b3758145463313cc7b",
+          "size": 570
+        },
+        "provider-0066.json": {
+          "sha256": "73bd4170a7b4db0363c2ed59d0f6f7d2a7fbe04f70e90ee277d3e890ce39f63c",
+          "size": 63229
+        },
+        "provider-0066.sse": {
+          "sha256": "43538742f460db36b8db7be704019d837b55e36945ca3d7e8ac9d6445ab55468",
+          "size": 570
+        },
+        "provider-0067.json": {
+          "sha256": "0ab25a9c4a10a61c0b13af6a0ec3dfaed66364ad8342d9ed7d84c4e76dea9da1",
+          "size": 64280
+        },
+        "provider-0067.sse": {
+          "sha256": "ec3d92e30ec661c60c3aac845cf6c5fd9ca7c11991c34fb2518e8d08f17d12a6",
+          "size": 551
+        },
+        "provider-0068.json": {
+          "sha256": "7623b6a5a8c468ee2403dfb1001f29f45ec1f363a191445311fa78afb1e6c0e6",
+          "size": 65105
+        },
+        "provider-0068.sse": {
+          "sha256": "f096c18749e9e2d68ff45af36c5bbce388f764b6de7fefed3687fe1f342d2c8a",
+          "size": 592
+        },
+        "provider-0069.json": {
+          "sha256": "690cbe5cf5e21e23ae78884311b77f5c8f4761f2024a433b289a5da898913fa7",
+          "size": 65631
+        },
+        "provider-0069.sse": {
+          "sha256": "291192a88a48cec6d4c08c8a866390dca3fa87437e6aa3ef6e20088fab0aa858",
+          "size": 704
+        },
+        "provider-0070.json": {
+          "sha256": "ce343864fcb58845678a2b11fce0107dddc2d481714ba9d9c4590e2f380954ec",
+          "size": 66348
+        },
+        "provider-0070.sse": {
+          "sha256": "c8441fdc791b467a0019955bf82f57ddbe8adffdd0a43f91c99cfd2438618038",
+          "size": 704
+        },
+        "provider-0071.json": {
+          "sha256": "cabd6d9eb53bee738697a9b9512999b17da30da41eeaa07e48cc96c12deed70f",
+          "size": 41752
+        },
+        "provider-0071.sse": {
+          "sha256": "713f6654ec2f2fb7a4a98228adf7a76cc008548d1c83c1d2174ed596566ec326",
+          "size": 567
+        },
+        "provider-0072.json": {
+          "sha256": "2ffd0825497043f3836aee492527fcd47e14dfb0b0deba0b7188b6dc4d8146c8",
+          "size": 41752
+        },
+        "provider-0072.sse": {
+          "sha256": "3585105ccd752a466faf73907093f7cbba1b25cb8077cb33162e61ed2d81318f",
+          "size": 567
+        },
+        "provider-0073.json": {
+          "sha256": "7f26218f9a6d3833eb346933eb06331290bdaedfe41015567badb3ae0aedc345",
+          "size": 67475
+        },
+        "provider-0073.sse": {
+          "sha256": "47db62c81fb942cab3c23534cfc5da1d783b64f70df0139810b3308909bfa26e",
+          "size": 705
+        },
+        "provider-0074.json": {
+          "sha256": "e300f9a634ea9dde029bcf29d28407b9f15c7c694125a2bbed0506afe6ecabfd",
+          "size": 68899
+        },
+        "provider-0074.sse": {
+          "sha256": "65d36b9d02fe12f5df91b6eded73d6d480644844a899bc61d1282cc3b20b16a8",
+          "size": 564
+        },
+        "provider-0075.json": {
+          "sha256": "f621b25fbdefdec927a00ca673c359b2633c214014bc87b9fb10dd2e66848ae5",
+          "size": 69402
+        },
+        "provider-0075.sse": {
+          "sha256": "a77b72ff607d49d5cae3e19ae34f64c81d1eaf9039a521c1121e8151f0a25c42",
+          "size": 730
+        },
+        "provider-0076.json": {
+          "sha256": "b899c3e4b177dd479a76998993f75449779c2e0b2b2d350ca2f212cdc11374d1",
+          "size": 70147
+        },
+        "provider-0076.sse": {
+          "sha256": "753c567a5bbd2cfaf660032f2bab25ed4a658a9a3423a20ce4594e1cf5f53990",
+          "size": 605
+        },
+        "provider-0077.json": {
+          "sha256": "9039448389ba2196d36520f0d74ac5be5e46f9efaadf913c2d80334e63998884",
+          "size": 43679
+        },
+        "provider-0077.sse": {
+          "sha256": "849de90e63cc9f530988f50c8f4a5cee423998c39b9c37e2d3960a51f249751d",
+          "size": 571
+        },
+        "provider-0078.json": {
+          "sha256": "357891660c5296fb468afdc319970316cd45af6f33d10bccd29d7af4c98b7df0",
+          "size": 71281
+        },
+        "provider-0078.sse": {
+          "sha256": "b7ced03cdb774d20e756f9dcb7e8d3b2592a416194f60a10886c9648ff2c3451",
+          "size": 569
+        },
+        "provider-0079.json": {
+          "sha256": "c2120e03a6083b11211bd49f156b02966af5e06d915b34dc94fd76dd7ed5c94c",
+          "size": 71787
+        },
+        "provider-0079.sse": {
+          "sha256": "e3da3e9cf092a6c229bee94f12ce6d1fc76330324586399da2fc389a8c9db310",
+          "size": 704
+        },
+        "provider-0080.json": {
+          "sha256": "02cd002fc183f096475bfdb3417b06a5a054243fb8fca4c0dac44af9c071741d",
+          "size": 44373
+        },
+        "provider-0080.sse": {
+          "sha256": "fc792a701778c33518c9da9fbb25e7ea8350bb091262097d146e1237df996a83",
+          "size": 565
+        },
+        "provider-0081.json": {
+          "sha256": "574e3487da61be27d06ab525609e41d3c4a8496341c7a28928e7e1ad2b3f395e",
+          "size": 72422
+        },
+        "provider-0081.sse": {
+          "sha256": "6394fa14a64d6ce53a723f1114ab1706864ce680310c19861b3f30e83d66c9e2",
+          "size": 551
+        },
+        "provider-0082.json": {
+          "sha256": "a1be4bc54cf24e8c0480eda1dc549996a37d6e155f4c0f6c27ffc0401828c43d",
+          "size": 73506
+        },
+        "provider-0082.sse": {
+          "sha256": "6c2b80a2ea36b661c768e0fe9ce8c57a2577eda59312118d1d8369f5978d35ca",
+          "size": 587
+        },
+        "provider-0083.json": {
+          "sha256": "def6eb0baf2bc32cc0f0586d2a1d600d1115ba3cf38c46ca185ada1d8de47d30",
+          "size": 57122
+        },
+        "provider-0083.sse": {
+          "sha256": "e4c88149f1824ab7100aa4c521beb8ce3b9b3858489c51676c3e90865533ff93",
+          "size": 567
+        },
+        "provider-0084.json": {
+          "sha256": "856badaeab542aee03194f3e95dda6643794cf911737c1b00f22f1cf090a130c",
+          "size": 73014
+        },
+        "provider-0084.sse": {
+          "sha256": "2b52bdfa445380073ee59a13397412b47b1034f96093f0f926d4f0699f0a79b2",
+          "size": 705
+        },
+        "provider-0085.json": {
+          "sha256": "5659fb32b18ef0bf8ca3ecaf1b4193d4b18a4c6aace950cea4ee1dbef52feac7",
+          "size": 73650
+        },
+        "provider-0085.sse": {
+          "sha256": "e009005e1ca12a91bf187c41a4dd964e9c8da89f1d87d10675dfd774d82206cd",
+          "size": 551
+        },
+        "provider-0086.json": {
+          "sha256": "d9fc8c47b7e11a41b6c5bb355b9ea7066241039dec6de795f6fc9093803fd67d",
+          "size": 47543
+        },
+        "provider-0086.sse": {
+          "sha256": "aa67cd64b5e336edfbb1cb9a3da353de72d242d808e4c0520243241c5f7b9a78",
+          "size": 579
+        },
+        "provider-0087.json": {
+          "sha256": "fed50785fd83210d4d1b9a06054b2833bf41d5b0a0a8d8cb999e23e8b2cda3b7",
+          "size": 74264
+        },
+        "provider-0087.sse": {
+          "sha256": "1c702de0108c019215de0957850e56bc810a94f087bf695184d31c9aa87e4ab4",
+          "size": 570
+        },
+        "provider-0088.json": {
+          "sha256": "e4b0e2ca74deeeb3e428302b70b12339bc689ee5a3b1a3de46f43a6cc2e4e25f",
+          "size": 75312
+        },
+        "provider-0088.sse": {
+          "sha256": "efb611f23fc958e7c0cea19b233305cba936ddb0ee9356004daf97803025f865",
+          "size": 551
+        },
+        "provider-0089.json": {
+          "sha256": "4f85db8813a2eb455a6d80650aaaa14729cbb8ce990abe980bdd963113f05c0a",
+          "size": 75980
+        },
+        "provider-0089.sse": {
+          "sha256": "9397ab46294b11fe82e8483a6b7e43769ed2b0dd903fd4a7bef2dbbe63cf6f0e",
+          "size": 596
+        },
+        "provider-result.json": {
+          "sha256": "01538cd542be79aa533bb3c06bef224913d285efe65362cfdf886cf72d31a881",
+          "size": 62
+        },
+        "terminal/auto/01-parent.txt": {
+          "sha256": "3b323c79bb08434870003fdd70cd4954e751f998ba9f3d3b890e85e815e80a76",
+          "size": 1441
+        },
+        "terminal/auto/02-child-highlighted.txt": {
+          "sha256": "b712075f1a46ad3b88e1dc3a8a3276d7e65c1084d2aa4509f2b14aaa34a5197f",
+          "size": 1961
+        },
+        "terminal/auto/02-picker.txt": {
+          "sha256": "3f434d839aec6555bcb3a79a19827ad9babd308df237287c4752f9ccdd1918de",
+          "size": 1961
+        },
+        "terminal/auto/03-child.txt": {
+          "sha256": "73aa272e7df6cbd06413d7b9b30168a14e1de8f9c1663c71edc4abf9038ed679",
+          "size": 6006
+        },
+        "terminal/auto/04-parent-return.txt": {
+          "sha256": "061b673d17354b7946df494aa7f7a1db4490811e6f39a5bf03af621f0357d6c4",
+          "size": 1112
+        },
+        "terminal/auto/05-raw.txt": {
+          "sha256": "a790f9e7ab6d41321c7a498af8577ac23d64053acfba64c20d68b09bed459cd6",
+          "size": 5780
+        },
+        "terminal/auto/06-restored.txt": {
+          "sha256": "25bd88feef2bc9079bdf3453201a7d270e7ea59913fe7d9e08207caf15333693",
+          "size": 5425
+        },
+        "terminal/auto/07-exit.txt": {
+          "sha256": "332fa086845b8da71511f70d8d2ac3d30188048ec739c38cd54b254cfd9ab717",
+          "size": 1519
+        },
+        "terminal/auto/capture.vt": {
+          "sha256": "0f3659ec347432ee245bd5bea26b401d390f5336e76c29c569e4d1f04871f809",
+          "size": 39311
+        },
+        "terminal/auto/native-log/codex-tui.log": {
+          "sha256": "5253218c1739b86dc30a866308d76851f9a9766c6d2eba3bef3592f9fc417cf0",
+          "size": 3906
+        },
+        "terminal/auto/terminal-events.jsonl": {
+          "sha256": "6bf6187bb45bc5d05effa01cde1a0ac8ee15d2d88f2c224807f07544be784b89",
+          "size": 55880
+        },
+        "terminal/auto/terminal-result.json": {
+          "sha256": "ed9f6d6e47f16e46bf996117149ad4426b6ecb42ab01dc01711fab3d6881692f",
+          "size": 27620
+        },
+        "terminal/invalid/01-parent.txt": {
+          "sha256": "c1259132f121a9e2aaa81d8d7b181f90fa24cc2923e8847b62a87e6986dd60dd",
+          "size": 1447
+        },
+        "terminal/invalid/02-child-highlighted.txt": {
+          "sha256": "601c150cf2d5650612359b66bf7345e3ccf0a59f35c273f0a17674a4236bd290",
+          "size": 1967
+        },
+        "terminal/invalid/02-picker.txt": {
+          "sha256": "7869e38d6a60bbb6909c7310be2216bd902fb7a0901bfeb30cf0648951bd3271",
+          "size": 1967
+        },
+        "terminal/invalid/03-child.txt": {
+          "sha256": "4b7774ffc61bbdd701ea5b11f42d182446ea70b51eda91e9b9974337fc725ffb",
+          "size": 1418
+        },
+        "terminal/invalid/04-parent-return.txt": {
+          "sha256": "765624cafca1020e42101fbf8418a8429533e4878adf3323111e883fef05c878",
+          "size": 1155
+        },
+        "terminal/invalid/05-raw.txt": {
+          "sha256": "a9e05fa9012f837672b0622c9010f21bf3422a9b143c419eab51773877f7dfda",
+          "size": 5821
+        },
+        "terminal/invalid/06-restored.txt": {
+          "sha256": "175e5b0869db29ab890882cb31fd3273318fcab8340cdc980e554e944a31d51c",
+          "size": 5468
+        },
+        "terminal/invalid/07-exit.txt": {
+          "sha256": "462658f569c95f33112a62b5a738fe881a4265504d2fcea2d1156fc2655a9581",
+          "size": 1562
+        },
+        "terminal/invalid/capture.vt": {
+          "sha256": "4d1d37c44bb537b690e80a3044cd65ae0d53c2eeedfe63637d77c72f1ecb1410",
+          "size": 38802
+        },
+        "terminal/invalid/native-log/codex-tui.log": {
+          "sha256": "917698b45d8797c48997fb389455e9fb9c5263efd8f21d8658b0db5c191345e1",
+          "size": 4015
+        },
+        "terminal/invalid/terminal-events.jsonl": {
+          "sha256": "b3a5830131e8eb09b6cf11859f9a24ec04d929f17af1527a8bf2f7d56eb8cd56",
+          "size": 55631
+        },
+        "terminal/invalid/terminal-result.json": {
+          "sha256": "ba4391ed6cff14ae06cc79fadf1d0236713194084b425b1788ee4c193f56096c",
+          "size": 23218
+        },
+        "terminal/off/01-parent.txt": {
+          "sha256": "bc3e62f834c8935f20cdb4b87cd1fbfc77a47c0bcde6ae51c47fca28ed475f59",
+          "size": 1416
+        },
+        "terminal/off/02-child-highlighted.txt": {
+          "sha256": "226959c309ef3e0824df175cce0ee93ea3333f60afdd8307f52321eab1ddb8ce",
+          "size": 1936
+        },
+        "terminal/off/02-picker.txt": {
+          "sha256": "92ebe52430ded3b27c8baa9a8a94880e7eb54e39a1aa40f94687712d0a6ec835",
+          "size": 1936
+        },
+        "terminal/off/03-child.txt": {
+          "sha256": "30b2174a144bd3e11d40542cc15d0b4ca4d35dfe7658896020e8aeb4f9bf8eda",
+          "size": 6004
+        },
+        "terminal/off/04-parent-return.txt": {
+          "sha256": "061b673d17354b7946df494aa7f7a1db4490811e6f39a5bf03af621f0357d6c4",
+          "size": 1112
+        },
+        "terminal/off/05-raw.txt": {
+          "sha256": "a790f9e7ab6d41321c7a498af8577ac23d64053acfba64c20d68b09bed459cd6",
+          "size": 5780
+        },
+        "terminal/off/06-restored.txt": {
+          "sha256": "25bd88feef2bc9079bdf3453201a7d270e7ea59913fe7d9e08207caf15333693",
+          "size": 5425
+        },
+        "terminal/off/07-exit.txt": {
+          "sha256": "332fa086845b8da71511f70d8d2ac3d30188048ec739c38cd54b254cfd9ab717",
+          "size": 1519
+        },
+        "terminal/off/capture.vt": {
+          "sha256": "471767b9aac49fa1d85991e54fc9c86f69b932b0f7ce3130abfcb0c8f7449d00",
+          "size": 39310
+        },
+        "terminal/off/native-log/codex-tui.log": {
+          "sha256": "b397be7d024bf34e444bbd2016cefa88c09280dcd5ed1d0090154c2df3591744",
+          "size": 3906
+        },
+        "terminal/off/terminal-events.jsonl": {
+          "sha256": "14d31f411a324618a98036bfb08f1006ace30f20b352ff5b8465d9b38e507109",
+          "size": 55598
+        },
+        "terminal/off/terminal-result.json": {
+          "sha256": "32b6740db80007f0b10e4125ab2151038b0c169c68112c0b9518b5d94161c0aa",
+          "size": 27541
+        },
+        "terminal/on/01-parent.txt": {
+          "sha256": "bc3e62f834c8935f20cdb4b87cd1fbfc77a47c0bcde6ae51c47fca28ed475f59",
+          "size": 1416
+        },
+        "terminal/on/02-child-highlighted.txt": {
+          "sha256": "226959c309ef3e0824df175cce0ee93ea3333f60afdd8307f52321eab1ddb8ce",
+          "size": 1936
+        },
+        "terminal/on/02-picker.txt": {
+          "sha256": "92ebe52430ded3b27c8baa9a8a94880e7eb54e39a1aa40f94687712d0a6ec835",
+          "size": 1936
+        },
+        "terminal/on/03-child.txt": {
+          "sha256": "4b7774ffc61bbdd701ea5b11f42d182446ea70b51eda91e9b9974337fc725ffb",
+          "size": 1418
+        },
+        "terminal/on/04-parent-return.txt": {
+          "sha256": "061b673d17354b7946df494aa7f7a1db4490811e6f39a5bf03af621f0357d6c4",
+          "size": 1112
+        },
+        "terminal/on/05-raw.txt": {
+          "sha256": "a790f9e7ab6d41321c7a498af8577ac23d64053acfba64c20d68b09bed459cd6",
+          "size": 5780
+        },
+        "terminal/on/06-restored.txt": {
+          "sha256": "25bd88feef2bc9079bdf3453201a7d270e7ea59913fe7d9e08207caf15333693",
+          "size": 5425
+        },
+        "terminal/on/07-exit.txt": {
+          "sha256": "332fa086845b8da71511f70d8d2ac3d30188048ec739c38cd54b254cfd9ab717",
+          "size": 1519
+        },
+        "terminal/on/capture.vt": {
+          "sha256": "4ee1988d254d9e934f46e2321ada3e0924aeb07766922667c52faceb5f9012e5",
+          "size": 38580
+        },
+        "terminal/on/native-log/codex-tui.log": {
+          "sha256": "7dad97501e424059c36d76cc86b1a49a2ecc1223c22f0fb95a771c4fa137079f",
+          "size": 3906
+        },
+        "terminal/on/terminal-events.jsonl": {
+          "sha256": "3e9948595636b76090485482e97104d811c7ffe4e0a9b82fc10a82c6b3f46b43",
+          "size": 55303
+        },
+        "terminal/on/terminal-result.json": {
+          "sha256": "54ed7128c78bd7920782b2e20d23749db5718c426cb9dc1e154e22055a3832d3",
+          "size": 22936
+        },
+        "terminal/receipt.json": {
+          "sha256": "edc568481eb424098364d780bb1b282b12479ca6a606c21891d944c143edb2c3",
+          "size": 13227
+        },
+        "terminal/unset/01-parent.txt": {
+          "sha256": "b50c81ccfb6d4f49d5f0b02b49dfddadd22cba2184960ca9022ed7ece7544efb",
+          "size": 1443
+        },
+        "terminal/unset/02-child-highlighted.txt": {
+          "sha256": "42e871b7036623cbf6d59ef29c3d8608d4fc7ee60e339eb6923d64a96ba38595",
+          "size": 1963
+        },
+        "terminal/unset/02-picker.txt": {
+          "sha256": "b94d0272fb706701d634b4671fd19160b283e45f293ed6e618a3d28bdccaca72",
+          "size": 1963
+        },
+        "terminal/unset/03-child.txt": {
+          "sha256": "30b2174a144bd3e11d40542cc15d0b4ca4d35dfe7658896020e8aeb4f9bf8eda",
+          "size": 6004
+        },
+        "terminal/unset/04-parent-return.txt": {
+          "sha256": "061b673d17354b7946df494aa7f7a1db4490811e6f39a5bf03af621f0357d6c4",
+          "size": 1112
+        },
+        "terminal/unset/05-raw.txt": {
+          "sha256": "a790f9e7ab6d41321c7a498af8577ac23d64053acfba64c20d68b09bed459cd6",
+          "size": 5780
+        },
+        "terminal/unset/06-restored.txt": {
+          "sha256": "25bd88feef2bc9079bdf3453201a7d270e7ea59913fe7d9e08207caf15333693",
+          "size": 5425
+        },
+        "terminal/unset/07-exit.txt": {
+          "sha256": "332fa086845b8da71511f70d8d2ac3d30188048ec739c38cd54b254cfd9ab717",
+          "size": 1519
+        },
+        "terminal/unset/capture.vt": {
+          "sha256": "fc9317ea4cdf1ab6fd3062b3201ce3646f3d33abb1d6f2e0f58a650a19403f6d",
+          "size": 39152
+        },
+        "terminal/unset/native-log/codex-tui.log": {
+          "sha256": "2c0d3aeefe355d2ee28368afbf2bf07b37825a9bcd9316252db89866b290b2e0",
+          "size": 3906
+        },
+        "terminal/unset/terminal-events.jsonl": {
+          "sha256": "4e55683dc37e6584b1519339e25e528735083a052bdaaa6caac0709aa1999560",
+          "size": 55253
+        },
+        "terminal/unset/terminal-result.json": {
+          "sha256": "fc13d0c54c2042ca7763647fe2db905af894b1c496c03d92ffd5511f6597d2b4",
+          "size": 27625
+        }
+      },
+      "compat_id": "rust-v0.154.0-native-join-p15",
+      "codex_version": "0.154.0",
+      "upstream_commit": "6b9826e3aa83b1a5947db50f4332cb9c65f1b340",
+      "manifest_sha256": "eae7196c4dcb851292916c203119592175dbde208467bd79614f0cdb864029db",
+      "build_profile_sha256": "be3194ff9dab2c69914ef0751f700d8d4114a0bd53528bd5b566c61fdf05df13",
+      "runtime_lock_sha256": "9445c9f826a8283345ef9fc32b5866aea68fbfeb94274d329d82f46e33a38994",
+      "target": "x86_64-pc-windows-msvc",
+      "official": {
+        "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+        "size": 298169136,
+        "version": "codex-cli 0.154.0",
+        "archive_integrity": "sha512-Stg2KEJPIKVqPPR1wCverGOR4ey3RR3cvakR07w7FNKQUMzmHaOZomRsP2bR1qOT/67yHsks9rB+MCMfIWXcRA=="
+      },
+      "candidate": {
+        "sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+        "size": 298206208,
+        "version": "codex-cli 0.154.0"
+      },
+      "build": {
+        "provider": "github",
+        "repository": "DSLZL/CSA-codex-windows-x64",
+        "source_commit": "9d52c06a3ba1f9753db6970a902f5aec9f71c6ea",
+        "workflow_run_id": 34477967164,
+        "request_id": "34477934937-1",
+        "recipe_commit": "35ae666c6bb0a6dc624cd70edcc69be03dbce444",
+        "target_record": "build/target-record.json"
+      }
+    },
+    "live_api": {
+      "status": "passed-with-observations",
+      "recorded_at": "2026-09-11",
+      "timezone": "Asia/Shanghai",
+      "target": "x86_64-pc-windows-msvc",
+      "candidate_sha256": "df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "max",
+      "requests_including_all_attempts": 128,
+      "captured_completed_responses": 122,
+      "passed": [
+        "Fresh child context isolation and explicit all inheritance",
+        "overlapping children and exact-run single/batch Join with no parent model requests while waiting",
+        "same-child cold restore and busy/completed follow-up",
+        "official/candidate real-API round trips on fresh Legacy and Paginated threads",
+        "five ConPTY mouse modes and an additional live-API ConPTY turn",
+        "isolated homes, unchanged local configuration and no credentials in captured evidence"
+      ],
+      "observations": [
+        "One PowerShell task exceeded 180 seconds while the model debugged its own script; its same-child delivery and preserved history were verified, and the separate marker follow-up passed.",
+        "The full-fork model echoed one fewer character even though the complete canary was in the outbound request; raw API and persisted text matched.",
+        "Two prompts incorrectly joined a follow-up with the initial spawn run_id; both attempts remain excluded from passing and normal-shutdown claims.",
+        "One completed parent/child case retained a proxy WinError 10053 failure with unknown direction; the instrumented repeat passed without errors.",
+        "Two reused Paginated threads were excluded from Legacy coverage; fresh Legacy cases supplied that coverage."
+      ],
+      "files": {
+        "acceptance-report.md": {
+          "sha256": "9a8f1cc97e0095d649d04d89c9d55195683bb5a1a9a5fdd62a5f80068a5de5e3",
+          "size": 4602
+        },
+        "acceptance-report.json": {
+          "sha256": "b0c3d4a6339f1fdc385cbf6716dd519e0ece21d7a1ec1a1923bb85c0a7453f26",
+          "size": 4450
+        },
+        "audit_acceptance.py": {
+          "sha256": "d1734e76e146ffa592bf326cc3e12108c6a1aa600ef552a597ea0c0c4bfbb6f9",
+          "size": 11196
+        }
+      }
+    }
+  }
+}

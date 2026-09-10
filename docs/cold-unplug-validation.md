@@ -78,7 +78,7 @@ Both Legacy and Paginated homes run. Native timeline pages arrive newest first,
 with entries in ascending order inside each page. The driver checks that order
 and stable ties before prepending older pages; it does not sort away corruption.
 Readback compares full prior item content and turn order, not just final text.
-For exact official 0.153.2 Legacy readback only, omit known completed Wait display
+For exact reviewed official 0.153.2 and 0.154.0 Legacy readback only, omit known completed Wait display
 items associated with verified Join or ordinary `wait_agent` calls from the expected
 candidate view. Use actual fixture call IDs and verify each complete canonical
 call/result/Wait triple before allowing that display omission. Unknown or unfinished
@@ -180,6 +180,22 @@ The [accepted record](../release/acceptance/rust-v0.153.2-native-join-p15/x86_64
 also includes the independently verified native Linux official/p15/official
 database round trip. Both runs use real executables with a local Responses fixture;
 they do not establish live authenticated provider coverage or native Rust test coverage.
+
+Acceptance on 2026-09-11 (Asia/Shanghai) repeats all 18 A–I cells and five ConPTY
+modes for exact upstream 0.154.0 / `6b9826e3aa83b1a5947db50f4332cb9c65f1b340`,
+using Windows build `34477967164`. All 15 positive persistence processes exited
+normally; the report retains 317 hashed supporting files and binds executable SHA256
+`df870eabaf3aa0a012447db86d7b07bcbaa2ce0c9c34f62cd7824b1dcf3321c0`.
+The [accepted record](../release/acceptance/rust-v0.154.0-native-join-p15/x86_64-pc-windows-msvc.json)
+also records separate authenticated `gpt-5.6-luna` / `max` observations, including
+Fresh isolation, explicit full inheritance, overlapping children, exact-run Join,
+same-child follow-up, official/candidate round trips and a live ConPTY turn.
+The terminal gate reuses the five actual captures from that same-binary live run.
+The live report preserves a model scripting timeout, a model echo discrepancy,
+two invalid test prompts and one unexplained proxy disconnect; the corrected
+independent checks passed. These observations do not claim flawless model execution.
+Runtime acceptance covers Windows x64; the other five target artifacts have build
+and packaging verification, not equivalent local runtime acceptance.
 
 For native-join p14 and later, `compat_catalog.py accept` requires this complete
 `evidence.cold_unplug` report and verifies its referenced files before writing
