@@ -93,6 +93,24 @@ jobs:
             --manifest "$GITHUB_WORKSPACE/payload/codex/native-join-p10/bindings/rust-v${CODEX_VERSION}-native-join-p10/manifest.toml" \
             --source "$RUNNER_TEMP/upstream.git" --official-archive "$RUNNER_TEMP/official.tgz" \
             --run-root "$RUNNER_TEMP/native-recovery" "${args[@]}"
+      - name: Export existing Windows acceptance inputs
+        if: inputs.candidate_run != '' && matrix.version == '0.153.2'
+        env:
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+          CANDIDATE_MANIFEST: ${{ inputs.candidate_manifest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          compat_id="$(python -c 'import sys,tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["compat_id"])' "$CANDIDATE_MANIFEST")"
+          gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "patched-codex-target-${compat_id}-x86_64-pc-windows-msvc" --dir "$RUNNER_TEMP/windows-candidate"
+          cp "$RUNNER_TEMP/windows-candidate/target-record.json" "$RUNNER_TEMP/native-recovery/evidence/windows-target-record.json"
+      - uses: actions/upload-artifact@v7.0.1
+        if: inputs.candidate_run != '' && matrix.version == '0.153.2'
+        with:
+          name: windows-acceptance-${{ inputs.candidate_run }}
+          path: ${{ runner.temp }}/windows-candidate
+          compression-level: 6
+          retention-days: 7
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
