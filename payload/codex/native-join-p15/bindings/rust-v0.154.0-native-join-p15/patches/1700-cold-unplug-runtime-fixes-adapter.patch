@@ -1,0 +1,594 @@
+diff --git a/codex-rs/core/tests/suite/multi_agent_join.rs b/codex-rs/core/tests/suite/multi_agent_join.rs
+index 3a5a25c6d64afa83b78bd6ccf5581f0be4a57e87..1e9ec3f9234c040498a46132b28a346a898030df 100644
+--- a/codex-rs/core/tests/suite/multi_agent_join.rs
++++ b/codex-rs/core/tests/suite/multi_agent_join.rs
+@@ -10,6 +10,7 @@ use anyhow::Result;
+ use anyhow::ensure;
+ use codex_app_server_protocol::ThreadItem;
+ use codex_app_server_protocol::ThreadTimelineEntry;
++use codex_app_server_protocol::build_turns_from_rollout_items;
+ use codex_core::NotSubmittedReason;
+ use codex_core::StartIfIdleSubmission;
+ use codex_core::TurnInputRequest;
+@@ -214,45 +215,52 @@ async fn start_pending_native_join(
+     join_tool: &'static str,
+ ) -> Result<(MockServer, TestCodex, Arc<Mutex<Option<(String, String)>>>)> {
+     let server = start_mock_server().await;
++    let child_count = if join_tool == "join_agents" { 2 } else { 1 };
+     let spawn_args = json!({
+         "message": "block on the test gate",
+         "task_name": "worker"
+     })
+     .to_string();
++    let mut spawn_events = vec![
++        ev_response_created(&format!("{spawn_call_id}-parent-1")),
++        ev_function_call_with_namespace(spawn_call_id, "collaboration", "spawn_agent", &spawn_args),
++    ];
++    if child_count == 2 {
++        spawn_events.push(ev_function_call_with_namespace(
++            &format!("{spawn_call_id}-second"),
++            "collaboration",
++            "spawn_agent",
++            &json!({"message": "block on the test gate", "task_name": "worker-two"}).to_string(),
++        ));
++    }
++    spawn_events.push(ev_completed(&format!("{spawn_call_id}-parent-1")));
+     mount_sse_once_match(
+         &server,
+         move |request: &wiremock::Request| body_contains(request, parent_prompt),
+-        sse(vec![
+-            ev_response_created(&format!("{spawn_call_id}-parent-1")),
+-            ev_function_call_with_namespace(
+-                spawn_call_id,
+-                "collaboration",
+-                "spawn_agent",
+-                &spawn_args,
+-            ),
+-            ev_completed(&format!("{spawn_call_id}-parent-1")),
+-        ]),
++        sse(spawn_events),
+     )
+     .await;
+ 
+     let child_gate_args = json!({
+         "barrier": {
+             "id": gate_id,
+-            "participants": 2,
++            "participants": child_count + 1,
+             "timeout_ms": 30_000
+         }
+     })
+     .to_string();
+-    mount_sse_once_match(
+-        &server,
+-        |request: &wiremock::Request| request_has_input_type(request, "agent_message"),
+-        sse(vec![
++    Mock::given(method("POST"))
++        .and(path("/v1/responses"))
++        .and(|request: &wiremock::Request| request_has_input_type(request, "agent_message"))
++        .respond_with(sse_response(sse(vec![
+             ev_response_created(&format!("{child_call_id}-child-1")),
+             ev_function_call(child_call_id, "test_sync_tool", &child_gate_args),
+             ev_completed(&format!("{child_call_id}-child-1")),
+-        ]),
+-    )
+-    .await;
++        ])))
++        .up_to_n_times(child_count)
++        .expect(child_count)
++        .mount(&server)
++        .await;
+ 
+     let spawned_run = Arc::new(Mutex::new(None::<(String, String)>));
+     let captured_spawned_run = Arc::clone(&spawned_run);
+@@ -278,7 +286,9 @@ async fn start_pending_native_join(
+                 Some((target.clone(), run_id.clone()));
+             let run = json!({ "target": target, "run_id": run_id });
+             let join_args = if join_tool == "join_agents" {
+-                json!({ "runs": [run] })
++                let second = function_call_output_json(request, &format!("{spawn_call_id}-second"))
++                    .expect("Parent request should contain the second spawn output");
++                json!({ "runs": [run, {"target": second["task_name"], "run_id": second["run_id"]}] })
+             } else {
+                 run
+             }
+@@ -965,6 +975,7 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+     join_tool: &'static str,
+ ) -> Result<()> {
+     skip_if_no_network!(Ok(()));
++    let child_count = if join_tool == "join_agents" { 2 } else { 1 };
+ 
+     let (server, test, spawned_run) = start_pending_native_join(
+         JOIN_PARENT_PROMPT,
+@@ -977,19 +988,21 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+     )
+     .await?;
+ 
+-    mount_sse_once_match(
+-        &server,
+-        |request: &wiremock::Request| {
++    Mock::given(method("POST"))
++        .and(path("/v1/responses"))
++        .and(|request: &wiremock::Request| {
+             body_contains(request, JOIN_CHILD_CALL_ID)
+                 && request_has_input_type(request, "agent_message")
+-        },
+-        sse(vec![
++        })
++        .respond_with(sse_response(sse(vec![
+             ev_response_created("resp-join-child-2"),
+             ev_assistant_message("msg-join-child-2", "child done"),
+             ev_completed("resp-join-child-2"),
+-        ]),
+-    )
+-    .await;
++        ])))
++        .up_to_n_times(child_count)
++        .expect(child_count)
++        .mount(&server)
++        .await;
+     let parent_after_join = mount_sse_once_match(
+         &server,
+         |request: &wiremock::Request| body_contains(request, JOIN_CALL_ID),
+@@ -1001,6 +1014,12 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+     )
+     .await;
+     wait_for_pending_join(&test, &spawned_run, gate_id, JOIN_CALL_ID).await;
++    timeout(
++        Duration::from_secs(5),
++        wait_for_test_sync_barrier_arrivals(gate_id, child_count as usize),
++    )
++    .await
++    .expect("every joined child should reach the closed gate");
+ 
+     let requests_before_release = server
+         .received_requests()
+@@ -1009,7 +1028,7 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+         .into_iter()
+         .filter(|request| request.url.path().ends_with("/responses"))
+         .collect::<Vec<_>>();
+-    assert_eq!(requests_before_release.len(), 3);
++    assert_eq!(requests_before_release.len(), child_count as usize + 2);
+     assert_eq!(
+         requests_before_release
+             .iter()
+@@ -1017,10 +1036,10 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+             .count(),
+         2
+     );
+-    wait_on_test_sync_barrier(gate_id, 2, 30_000)
++    wait_on_test_sync_barrier(gate_id, child_count as usize + 1, 30_000)
+         .await
+         .map_err(anyhow::Error::msg)?;
+-    timeout(
++    let completed_wait = timeout(
+         Duration::from_secs(5),
+         wait_for_event(&test.codex, |event| {
+             matches!(
+@@ -1038,6 +1057,10 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+     )
+     .await
+     .expect("exact child terminal receipt should complete Join lifecycle");
++    let EventMsg::ItemCompleted(completed_wait) = completed_wait else {
++        unreachable!("Wait completion predicate");
++    };
++    let expected_wait = ThreadItem::from(completed_wait.item.clone());
+     timeout(
+         Duration::from_secs(5),
+         wait_for_event(&test.codex, |event| {
+@@ -1056,24 +1079,38 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+         .function_call_output_text(JOIN_CALL_ID)
+         .expect("next Parent request should contain the join result");
+     let join_output: serde_json::Value = serde_json::from_str(&join_output)?;
+-    let join_output = if join_tool == "join_agents" {
+-        assert_eq!(
+-            join_output["results"]
+-                .as_array()
+-                .expect("joined runs")
+-                .len(),
+-            1
+-        );
+-        &join_output["results"][0]
++    let results = if join_tool == "join_agents" {
++        join_output["results"]
++            .as_array()
++            .expect("joined runs")
++            .clone()
+     } else {
+-        &join_output
++        vec![join_output]
+     };
+-    assert_eq!(join_output["target"], json!(target));
+-    assert_eq!(join_output["run_id"], json!(run_id));
+-    assert_eq!(join_output["status"], json!("completed"));
+-    assert_eq!(join_output["output"], json!("child done"));
+-    assert_eq!(join_output["error"], serde_json::Value::Null);
+-    assert_eq!(join_output["reason"], serde_json::Value::Null);
++    let mut expected_runs = vec![(target, run_id)];
++    if child_count == 2 {
++        let second = requests_before_release
++            .iter()
++            .find_map(|request| {
++                function_call_output_json(request, &format!("{JOIN_SPAWN_CALL_ID}-second"))
++            })
++            .expect("second exact spawn receipt");
++        expected_runs.push((
++            second["task_name"].as_str().unwrap().to_string(),
++            second["run_id"].as_str().unwrap().to_string(),
++        ));
++        assert_ne!(expected_runs[0], expected_runs[1]);
++    }
++    assert_eq!(
++        results,
++        expected_runs
++            .iter()
++            .map(|(target, run_id)| json!({
++                "target": target, "run_id": run_id, "status": "completed",
++                "output": "child done", "error": null, "reason": null,
++            }))
++            .collect::<Vec<_>>()
++    );
+ 
+     let requests = server
+         .received_requests()
+@@ -1082,7 +1119,7 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+         .into_iter()
+         .filter(|request| request.url.path().ends_with("/responses"))
+         .collect::<Vec<_>>();
+-    assert_eq!(requests.len(), 5);
++    assert_eq!(requests.len(), child_count as usize * 2 + 3);
+     assert_eq!(
+         requests
+             .iter()
+@@ -1103,7 +1140,7 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+         .await;
+     assert!(shutdown.submit_failed.is_empty());
+     assert!(shutdown.timed_out.is_empty());
+-    assert_eq!(shutdown.completed.len(), 2);
++    assert_eq!(shutdown.completed.len(), child_count as usize + 1);
+     let root_path = rollouts
+         .iter()
+         .find(|(id, _)| *id == root_id)
+@@ -1132,6 +1169,54 @@ async fn native_join_parks_parent_until_exact_child_run_completes(
+             assert!(responses.iter().any(|item| matches!(item,
+                 ResponseItem::FunctionCallOutput { call_id, .. } if call_id.as_deref() == Some(JOIN_CALL_ID)
+             )));
++            let persisted_waits = lines
++                .iter()
++                .filter_map(|line| match &line.item {
++                    RolloutItem::EventMsg(EventMsg::ItemCompleted(event))
++                        if event.item.id() == JOIN_CALL_ID =>
++                    {
++                        Some(event)
++                    }
++                    _ => None,
++                })
++                .collect::<Vec<_>>();
++            assert_eq!(
++                serde_json::to_value(persisted_waits)?,
++                serde_json::to_value([&completed_wait])?
++            );
++            assert!(!lines.iter().any(|line| matches!(
++                &line.item,
++                RolloutItem::EventMsg(EventMsg::CollabWaitingEnd(_))
++            )));
++            // The matching official full-history reader must retain the complete native Wait
++            // in both modes; pagination and projection checks below remain Paginated-only.
++            let items = lines.into_iter().map(|line| line.item).collect::<Vec<_>>();
++            let turns = build_turns_from_rollout_items(&items);
++            let full_items = turns
++                .iter()
++                .flat_map(|turn| &turn.items)
++                .collect::<Vec<_>>();
++            let waits = full_items
++                .iter()
++                .copied()
++                .filter(|item| {
++                    matches!(item,
++                        ThreadItem::CollabAgentToolCall { id, .. } if id == JOIN_CALL_ID
++                    )
++                })
++                .collect::<Vec<_>>();
++            assert_eq!(waits, vec![&expected_wait]);
++            let wait_position = full_items
++                .iter()
++                .position(|item| **item == expected_wait)
++                .unwrap();
++            assert!(
++                full_items[wait_position + 1..]
++                    .iter()
++                    .any(|item| matches!(item,
++                        ThreadItem::AgentMessage { text, .. } if text == "parent done"
++                    ))
++            );
+         }
+     }
+     if history_mode == ThreadHistoryMode::Paginated {
+diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
+index c82b5ce958c81b10c57d829951bf8fdee7efef6e..29a92c35114395060f397380106278f870ddb732 100644
+--- a/codex-rs/rollout/src/policy.rs
++++ b/codex-rs/rollout/src/policy.rs
+@@ -1,6 +1,7 @@
+ use crate::RolloutItem;
+ use crate::protocol::EventMsg;
+ use codex_extension_items::ExtensionItem;
++use codex_protocol::items::CollabAgentTool;
+ use codex_protocol::items::TurnItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::protocol::SubAgentActivityKind;
+@@ -109,6 +110,10 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode)
+                     TurnItem::SubAgentActivity(item)
+                         if item.kind == SubAgentActivityKind::Completed
+                 )
++                || matches!(
++                    &event.item,
++                    TurnItem::CollabAgentToolCall(item) if item.tool == CollabAgentTool::Wait
++                )
+         }
+         EventMsg::TokenCount(_)
+         | EventMsg::ThreadGoalUpdated(_)
+@@ -204,3 +209,7 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode)
+         | EventMsg::CollabResumeBegin(_) => false,
+     }
+ }
++
++#[cfg(test)]
++#[path = "policy_tests.rs"]
++mod tests;
+diff --git a/codex-rs/tui/src/app/session_lifecycle.rs b/codex-rs/tui/src/app/session_lifecycle.rs
+index e8a991d68c95e4e311f0bf7c8bbc0a2a7248a330..9eb9a11d7a59994438f71f3036097b3297650ab4 100644
+--- a/codex-rs/tui/src/app/session_lifecycle.rs
++++ b/codex-rs/tui/src/app/session_lifecycle.rs
+@@ -297,10 +297,13 @@ impl App {
+                     thread.status,
+                     codex_app_server_protocol::ThreadStatus::Active { .. }
+                 );
+-                let is_closed = matches!(
+-                    thread.status,
+-                    codex_app_server_protocol::ThreadStatus::NotLoaded
+-                );
++                // A saved thread without a local replay channel needs an on-demand resume.
++                // Keep already cached closed transcripts replay-only when their runtime is gone.
++                let is_closed = has_replay_channel
++                    && matches!(
++                        thread.status,
++                        codex_app_server_protocol::ThreadStatus::NotLoaded
++                    );
+                 self.upsert_agent_picker_thread(
+                     thread_id,
+                     thread.agent_nickname.or_else(|| {
+@@ -356,12 +359,12 @@ impl App {
+         }
+     }
+ 
+-    /// Materializes a live thread into local replay state when the picker knows about it but the
++    /// Materializes a saved or live thread when the picker knows about it but the
+     /// TUI has not cached a local event channel yet.
+     ///
+     /// Resume-time backfill intentionally avoids creating empty placeholder channels, because those
+     /// placeholders make stale `/subagents` entries open blank transcripts. When a user later
+-    /// selects a still-live discovered thread, attach it on demand with a real resumed snapshot.
++    /// selects a discovered thread, attach it on demand with a real resumed snapshot.
+     pub(super) async fn attach_live_thread_for_selection(
+         &mut self,
+         app_server: &mut AppServerSession,
+diff --git a/codex-rs/tui/src/app/tests.rs b/codex-rs/tui/src/app/tests.rs
+index f8c8306b59e28d5ebc300acc9ff4fb354fbf53b4..de7555660ef99bc20846c6c6e18e29b4f87d986f 100644
+--- a/codex-rs/tui/src/app/tests.rs
++++ b/codex-rs/tui/src/app/tests.rs
+@@ -3153,7 +3153,7 @@ fn open_agent_picker_marks_loaded_threads_open() -> Result<()> {
+ }
+ 
+ #[test]
+-fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -> Result<()> {
++fn cold_selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -> Result<()> {
+     const WORKER_THREADS: usize = 1;
+     const TEST_STACK_SIZE_BYTES: usize = 8 * 1024 * 1024;
+ 
+@@ -3231,7 +3231,33 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
+                 "type": "session_meta",
+                 "payload": serde_json::to_value(session_meta)?,
+             });
+-            std::fs::write(rollout_path, format!("{session_meta_line}\n"))?;
++            let started_line = serde_json::json!({
++                "timestamp": timestamp,
++                "type": "event_msg",
++                "payload": {"type": "task_started", "turn_id": "saved-child-turn"},
++            });
++            let user_line = serde_json::json!({
++                "timestamp": timestamp,
++                "type": "event_msg",
++                "payload": {"type": "user_message", "message": "Saved child request", "kind": "plain"},
++            });
++            let answer_line = serde_json::json!({
++                "timestamp": timestamp,
++                "type": "event_msg",
++                "payload": {"type": "agent_message", "message": "Saved child answer"},
++            });
++            let completed_line = serde_json::json!({
++                "timestamp": timestamp,
++                "type": "event_msg",
++                "payload": {
++                    "type": "task_complete", "turn_id": "saved-child-turn",
++                    "last_agent_message": "Saved child answer",
++                },
++            });
++            std::fs::write(
++                rollout_path,
++                format!("{session_meta_line}\n{started_line}\n{user_line}\n{answer_line}\n{completed_line}\n"),
++            )?;
+             child_thread_ids.push(child_thread_id);
+         }
+ 
+@@ -3248,19 +3274,55 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
+             .await?;
+         app.enqueue_primary_thread_session(root.session, root.turns)
+             .await?;
++        let mut tui = crate::tui::test_support::make_test_tui()?;
+         for (child_thread_id, multi_agent_version) in child_thread_ids
+             .iter()
+             .copied()
+             .zip([MultiAgentVersion::V1, MultiAgentVersion::V2])
+         {
+-            assert!(
+-                app.attach_live_thread_for_selection(&mut app_server, child_thread_id)
+-                    .await?
++            let saved = app_server.thread_read(child_thread_id, /*include_turns*/ true).await?;
++            assert_eq!(saved.status, codex_app_server_protocol::ThreadStatus::NotLoaded);
++            assert!(!saved.turns.is_empty());
++            assert!(!app.thread_event_channels.contains_key(&child_thread_id));
++            app.thread_event_channels.insert(child_thread_id, ThreadEventChannel::new(/*capacity*/ 1));
++            assert!(app.refresh_agent_picker_thread_liveness(&mut app_server, child_thread_id).await);
++            assert!(app.agent_navigation.get(&child_thread_id).unwrap().is_closed);
++            assert!(!app.should_attach_live_thread_for_selection(child_thread_id));
++            app.thread_event_channels.remove(&child_thread_id);
++            app.agent_navigation.upsert(
++                child_thread_id,
++                saved.agent_nickname.clone(),
++                saved.agent_role.clone(),
++                /*is_closed*/ true,
+             );
++            app.open_agent_picker(&mut app_server).await;
++            app.chat_widget.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
++            while app_event_rx.try_recv().is_ok() {}
++            app.select_agent_thread(&mut tui, &mut app_server, child_thread_id).await?;
++            assert_eq!(app.active_thread_id, Some(child_thread_id));
++            let channel = &app.thread_event_channels[&child_thread_id];
++            assert_eq!(channel.attachment(), ThreadEventAttachment::Live);
++            assert_eq!(channel.store.lock().await.turns, saved.turns);
++            let mut rendered = Vec::new();
++            while let Ok(event) = app_event_rx.try_recv() {
++                if let AppEvent::InsertHistoryCell(cell) = event {
++                    rendered.push(lines_to_single_string(&cell.display_lines(/*width*/ 80)));
++                }
++            }
++            if let Some(lines) = app.chat_widget.active_cell_transcript_lines(/*width*/ 80) {
++                rendered.push(lines_to_single_string(&lines));
++            }
++            let answers = rendered.iter().flat_map(|text| text.lines())
++                .filter_map(|line| line.split_once("Saved child answer"))
++                .map(|(_, suffix)| format!("Saved child answer{suffix}"))
++                .collect::<Vec<_>>();
++            assert_snapshot!(answers.join("\n"), @"Saved child answer");
+             assert_eq!(
+                 app.agent_navigation.is_parent_owned(child_thread_id),
+                 multi_agent_version == MultiAgentVersion::V2
+             );
++            app.select_agent_thread(&mut tui, &mut app_server, root_thread_id).await?;
++            assert_eq!(app.active_thread_id, Some(root_thread_id));
+         }
+ 
+         app.agent_navigation
+@@ -3289,7 +3351,6 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
+         assert!(!app.agent_navigation.is_parent_owned(child_thread_ids[0]));
+         assert!(app.agent_navigation.is_parent_owned(child_thread_ids[1]));
+ 
+-        let mut tui = crate::tui::test_support::make_test_tui()?;
+         app.select_agent_thread(&mut tui, &mut app_server, child_thread_ids[0])
+             .await?;
+         while app_event_rx.try_recv().is_ok() {}
+diff --git a/codex-rs/tui/src/startup_orchestration.rs b/codex-rs/tui/src/startup_orchestration.rs
+index c9fed10be0590c871c3b996efd6b61ce591e708e..92f51ce6b9c68bc68b9f0221334de160fc61d87d 100644
+--- a/codex-rs/tui/src/startup_orchestration.rs
++++ b/codex-rs/tui/src/startup_orchestration.rs
+@@ -595,6 +595,10 @@ pub(super) async fn run_main_inner(
+         .with(otel_tracing_layer)
+         .try_init();
+ 
++    startup_draft
++        .tui_mut()
++        .configure_subagent_live_mouse(std::env::var("CSA_SUBAGENT_LIVE_MOUSE"));
++
+     let app_result = run_ratatui_app(
+         cli,
+         arg0_paths,
+diff --git a/codex-rs/tui/src/tui.rs b/codex-rs/tui/src/tui.rs
+index 75ea56a69cd85e73cf7bba032c6dc5f464ac4809..3e22130f70d8a08fc1517234f1c98083dd9fd23a 100644
+--- a/codex-rs/tui/src/tui.rs
++++ b/codex-rs/tui/src/tui.rs
+@@ -683,9 +683,7 @@ impl Tui {
+             notification_condition: NotificationCondition::default(),
+             scrollback,
+             alt_screen_enabled: true,
+-            subagent_live_mouse_mode: SubagentLiveMouseMode::from_env_value(std::env::var(
+-                "CSA_SUBAGENT_LIVE_MOUSE",
+-            )),
++            subagent_live_mouse_mode: SubagentLiveMouseMode::Auto,
+             mouse_capture: mouse_capture::MouseCapture::default(),
+             _stderr_guard: stderr_guard,
+         }
+@@ -696,6 +694,14 @@ impl Tui {
+         self.alt_screen_enabled = enabled;
+     }
+ 
++    /// Apply the process policy after startup installs logging so invalid values warn once.
++    pub(crate) fn configure_subagent_live_mouse(
++        &mut self,
++        value: std::result::Result<String, std::env::VarError>,
++    ) {
++        self.subagent_live_mouse_mode = SubagentLiveMouseMode::from_env_value(value);
++    }
++
+     pub(crate) fn sync_subagent_live_mouse_capture(
+         &mut self,
+         panel_renderable: bool,
+diff --git a/codex-rs/tui/src/tui/mouse_capture_tests.rs b/codex-rs/tui/src/tui/mouse_capture_tests.rs
+index e5acbc899870aae13f66c50d35a895d03f6ba5c1..d9b2b00fa4cb6fb8162763f1a48435f8e6313bc3 100644
+--- a/codex-rs/tui/src/tui/mouse_capture_tests.rs
++++ b/codex-rs/tui/src/tui/mouse_capture_tests.rs
+@@ -21,6 +21,55 @@ fn process_mouse_policy_parses_without_config_or_environment_mutation() {
+     }
+ }
+ 
++#[test]
++fn startup_mouse_policy_applies_after_logging_and_warns_once_without_raw_value() {
++    for (input, expected, warns) in [
++        (
++            Err(VarError::NotPresent),
++            SubagentLiveMouseMode::Auto,
++            false,
++        ),
++        (Ok("auto".to_string()), SubagentLiveMouseMode::Auto, false),
++        (Ok("on".to_string()), SubagentLiveMouseMode::On, false),
++        (Ok("off".to_string()), SubagentLiveMouseMode::Off, false),
++        (
++            Ok("private-invalid-value".to_string()),
++            SubagentLiveMouseMode::Auto,
++            true,
++        ),
++        (
++            Err(VarError::NotUnicode(std::ffi::OsString::new())),
++            SubagentLiveMouseMode::Auto,
++            true,
++        ),
++    ] {
++        // Startup creates the draft terminal before installing its tracing subscriber.
++        let mut tui = crate::tui::test_support::make_test_tui().expect("draft terminal");
++        assert_eq!(tui.subagent_live_mouse_mode, SubagentLiveMouseMode::Auto);
++        let capture = tempfile::NamedTempFile::new().expect("log capture");
++        let subscriber = tracing_subscriber::fmt()
++            .without_time()
++            .with_ansi(false)
++            .with_target(false)
++            .with_level(false)
++            .with_writer(Arc::new(capture.reopen().expect("log writer")))
++            .finish();
++        tracing::subscriber::with_default(subscriber, || {
++            tui.configure_subagent_live_mouse(input);
++        });
++        assert_eq!(tui.subagent_live_mouse_mode, expected);
++        let logged = std::fs::read_to_string(capture.path()).expect("captured warning");
++        assert_eq!(
++            logged.trim(),
++            if warns {
++                "invalid CSA_SUBAGENT_LIVE_MOUSE; using auto"
++            } else {
++                ""
++            }
++        );
++    }
++}
++
+ fn terminal(name: TerminalName, multiplexer: Option<Multiplexer>) -> TerminalInfo {
+     TerminalInfo {
+         name,
