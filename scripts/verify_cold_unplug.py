@@ -861,7 +861,10 @@ def prepare_binaries(args: argparse.Namespace, root: Path, evidence: Path) -> tu
     repository = paths["repository"]
     manifest, _, _ = catalog.load_manifest(repository, paths["manifest"])
     resolution = catalog.resolve(repository, manifest["compat_id"], TARGET)
-    require(resolution["codex_version"] == "0.153.2" and resolution["upstream_commit"] == "657a993cbee87acf52d14b758ce49dbd46d1b8eb", "official Legacy presentation is reviewed only for exact upstream 0.153.2")
+    require((resolution["codex_version"], resolution["upstream_commit"]) in {
+        ("0.153.2", "657a993cbee87acf52d14b758ce49dbd46d1b8eb"),
+        ("0.154.0", "6b9826e3aa83b1a5947db50f4332cb9c65f1b340"),
+    }, "official Legacy presentation requires an exact reviewed upstream version and commit")
     require((repository / resolution["manifest_path"]).resolve() == paths["manifest"], "explicit manifest differs from the catalog route")
     require(paths["official_binary"] != paths["candidate_binary"], "official and candidate executable paths must differ")
     receipt = strict_json(paths["build_receipt"].read_bytes())
