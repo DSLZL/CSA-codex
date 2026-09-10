@@ -10,11 +10,12 @@ Their schemas and data can therefore be valid while their migration checksums no
 longer match the official executable. Reinstalling Codex or uninstalling CSA does
 not restore those database values.
 
-The p15 candidate removes that rewriting and limits CRLF migration inputs to the
-verified Windows x64 target. As of 2026-09-10 it is still a release-disabled
-candidate. Candidate promotion and native target acceptance remain separate gates;
-an upgrade alone does not repair a home previously opened by p10. Keep p10
-unplugged while validating recovery with official Codex.
+The accepted p15 binding removes that rewriting and limits CRLF migration inputs
+to the verified Windows x64 target. It passed Windows x64 and Linux x64 round-trip
+checks with official Codex **0.153.2**; select matching binaries from the
+[published releases](https://github.com/DSLZL/CSA-codex/releases). An upgrade alone
+does not repair a home previously opened by p10. Keep p10 unplugged while
+validating recovery with official Codex.
 
 ## Inputs and boundaries
 
@@ -120,6 +121,14 @@ migrations, schema drift, triggers, existing output, and changing inputs:
 python3 scripts/test_recover_sqlite_migrations.py
 ```
 
-Native macOS startup and candidate acceptance remain separate checks. Retained
-Windows p15 acceptance evidence was separately rehashed; publication requires
-acceptance evidence for the actual candidate artifact.
+The exact p15 Linux x64 artifact from build `34440924880` also passed an official
+0.153.2 → p15 → official 0.153.2 round trip in
+[native Linux CI](https://github.com/DSLZL/CSA-codex/actions/runs/34450129629).
+All six database families retained their native checksums after each phase; each
+process resumed the old thread, completed a new turn, and exited normally.
+
+Fresh Windows x64 acceptance for build `34440926437` passed all 18 cold-unplug cases
+and five real ConPTY modes. The
+[accepted record](../release/acceptance/rust-v0.153.2-native-join-p15/x86_64-pc-windows-msvc.json)
+binds both validation reports to the exact artifacts. Native macOS recovery was
+not exercised by these checks.

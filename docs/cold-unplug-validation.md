@@ -172,6 +172,15 @@ supporting files and is bound to executable SHA256
 `a22dfdc868db8c4047151c2ae2fa11810cb9fdd34e7fa308de46dc8c1f4b48fb`.
 Native Rust tests and snapshots were not executed by the CLI-only build recipe.
 
+Fresh acceptance on 2026-09-10 repeated all 18 A–I cells and five ConPTY modes for
+Windows build `34440926437`. All 15 positive persistence processes exited normally;
+the report retains 402 hashed supporting files and binds executable SHA256
+`df4c06d2a8f5ef2f5b878dc23b570c8a7ce5a9bf001c8d7867b4198b6a9f90a7`.
+The [accepted record](../release/acceptance/rust-v0.153.2-native-join-p15/x86_64-pc-windows-msvc.json)
+also includes the independently verified native Linux official/p15/official
+database round trip. Both runs use real executables with a local Responses fixture;
+they do not establish live authenticated provider coverage or native Rust test coverage.
+
 For native-join p14 and later, `compat_catalog.py accept` requires this complete
 `evidence.cold_unplug` report and verifies its referenced files before writing
 acceptance/catalog state. Its build provenance must match the candidate record's
