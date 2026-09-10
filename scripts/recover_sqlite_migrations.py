@@ -304,8 +304,12 @@ def recover(directory: Path, output: Path | None, oracle: dict, identity: dict) 
         return report
     except Exception as error:
         report.update(status="failed", error=str(error), work_directory=str(stage))
-        (stage / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        raise ValueError(f"{error}; diagnostic copies retained at {stage}") from error
+        detail = str(error)
+        try:
+            (stage / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        except OSError as report_error:
+            detail += f"; diagnostic report could not be written: {report_error}"
+        raise ValueError(f"{detail}; diagnostic workspace: {stage}") from error
     finally:
         for connection in connections:
             connection.close()

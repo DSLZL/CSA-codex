@@ -106,7 +106,10 @@ no in-place repair or automatic home-switch option.
 ## Verification recorded on 2026-09-10
 
 Exact official Linux x64 0.153.0 and 0.153.2 artifacts were checked, and all six
-families/65 migrations passed fixture recovery and repeat-run checks. Windows x64
+families/65 migrations passed fixture recovery and repeat-run checks. Both versions
+also resumed recovered homes and completed new turns with the real official
+executables in [native Linux CI](https://github.com/DSLZL/CSA-codex/actions/runs/34441569806).
+Windows x64
 0.153.2 was also checked against its CRLF inputs: the actual official process
 resumed a recovered home containing all six databases and completed a new turn.
 The regression test covers WAL
@@ -117,6 +120,6 @@ migrations, schema drift, triggers, existing output, and changing inputs:
 python3 scripts/test_recover_sqlite_migrations.py
 ```
 
-These artifact and SQLite checks do not establish native Linux/macOS startup or
-candidate acceptance. Retained Windows p15 acceptance evidence was separately
-rehashed; it does not authorize publication on another target.
+Native macOS startup and candidate acceptance remain separate checks. Retained
+Windows p15 acceptance evidence was separately rehashed; publication requires
+acceptance evidence for the actual candidate artifact.

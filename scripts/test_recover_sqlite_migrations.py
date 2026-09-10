@@ -112,6 +112,11 @@ def main():
         with patch.object(recovery.shutil, "copyfile", side_effect=copy_with_writer):
             rejected(lambda: recovery.recover(healthy, root / "drift-output", oracle, {}), "changed")
         assert not (root / "drift-output").exists()
+        with patch.object(recovery, "inspect_database", side_effect=ValueError("original validation failure")), \
+                patch.object(Path, "write_text", side_effect=OSError("report disk full")):
+            rejected(lambda: recovery.recover(healthy, root / "report-failure", oracle, {}),
+                     "original validation failure; diagnostic report could not be written: report disk full")
+        assert not (root / "report-failure").exists()
     print("PASS: six families, audit, WAL, preserved originals/data, repeat, corruption and input drift")
 
 
