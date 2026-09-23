@@ -28,7 +28,7 @@ preimage_absent = [
 
 [[patches]]
 path = "patches/0010-core-owned-files.patch"
-sha256 = "8eccf8b22290e738323dbdfda4a6c009e44556ad71667769cd4809bb18db735c"
+sha256 = "34781df43a19e4525a42c35eefcd6b507260ad12ebd4e9aa8f9ae9bd3b535a06"
 
 [[patches]]
 path = "patches/0020-tui-owned-files.patch"

@@ -813,10 +813,10 @@ index 0000000000000000000000000000000000000000..65be814fbb4d7da8a06c1f8212293b23
 +}
 diff --git a/codex-rs/core/tests/suite/multi_agent_join.rs b/codex-rs/core/tests/suite/multi_agent_join.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..c6d2a93418115373ca45c01905054bb72eba63fc
+index 0000000000000000000000000000000000000000..47eab9381e0ac630e5a87a0d336819ce92da056f
 --- /dev/null
 +++ b/codex-rs/core/tests/suite/multi_agent_join.rs
-@@ -0,0 +1,1928 @@
+@@ -0,0 +1,1944 @@
 +use std::path::PathBuf;
 +use std::process::Stdio;
 +use std::sync::Arc;
@@ -830,6 +830,7 @@ index 0000000000000000000000000000000000000000..c6d2a93418115373ca45c01905054bb7
 +use codex_app_server_protocol::ThreadItem;
 +use codex_app_server_protocol::ThreadTimelineEntry;
 +use codex_app_server_protocol::build_turns_from_rollout_items;
++use codex_app_server_protocol::project_rollout_line;
 +use codex_core::NotSubmittedReason;
 +use codex_core::StartIfIdleSubmission;
 +use codex_core::TurnInputRequest;
@@ -1049,7 +1050,7 @@ index 0000000000000000000000000000000000000000..c6d2a93418115373ca45c01905054bb7
 +            &format!("{spawn_call_id}-second"),
 +            "collaboration",
 +            "spawn_agent",
-+            &json!({"message": "block on the test gate", "task_name": "worker-two"}).to_string(),
++            &json!({"message": "block on the test gate", "task_name": "worker_two"}).to_string(),
 +        ));
 +    }
 +    spawn_events.push(ev_completed(&format!("{spawn_call_id}-parent-1")));
@@ -2007,17 +2008,24 @@ index 0000000000000000000000000000000000000000..c6d2a93418115373ca45c01905054bb7
 +                &line.item,
 +                RolloutItem::EventMsg(EventMsg::CollabWaitingEnd(_))
 +            )));
-+            // The matching official full-history reader must retain the complete native Wait
-+            // in both modes; pagination and projection checks below remain Paginated-only.
-+            let items = lines.into_iter().map(|line| line.item).collect::<Vec<_>>();
-+            let turns = build_turns_from_rollout_items(&items);
-+            let full_items = turns
-+                .iter()
-+                .flat_map(|turn| &turn.items)
-+                .collect::<Vec<_>>();
++            // Use the matching native reader for each format: paginated rollouts persist
++            // canonical ItemCompleted records instead of legacy message events.
++            let full_items = match history_mode {
++                ThreadHistoryMode::Legacy => {
++                    let items = lines.into_iter().map(|line| line.item).collect::<Vec<_>>();
++                    build_turns_from_rollout_items(&items)
++                        .into_iter()
++                        .flat_map(|turn| turn.items)
++                        .collect::<Vec<_>>()
++                }
++                ThreadHistoryMode::Paginated => lines
++                    .iter()
++                    .flat_map(|line| project_rollout_line(line).changed_items)
++                    .map(|change| change.item)
++                    .collect(),
++            };
 +            let waits = full_items
 +                .iter()
-+                .copied()
 +                .filter(|item| {
 +                    matches!(item,
 +                        ThreadItem::CollabAgentToolCall { id, .. } if id == JOIN_CALL_ID
@@ -2027,7 +2035,7 @@ index 0000000000000000000000000000000000000000..c6d2a93418115373ca45c01905054bb7
 +            assert_eq!(waits, vec![&expected_wait]);
 +            let wait_position = full_items
 +                .iter()
-+                .position(|item| **item == expected_wait)
++                .position(|item| *item == expected_wait)
 +                .unwrap();
 +            assert!(
 +                full_items[wait_position + 1..]
@@ -2092,6 +2100,14 @@ index 0000000000000000000000000000000000000000..c6d2a93418115373ca45c01905054bb7
 +                ThreadItem::CollabAgentToolCall { id, tool: codex_app_server_protocol::CollabAgentTool::Wait, .. }
 +                    if id == JOIN_CALL_ID
 +            )).unwrap_or_else(|| panic!("native waiting item missing from {label} projection: {items:?}"));
++            assert_eq!(joined, &expected_wait);
++            let wait_position = items.iter().position(|item| item == joined).unwrap();
++            assert!(
++                items[wait_position + 1..].iter().any(|item| matches!(item,
++                    ThreadItem::AgentMessage { text, .. } if text == "parent done"
++                )),
++                "parent final message missing after Wait in {label} projection: {items:?}"
++            );
 +            let turns = store
 +                .list_turns(ListTurnsParams {
 +                    thread_id: root_id,
