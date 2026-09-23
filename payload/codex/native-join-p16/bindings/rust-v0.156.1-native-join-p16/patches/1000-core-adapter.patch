@@ -1557,7 +1557,7 @@ index ea44c0a427837bad62969097cacc947d9b0ed069..da9ca3dfdddc65d851a16b1addf45e3b
  mod message_tool;
  mod send_message;
 diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
-index 3de98228824abb83b4525150047778e193573bd7..a47704f37ebecb7604284f03038f83cc132c1084 100644
+index 3de98228824abb83b4525150047778e193573bd7..e6d7ba3e193a812a8017ca32d8d294ba35405165 100644
 --- a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
 +++ b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
 @@ -220,6 +220,9 @@ async fn handle_spawn_agent(
@@ -1565,7 +1565,7 @@ index 3de98228824abb83b4525150047778e193573bd7..a47704f37ebecb7604284f03038f83cc
      .map_err(collab_spawn_error)?;
      let new_thread_id = spawned_agent.thread_id;
 +    let run_id = spawned_agent.initial_run_id.ok_or_else(|| {
-+        FunctionCallError::Internal("spawned agent missing initial run id".to_string())
++        FunctionCallError::Fatal("spawned agent missing initial run id".to_string())
 +    })?;
      let agent_status = spawned_agent.status;
      let agent_snapshot = session
@@ -1686,7 +1686,7 @@ index f9f15f01ad691fbd9e6ed8220befecfc4bbe3445..f0d80b920c15d99c88425d6aa14732f2
 +    .map_err(|err| format!("{err:?}"))
 +}
 diff --git a/codex-rs/core/src/tools/spec_plan.rs b/codex-rs/core/src/tools/spec_plan.rs
-index f5c88e3b92726e8d10790bb7462769dae9960c5a..a48c0f3803ab6ab33cb6abfdf33196727d24a50d 100644
+index f5c88e3b92726e8d10790bb7462769dae9960c5a..33d90a233567c0c923fe9e04eefc546d1b0a5e18 100644
 --- a/codex-rs/core/src/tools/spec_plan.rs
 +++ b/codex-rs/core/src/tools/spec_plan.rs
 @@ -45,6 +45,8 @@ use crate::tools::handlers::multi_agents_spec::SpawnAgentToolOptions;
@@ -1703,11 +1703,11 @@ index f5c88e3b92726e8d10790bb7462769dae9960c5a..a48c0f3803ab6ab33cb6abfdf3319672
              );
              if turn_context.config.multi_agent_v2.wait_agent_enabled {
 +                registry.register_trusted_with_exposure(
-+                    multi_agent_v2_handler(JoinAgentsHandler, None),
++                    multi_agent_v2_handler(JoinAgentsHandler, None, None, None),
 +                    exposure,
 +                );
 +                registry.register_trusted_with_exposure(
-+                    multi_agent_v2_handler(JoinAgentHandler, None),
++                    multi_agent_v2_handler(JoinAgentHandler, None, None, None),
 +                    exposure,
 +                );
                  registry.register_trusted_with_exposure(

@@ -36,7 +36,7 @@ sha256 = "10e200f13d9b8a67a957f42e85c824798486d29c209705a5ea6bd708b2c6967f"
 
 [[patches]]
 path = "patches/1000-core-adapter.patch"
-sha256 = "eb273d1ec2daadba65c6ac90c017117933f089ff3c71af1108f3e4f3459e05f5"
+sha256 = "11be9c2d118324b8e6e0c0cd2afe8fff9914e2a326259bd4d3b21176d193d093"
 
 [[patches]]
 path = "patches/1100-tui-adapter.patch"
