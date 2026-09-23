@@ -94,10 +94,26 @@
         "codex-rollout",
         "-p",
         "codex-prompts",
+        "-p",
+        "codex-config",
         "--",
         "--check"
       ],
       "name": "Affected package formatting"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "codex-config",
+        "--lib",
+        "--",
+        "--test-threads=1",
+        "--format=terse"
+      ],
+      "name": "Configuration library and persisted Windows project trust",
+      "output": "failure-only"
     },
     {
       "argv": [
@@ -461,13 +477,15 @@
         "clippy",
         "-p",
         "codex-tui",
+        "-p",
+        "codex-config",
         "--lib",
         "--tests",
         "--",
         "-D",
         "warnings"
       ],
-      "name": "TUI clippy"
+      "name": "TUI and configuration clippy"
     },
     {
       "argv": [

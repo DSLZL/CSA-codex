@@ -20,6 +20,9 @@ the accepted/current route is still `rust-v0.154.0-native-join-p15`.
   exports the exact upstream `STABLE_GIT_COMMIT` required by the voice helper
   handshake. The Windows runtime lock requires the existing four helper files
   plus all 39 voice files from the integrity-verified official archive.
+- Reuse the config loader's trust-path normalization for active-project lookup.
+  This preserves saved trust and distrust when Windows uses short or verbatim
+  paths, without changing the stored configuration format.
 
 ## Fullscreen decision
 
@@ -40,7 +43,7 @@ CSA live-state reducer, panel or Orbit renderer.
 Compared with each version's pinned upstream, the TUI patch touches 34 implementation
 files instead of p15's 43, with 4,487 net added lines versus 4,513. This count excludes
 standalone tests, test-support files and snapshots; embedded tests remain included.
-Including all test adaptations, p16 touches 75 files and adds 6,167 net lines versus
+Including all test adaptations, p16 touches 77 files and adds 6,167 net lines versus
 p15's 69 files and 6,048 lines. Native ownership reduces implementation adaptation
 points, while new coverage increases the total. The p16 family stores the final
 implementation in four ordered patches; previous families are immutable.
@@ -54,18 +57,21 @@ can run the full patch contract before producing its release binary. Other
 shards retain their native six-target build authority and artifact receipts.
 
 The contract includes Join/context/follow-up tests, native state/history checks,
-the complete TUI library and TUI Clippy. Its fullscreen regression covers three
+the complete TUI and configuration libraries, and Clippy for both. Its fullscreen regression covers three
 widths, row clicks, unchanged composer drafts, native selection with CSA clicks
 disabled and raw-mode hiding. Old version-specific test skips are not carried
 forward without new evidence.
 
-On producer commit `e1058dd6b938cb434101e270eda9b9bc8d4871d1`,
-[A7 Windows Actions](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/35869757268)
+On producer commit `b07575f72f33061f1c920420dbaff2a1c9e3ccd4`,
+[A8 Windows Actions](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/35883884279)
 passed Native Join integration, Subagent Live (including fullscreen input geometry)
-and Orbit checks. The complete TUI suite reached 5,393 passes, 29 failures and five
-existing ignores. A8 adapts the new tests to the preserved CSA display contract,
-fixes test-runtime/duplicate-assertion setup, and uses the shared version constant
-for the update prompt. These changes still need native confirmation.
+and Orbit checks. The complete TUI suite reached 5,414 passes, eight failures and
+five existing ignores. The unpatched same-version Windows diagnostic reproduced
+all seven directory/trust failures at the same assertions. A9 replaces the
+inconsistent active-project path helper with the existing persistence/loader helper,
+adds a Windows regression for saved trust and distrust, and completes the remaining
+session-header snapshots. These fixes still need native confirmation; all seven
+directory/trust tests remain required.
 
 Producer CI accepts an optional `upstream_tui_baseline` compatibility ID to run the
 seven directory/trust cases on unpatched upstream on Windows. It resolves exact

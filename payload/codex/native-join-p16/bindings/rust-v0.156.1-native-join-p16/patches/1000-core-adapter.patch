@@ -1,3 +1,105 @@
+diff --git a/codex-rs/config/src/config_toml.rs b/codex-rs/config/src/config_toml.rs
+index bdaee871795b76c92662f37238d1045147025440..a47dee5dd56484d89113c1aca96027507d164002 100644
+--- a/codex-rs/config/src/config_toml.rs
++++ b/codex-rs/config/src/config_toml.rs
+@@ -8,6 +8,7 @@ use std::path::Path;
+ use crate::HooksToml;
+ use crate::browser_use::BrowserUseConfigToml;
+ use crate::computer_use::ComputerUseConfigToml;
++use crate::loader::normalized_project_trust_keys;
+ use crate::permissions_toml::PermissionsToml;
+ use crate::profile_toml::ConfigProfile;
+ use crate::types::AnalyticsConfigToml;
+@@ -55,7 +56,6 @@ use codex_protocol::openai_models::ReasoningEffort;
+ use codex_protocol::permissions::NetworkSandboxPolicy;
+ use codex_protocol::protocol::AskForApproval;
+ use codex_utils_absolute_path::AbsolutePathBuf;
+-use codex_utils_path::normalize_for_path_comparison;
+ use codex_utils_path_uri::Platform;
+ use schemars::JsonSchema;
+ use serde::Deserialize;
+@@ -854,14 +854,14 @@ impl ConfigToml {
+     ) -> Option<ProjectConfig> {
+         let projects = self.projects.as_ref()?;
+ 
+-        for normalized_cwd in normalized_project_lookup_keys(resolved_cwd) {
++        for normalized_cwd in normalized_project_trust_keys(resolved_cwd) {
+             if let Some(project_config) = project_config_for_lookup_key(projects, &normalized_cwd) {
+                 return Some(project_config);
+             }
+         }
+ 
+         if let Some(repo_root) = repo_root {
+-            for normalized_repo_root in normalized_project_lookup_keys(repo_root) {
++            for normalized_repo_root in normalized_project_trust_keys(repo_root) {
+                 if let Some(project_config_for_root) =
+                     project_config_for_lookup_key(projects, &normalized_repo_root)
+                 {
+@@ -874,24 +874,6 @@ impl ConfigToml {
+     }
+ }
+ 
+-/// Canonicalize the path and convert it to a string to be used as a key in the
+-/// projects trust map. On Windows, strips UNC, when possible, to try to ensure
+-/// that different paths that point to the same location have the same key.
+-fn normalized_project_lookup_keys(path: &Path) -> Vec<String> {
+-    let normalized_path = normalize_project_lookup_key(path.to_string_lossy().to_string());
+-    let normalized_canonical_path = normalize_project_lookup_key(
+-        normalize_for_path_comparison(path)
+-            .unwrap_or_else(|_| path.to_path_buf())
+-            .to_string_lossy()
+-            .to_string(),
+-    );
+-    if normalized_path == normalized_canonical_path {
+-        vec![normalized_canonical_path]
+-    } else {
+-        vec![normalized_canonical_path, normalized_path]
+-    }
+-}
+-
+ fn normalize_project_lookup_key(key: String) -> String {
+     if cfg!(windows) {
+         key.to_ascii_lowercase()
+@@ -1014,6 +996,39 @@ mod tests {
+     const WORKSPACE_ID_A: &str = "123e4567-e89b-42d3-a456-426614174000";
+     const WORKSPACE_ID_B: &str = "123e4567-e89b-42d3-a456-426614174001";
+ 
++    #[cfg(windows)]
++    #[test]
++    fn active_project_uses_persisted_trust_for_verbatim_paths() -> std::io::Result<()> {
++        let dir = tempfile::tempdir()?;
++        let project = dir.path().canonicalize()?;
++        let child = project.join("child");
++        std::fs::create_dir(&child)?;
++        for trust_level in [TrustLevel::Trusted, TrustLevel::Untrusted] {
++            let expected = ProjectConfig {
++                trust_level: Some(trust_level),
++            };
++            let config = ConfigToml {
++                projects: Some(HashMap::from([(
++                    crate::loader::project_trust_key(&project),
++                    expected.clone(),
++                )])),
++                ..Default::default()
++            };
++            for cwd in [dir.path(), project.as_path()] {
++                assert_eq!(
++                    config.get_active_project(cwd, /*repo_root*/ None),
++                    Some(expected.clone())
++                );
++            }
++            assert_eq!(
++                config.get_active_project(&child, Some(&project)),
++                Some(expected)
++            );
++            assert_eq!(config.get_active_project(&child, /*repo_root*/ None), None);
++        }
++        Ok(())
++    }
++
+     #[test]
+     fn sandbox_mode_uses_executor_platform_and_sandbox_level() {
+         use Platform::Linux;
 diff --git a/codex-rs/core/src/agent/control.rs b/codex-rs/core/src/agent/control.rs
 index e44fc8b6ff29e121dd07ea07e7defa5ad5f656ce..a654fc8c116d8d9a6e8276098cacad182c007441 100644
 --- a/codex-rs/core/src/agent/control.rs
