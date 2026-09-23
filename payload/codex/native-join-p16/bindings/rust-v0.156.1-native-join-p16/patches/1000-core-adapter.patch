@@ -881,7 +881,7 @@ index 52c24f8f0611e3015f3ba907c8861c6169a8abd6..58aeeb25db7e2ead75b5f5fdad26d817
      };
  
 diff --git a/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs b/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs
-index e2f943c7ab86da1da7079ab48b1d4c166be145a3..a441cab83388d510e2fe4d0490525c8ddb478327 100644
+index e2f943c7ab86da1da7079ab48b1d4c166be145a3..1e1d71e42d8a42d42e507429bd79489907bb7352 100644
 --- a/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs
 +++ b/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs
 @@ -126,7 +126,7 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
@@ -901,18 +901,20 @@ index e2f943c7ab86da1da7079ab48b1d4c166be145a3..a441cab83388d510e2fe4d0490525c8d
          ..
      }) = tool
      else {
-@@ -314,6 +315,10 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
+@@ -314,6 +315,12 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
      assert!(!properties.contains_key("service_tier"));
      assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
      assert!(description.contains("Available model overrides"));
 +    assert_eq!(
-+        output_schema.expect("hidden spawn_agent output schema")["required"],
++        output_schema
++            .expect("hidden spawn_agent output schema")
++            .to_value()["required"],
 +        json!(["task_name", "run_id"])
 +    );
  }
  
  #[test]
-@@ -407,7 +412,7 @@ fn followup_task_tool_requires_message_and_has_no_output_schema() {
+@@ -407,7 +414,7 @@ fn followup_task_tool_requires_message_and_has_no_output_schema() {
      assert_eq!(name, "followup_task");
      assert_eq!(
          description,
@@ -921,7 +923,7 @@ index e2f943c7ab86da1da7079ab48b1d4c166be145a3..a441cab83388d510e2fe4d0490525c8d
      );
      assert_eq!(
          parameters.schema_type,
-@@ -476,6 +481,63 @@ fn wait_agent_tool_v2_uses_timeout_only_summary_output() {
+@@ -476,6 +483,63 @@ fn wait_agent_tool_v2_uses_timeout_only_summary_output() {
      );
  }
  
@@ -949,7 +951,7 @@ index e2f943c7ab86da1da7079ab48b1d4c166be145a3..a441cab83388d510e2fe4d0490525c8d
 +    assert!(!properties.contains_key("timeout_ms"));
 +    assert!(description.contains("single call pending"));
 +    assert_eq!(
-+        output_schema.expect("join output schema")["required"],
++        output_schema.expect("join output schema").to_value()["required"],
 +        json!(["target", "run_id", "status", "output", "error", "reason"])
 +    );
 +}
@@ -977,7 +979,7 @@ index e2f943c7ab86da1da7079ab48b1d4c166be145a3..a441cab83388d510e2fe4d0490525c8d
 +    assert!(!properties.contains_key("timeout_ms"));
 +    assert!(description.contains("parent resumes only once"));
 +    assert_eq!(
-+        output_schema.expect("join_agents output schema")["required"],
++        output_schema.expect("join_agents output schema").to_value()["required"],
 +        json!(["results"])
 +    );
 +}
