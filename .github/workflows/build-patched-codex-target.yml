@@ -3,6 +3,11 @@ name: Build one patched Codex target
 on:
   workflow_call:
     inputs:
+      run_contract:
+        description: "Run the native Windows x64 patch contract before building."
+        default: false
+        required: false
+        type: boolean
       builder_repository:
         required: true
         type: string
@@ -69,8 +74,12 @@ jobs:
           RUNNER_LABEL: ${{ inputs.runner }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
           TARGET: ${{ inputs.target }}
+          RUN_CONTRACT: ${{ inputs.run_contract }}
         run: |
           set -euo pipefail
+          if [[ "$RUN_CONTRACT" == true ]]; then
+            test "$TARGET" = x86_64-pc-windows-msvc
+          fi
           test "$GITHUB_REPOSITORY" = "$BUILDER_REPOSITORY" || {
             echo "Caller repository differs from the fixed builder repository." >&2
             exit 2
@@ -114,6 +123,7 @@ jobs:
             echo "CARGO_TARGET_DIR=$root/t"
             echo "TARGET_BUNDLE=$root/b"
             echo "SCCACHE_STATS=$root/sccache-stats.json"
+            echo "STABLE_GIT_COMMIT=${{ steps.authority.outputs.upstream_commit }}"
           } >> "$GITHUB_ENV"
           mkdir -p "$root"
 
@@ -136,6 +146,7 @@ jobs:
           test "$(git -C "$SOURCE_ROOT" rev-parse 'refs/tags/${{ steps.authority.outputs.upstream_tag }}^{commit}')" = '${{ steps.authority.outputs.upstream_commit }}'
 
       - name: Apply exact reviewed patch payload
+        if: ${{ !inputs.run_contract }}
         shell: bash
         run: |
           set -euo pipefail
@@ -147,6 +158,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.95.0
         with:
           targets: ${{ inputs.target }}
+          components: rustfmt, clippy
 
       - name: Verify exact Rust compiler identity
         shell: bash
@@ -295,6 +307,19 @@ jobs:
           set -euo pipefail
           bash scripts/disable-macos-ci-security-services.sh 2>&1 | tee "$RUNNER_TEMP/c/macos-security.log"
 
+      - name: Run native patch contract
+        if: inputs.run_contract
+        shell: bash
+        env:
+          LIBSQLITE3_FLAGS: SQLITE_DISABLE_INTRINSIC
+        run: |
+          set -euo pipefail
+          python scripts/run_patch_contract.py \
+            --manifest "$GITHUB_WORKSPACE/${{ steps.authority.outputs.manifest_path }}" \
+            --source "$SOURCE_ROOT" --cargo-target "$RUNNER_TEMP/c/tests" \
+            --output "$RUNNER_TEMP/c/contract-report.json" --phase tests \
+            2>&1 | tee "$RUNNER_TEMP/c/contract.log"
+
       - name: Build patched Codex CLI
         shell: bash
         env:
@@ -360,6 +385,8 @@ jobs:
             ${{ runner.temp }}/c/apple-toolchain.txt
             ${{ runner.temp }}/c/macos-security.log
             ${{ runner.temp }}/c/cargo-lock.diff
+            ${{ runner.temp }}/c/contract-report.json
+            ${{ runner.temp }}/c/contract.log
           if-no-files-found: warn
           retention-days: 7
 
