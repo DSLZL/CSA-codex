@@ -2,7 +2,7 @@
 
 `rust-v0.156.1-native-join-p16` targets the official stable
 [`rust-v0.156.1`](https://github.com/openai/codex/releases/tag/rust-v0.156.1)
-at `b412ff32c417f855c2b2d1581b77058eed87c84b`. It remains a buildable candidate;
+at `b412ff32c417f855c2b2d1581b77058eed87c84b`. It remains a development candidate;
 the accepted/current route is still `rust-v0.154.0-native-join-p15`.
 
 ## Adaptation
@@ -37,11 +37,13 @@ CSA live-state reducer, panel or Orbit renderer.
 | Native draw callers | Preserve the upstream draw interfaces; only CSA callers use the graphics variants. |
 | Existing displays | Keep Subagent Live, Orbit, CSA version badge, thread navigation, raw-mode hiding and overlay ownership. |
 
-Compared with the final p15 diff against its own pinned upstream, the TUI patch
-touches 60 files instead of 69. Net added TUI lines are 6,128 versus 6,048,
-including the new fullscreen integration and regression test. The gain is fewer
-upstream adaptation points, not a reduction in total code. The p16 family stores
-the final implementation in four ordered patches; previous families are immutable.
+Compared with each version's pinned upstream, the TUI patch touches 34 implementation
+files instead of p15's 43, with 4,487 net added lines versus 4,513. This count excludes
+standalone tests, test-support files and snapshots; embedded tests remain included.
+Including all test adaptations, p16 touches 75 files and adds 6,167 net lines versus
+p15's 69 files and 6,048 lines. Native ownership reduces implementation adaptation
+points, while new coverage increases the total. The p16 family stores the final
+implementation in four ordered patches; previous families are immutable.
 
 ## Verification and remaining gates
 
@@ -57,12 +59,29 @@ widths, row clicks, unchanged composer drafts, native selection with CSA clicks
 disabled and raw-mode hiding. Old version-specific test skips are not carried
 forward without new evidence.
 
+On producer commit `e1058dd6b938cb434101e270eda9b9bc8d4871d1`,
+[A7 Windows Actions](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/35869757268)
+passed Native Join integration, Subagent Live (including fullscreen input geometry)
+and Orbit checks. The complete TUI suite reached 5,393 passes, 29 failures and five
+existing ignores. A8 adapts the new tests to the preserved CSA display contract,
+fixes test-runtime/duplicate-assertion setup, and uses the shared version constant
+for the update prompt. These changes still need native confirmation.
+
+Producer CI accepts an optional `upstream_tui_baseline` compatibility ID to run the
+seven directory/trust cases on unpatched upstream on Windows. It resolves exact
+source/compiler identity and test settings from the same catalog, checks that all
+selected tests exist, records each exit code and fails on any failure. Each case
+runs in a fresh process, unlike the complete suite; passing this diagnostic alone
+cannot exclude shared-process effects. No candidate tests are skipped. Snapshot
+diagnostics show differences while snapshot updates remain disabled.
+
 Official Windows x64 binary SHA-256:
 `70bcb05f9bf1a4e7306edd0cd1b57d02af3267ad02a34b26f45c8c4bb20a3301`.
 All 69 migration SQL inputs in that verified binary match the native CRLF
 representation used by the Windows compatibility path.
 
-Native build/test results, matching official/candidate/official cold-unplug runs,
-real ConPTY coverage in both display modes, and terminal-specific Kitty/Sixel
-observations remain **NOT VERIFIED** until their evidence is collected. Source
-checks do not grant release acceptance. No installed CLI or user home is changed.
+The complete native contract, TUI Clippy, final-source platform artifacts, matching
+official/candidate/official cold-unplug runs, real ConPTY coverage in both display
+modes, and terminal-specific Kitty/Sixel observations remain **NOT VERIFIED**.
+Source checks and earlier-source builds do not grant release acceptance. No
+installed CLI or user home is changed.

@@ -1693,6 +1693,32 @@ index bcf9d75fef9074d9d0228aea2dc8924a78b95d6a..8bc684b6d83c4a30eae72c2c4ab567fc
      /// Returns the adjacent thread id for keyboard navigation, backfilling from the server if the
      /// local cache has no neighbor.
      ///
+diff --git a/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap b/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap
+index 91094ce9a9282d13e7d3d0456ff4815ec01ab755..7f9781ea03e70cc50e98e00e9054300a763ebd06 100644
+--- a/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap
++++ b/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap
+@@ -3,7 +3,7 @@ source: tui/src/app/empty_state_animation_tests.rs
+ expression: text(after)
+ ---
+ ╭───────────────────────────────────────────╮
+-│ >_ OpenAI Codex (v0.0.0)                  │
++│ >_ OpenAI Codex (v0.0.0-CSA)              │
+ │                                           │
+ │ model:     GPT-5.6-Sol   /model to change │
+ │ directory: /tmp/project                   │
+diff --git a/codex-rs/tui/src/app/snapshots/codex_tui__app__tests__app_server_thread_replacement_clears_previous_transcript_before_replay-2.snap b/codex-rs/tui/src/app/snapshots/codex_tui__app__tests__app_server_thread_replacement_clears_previous_transcript_before_replay-2.snap
+index 4b9aa6a689ae55e7a793848d296de321ecfd8c57..9e754ccd8c8a25b2d391d00e1fa7932e80000459 100644
+--- a/codex-rs/tui/src/app/snapshots/codex_tui__app__tests__app_server_thread_replacement_clears_previous_transcript_before_replay-2.snap
++++ b/codex-rs/tui/src/app/snapshots/codex_tui__app__tests__app_server_thread_replacement_clears_previous_transcript_before_replay-2.snap
+@@ -4,7 +4,7 @@ assertion_line: 6350
+ expression: rendered
+ ---
+ ╭────────────────────────────────────────╮
+-│ >_ OpenAI Codex (v0.0.0)               │
++│ >_ OpenAI Codex (v0.0.0-CSA)           │
+ │                                        │
+ │ model:     gpt-test   /model to change │
+ │ directory: <thread cwd>                │
 diff --git a/codex-rs/tui/src/app/startup.rs b/codex-rs/tui/src/app/startup.rs
 index d135ec08a298dc116504f3cd95ee8047214975e5..55a6434d396131002f47128c5d5a56fdde478aec 100644
 --- a/codex-rs/tui/src/app/startup.rs
@@ -1736,7 +1762,7 @@ index c4b1e6360712691286a2f11c52ce51fc700b368a..1ec2804606b5ca7eef609274c35f6a71
          side_threads: HashMap::new(),
          abandoned_side_threads: HashSet::new(),
 diff --git a/codex-rs/tui/src/app/tests.rs b/codex-rs/tui/src/app/tests.rs
-index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..7c5d5afeb30aab615d957c2039ec832d6994f50c 100644
+index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..23000ee1c88fb769003b61a212f455181d0e12b1 100644
 --- a/codex-rs/tui/src/app/tests.rs
 +++ b/codex-rs/tui/src/app/tests.rs
 @@ -379,14 +379,18 @@ async fn chat_widget_frame_reuses_active_cell_height_across_frame_passes() {
@@ -2705,7 +2731,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..7c5d5afeb30aab615d957c2039ec832d
 +                .filter_map(|line| line.split_once("Saved child answer"))
 +                .map(|(_, suffix)| format!("Saved child answer{suffix}"))
 +                .collect::<Vec<_>>();
-+            assert_snapshot!(answers.join("\n"), @"Saved child answer");
++            assert_eq!(answers, ["Saved child answer"]);
              assert_eq!(
                  app.agent_navigation.is_parent_owned(child_thread_id),
                  multi_agent_version == MultiAgentVersion::V2
@@ -2882,6 +2908,19 @@ index 4e9507f9d8c26aa1af4a86a3ed11e54f3dee6bd0..c5fc5f5b1ad284a966246c560661fa1c
  #[tokio::test]
  async fn physical_dispatch_band_events_are_dropped() -> Result<()> {
      let (mut app, mut tui, mut app_server) = chord_app().await?;
+diff --git a/codex-rs/tui/src/app/tests/safety_buffering.rs b/codex-rs/tui/src/app/tests/safety_buffering.rs
+index 22991f1cb50b7c2b13a156f0a15d8a1a9f6e83f9..c9519aac6c89278812659fbb2bfa7256bbc0c771 100644
+--- a/codex-rs/tui/src/app/tests/safety_buffering.rs
++++ b/codex-rs/tui/src/app/tests/safety_buffering.rs
+@@ -397,7 +397,7 @@ stream_max_retries = 0
+         None
+     );
+ 
+-    insta::assert_snapshot!(app.chat_widget.composer_text_with_pending(), @"");
++    assert_eq!(app.chat_widget.composer_text_with_pending(), "");
+     assert!(
+         std::iter::from_fn(|| app_event_rx.try_recv().ok())
+             .all(|event| !matches!(event, AppEvent::CodexOp(AppCommand::UserTurn { .. })))
 diff --git a/codex-rs/tui/src/app/tests/session_lifecycle_requests.rs b/codex-rs/tui/src/app/tests/session_lifecycle_requests.rs
 index 28344b49be41f4163ff95540a0ee37053550bbdf..4507bd2259ceb153ddc0a7dd3c36d335e31c6ec5 100644
 --- a/codex-rs/tui/src/app/tests/session_lifecycle_requests.rs
@@ -2895,6 +2934,58 @@ index 28344b49be41f4163ff95540a0ee37053550bbdf..4507bd2259ceb153ddc0a7dd3c36d335
      fs::write(trusted.join(".codex/config.toml"), contents)?;
      let agents = trusted.join("AGENTS.md");
      fs::write(&agents, "Follow destination project instructions.")?;
+diff --git a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_buffered_replay_reconciles_captions.snap b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_buffered_replay_reconciles_captions.snap
+index 0b2502336356d79712929670495c9371c73f2a2e..ee94e7d440ad6109a3ebb8224fef45cef8862e83 100644
+--- a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_buffered_replay_reconciles_captions.snap
++++ b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_buffered_replay_reconciles_captions.snap
+@@ -4,7 +4,7 @@ assertion_line: 645
+ expression: "normalize_voice_snapshot_directory(&rendered, &app.config.cwd)"
+ ---
+ ╭────────────────────────────────────────╮
+-│ >_ OpenAI Codex (v0.0.0)               │
++│ >_ OpenAI Codex (v0.0.0-CSA)           │
+ │                                        │
+ │ model:     gpt-test   /model to change │
+ │ directory: /tmp/project                │
+diff --git a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_completed_after_thread_switch.snap b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_completed_after_thread_switch.snap
+index 8893207f3b7d2388cfead7e549a81164d12b2e9b..c729b3a0fdd42bf44963abb94367bb6d146b91f1 100644
+--- a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_completed_after_thread_switch.snap
++++ b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_completed_after_thread_switch.snap
+@@ -4,7 +4,7 @@ assertion_line: 1023
+ expression: "normalize_voice_snapshot_directory(&rendered, &app.config.cwd)"
+ ---
+ ╭────────────────────────────────────────╮
+-│ >_ OpenAI Codex (v0.0.0)               │
++│ >_ OpenAI Codex (v0.0.0-CSA)           │
+ │                                        │
+ │ model:     gpt-test   /model to change │
+ │ directory: /tmp/project                │
+diff --git a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_partial_completed_after_thread_switch.snap b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_partial_completed_after_thread_switch.snap
+index 44a8b74e8ffb4c5f5ace0fc5f9381c79f6efe0b7..26c8aa3d3280a5bf5f7ccbb4c905ec77dd76de61 100644
+--- a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_partial_completed_after_thread_switch.snap
++++ b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_partial_completed_after_thread_switch.snap
+@@ -4,7 +4,7 @@ assertion_line: 302
+ expression: "normalize_voice_snapshot_directory(&rendered, &app.config.cwd)"
+ ---
+ ╭────────────────────────────────────────╮
+-│ >_ OpenAI Codex (v0.0.0)               │
++│ >_ OpenAI Codex (v0.0.0-CSA)           │
+ │                                        │
+ │ model:     gpt-test   /model to change │
+ │ directory: /tmp/project                │
+diff --git a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_replay_reconciles_matching_captions.snap b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_replay_reconciles_matching_captions.snap
+index 76e81da3ea2ed5cd822c7db42b70acf37f80ca30..d4324a4814630d13324a7bec37338fc755f656db 100644
+--- a/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_replay_reconciles_matching_captions.snap
++++ b/codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_replay_reconciles_matching_captions.snap
+@@ -4,7 +4,7 @@ assertion_line: 561
+ expression: "normalize_voice_snapshot_directory(&rendered, &app.config.cwd)"
+ ---
+ ╭────────────────────────────────────────╮
+-│ >_ OpenAI Codex (v0.0.0)               │
++│ >_ OpenAI Codex (v0.0.0-CSA)           │
+ │                                        │
+ │ model:     gpt-test   /model to change │
+ │ directory: /tmp/project                │
 diff --git a/codex-rs/tui/src/app/thread_event_buffer.rs b/codex-rs/tui/src/app/thread_event_buffer.rs
 index 0e01361aae2ae0a2b5e1bb191d7eec289d1779d2..a3f4ee13b377240673891ab8bff72d54dd56b047 100644
 --- a/codex-rs/tui/src/app/thread_event_buffer.rs
@@ -3253,6 +3344,90 @@ index 35da32813febeb3a6297a61fcd1ebe52e4ed55fb..a5ffdbf71a177e85d88c51ea31baf46b
          }
      }
  
+diff --git a/codex-rs/tui/src/app/thread_title_tests.rs b/codex-rs/tui/src/app/thread_title_tests.rs
+index e9b10fbb85b7d403fdb692f78ba1b88a8229c714..0ac96e124b484af9b19e61a000a3b6356cfb2979 100644
+--- a/codex-rs/tui/src/app/thread_title_tests.rs
++++ b/codex-rs/tui/src/app/thread_title_tests.rs
+@@ -296,7 +296,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
+             .await?;
+         }
+         assert_eq!(app.chat_widget.thread_name(), None);
+-        assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++        assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+         assert_eq!(
+             app_server
+                 .thread_read(thread_id, /*include_turns*/ false)
+@@ -378,7 +378,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
+                 assert!(app.pending_thread_titles.is_empty());
+                 let popup = render_bottom_popup(&app.chat_widget, /*width*/ 120);
+                 assert!(popup.contains("Keep this title"));
+-                assert!(!popup.contains('⠋'));
++                assert!(!popup.contains('⠁'));
+                 if matches!(scenario, TitleScenario::ManualRename) {
+                     insta::assert_snapshot!(
+                         "manual_rename_cancels_thread_title",
+@@ -425,7 +425,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
+     }
+     assert!(app.temporary_structured_requests.is_empty());
+     assert!(app.pending_thread_titles.is_empty());
+-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+ 
+     let request = response.single_request();
+     assert!(
+@@ -775,7 +775,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
+         ((thread_id, suggestion), CancellationToken::new()),
+     ]);
+     app.sync_thread_title_progress();
+-    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+ 
+     app.on_thread_title_started(
+         &app_server,
+@@ -786,7 +786,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
+         Err("startup failed".to_string()),
+         CancellationToken::new(),
+     );
+-    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+     app.on_thread_title_started(
+         &app_server,
+         thread_id,
+@@ -797,7 +797,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
+         CancellationToken::new(),
+     );
+     assert!(app.pending_thread_titles.is_empty());
+-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+ 
+     let mut tui = crate::tui::test_support::make_test_tui()?;
+     app.pending_thread_titles.insert(
+@@ -817,14 +817,14 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
+         &mut tui,
+         ratatui::layout::Size::new(/*width*/ 120, /*height*/ 30),
+     )?;
+-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+     app.select_agent_thread(&mut tui, &mut app_server, thread_id)
+         .await?;
+     app.render_chat_widget_frame(
+         &mut tui,
+         ratatui::layout::Size::new(/*width*/ 120, /*height*/ 30),
+     )?;
+-    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+     app.handle_event(
+         &mut tui,
+         &mut app_server,
+@@ -838,7 +838,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
+     )
+     .await?;
+     assert!(app.pending_thread_titles.is_empty());
+-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
++    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠁'));
+     app_server.shutdown().await?;
+     Ok(())
+ }
 diff --git a/codex-rs/tui/src/chatwidget.rs b/codex-rs/tui/src/chatwidget.rs
 index 57591c40179808b9fc878d7a90729b374b2a8246..159a4a33d8e6c12c5211c58cb89ee5fd488d5ada 100644
 --- a/codex-rs/tui/src/chatwidget.rs
@@ -3401,6 +3576,19 @@ index 21eaf5207bd83a07a74a6fa0d7886ecb5c4218b4..00000000000000000000000000000000
 -• Finished waiting
 -  └ Robie [explorer]: Completed - Done
 -    Ada [reviewer]: Running
+diff --git a/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__catalog_model_session_header_startup.snap b/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__catalog_model_session_header_startup.snap
+index 65f90350893b96fd6ad73a61eb83da074d0ee0bc..b4c5cfa5f6212f20fb7e3e6216bf92c2d18a3e9a 100644
+--- a/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__catalog_model_session_header_startup.snap
++++ b/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__catalog_model_session_header_startup.snap
+@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests/app_server.rs
+ assertion_line: 99
+ expression: rendered
+ ---
+-OpenAI Codex (v<VERSION>)
++OpenAI Codex (v<VERSION>-CSA)
+ model: GPT-5.6 Luna high
+ directory: /tmp/thread-settings
+ 
 diff --git a/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap b/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap
 index cc63d0d4885429665d466a0d9fdc6444149b836d..b3c1078d7b76f519ae1a33267c765a467b6b5e8e 100644
 --- a/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__default_footer_generating_thread_title.snap
@@ -3527,6 +3715,18 @@ index 95b6ea1a1d38892d80634a0625135059e218a925..fad9c2bbb03c9005eae6aa0bbb490fd7
          handle_turn_started(&mut chat, "turn-1");
          let payload = paste_hidden_shell_payload(&mut chat);
  
+diff --git a/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__status_surface_previews__thread_color_preview_matches_footer_while_auto_naming.snap b/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__status_surface_previews__thread_color_preview_matches_footer_while_auto_naming.snap
+index a2a15b229cfa13461464470105250ba1d5b1d0dc..295b9b4236e0bcd79829b8b736475530bba2794e 100644
+--- a/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__status_surface_previews__thread_color_preview_matches_footer_while_auto_naming.snap
++++ b/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__status_surface_previews__thread_color_preview_matches_footer_while_auto_naming.snap
+@@ -4,5 +4,5 @@ expression: "snapshot.join(\"\\n\")"
+ ---
+ pending=false colors=true: Line::from_iter([Span::from("Named task").fg(Color::Rgb(242, 205, 205)), Span::from(" · ").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from("Named task").fg(Color::Rgb(242, 205, 205))])
+ pending=false colors=false: Line::from_iter([Span::from("Named task").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from(" · ").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from("Named task").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim()])
+-pending=true colors=true: Line::from_iter([Span::from("Named task ⠋").fg(Color::Rgb(242, 205, 205)), Span::from(" · ").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from("Named task ⠋").fg(Color::Rgb(242, 205, 205))])
+-pending=true colors=false: Line::from_iter([Span::from("Named task ⠋").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from(" · ").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from("Named task ⠋").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim()])
++pending=true colors=true: Line::from_iter([Span::from("Named task ⠁").fg(Color::Rgb(242, 205, 205)), Span::from(" · ").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from("Named task ⠁").fg(Color::Rgb(242, 205, 205))])
++pending=true colors=false: Line::from_iter([Span::from("Named task ⠁").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from(" · ").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim(), Span::from("Named task ⠁").fg(Color::Rgb(140, 140, 140)).not_bold().not_dim()])
 diff --git a/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap b/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap
 index 569f645c2176d0d84835261ea76315b61e4e2dac..25eb164e54aa9e527554c27fba9512b9c7f21244 100644
 --- a/codex-rs/tui/src/chatwidget/tests/snapshots/codex_tui__chatwidget__tests__terminal_title__thread_title_generation_status_surfaces.snap
@@ -3552,6 +3752,342 @@ index 569f645c2176d0d84835261ea76315b61e4e2dac..25eb164e54aa9e527554c27fba9512b9
  
  name=Some("Fix login timeout"), pending=false
  status: Fix login timeout | Fix login timeout | 550e8400-e29b-41d4-a716-446655440000
+diff --git a/codex-rs/tui/src/chatwidget/tests/subagent_activity_tests.rs b/codex-rs/tui/src/chatwidget/tests/subagent_activity_tests.rs
+index 2266b3d0c6b06648f8db157e1f5d169487dd9c3d..cd64dc29758a83091d6653e01ce899b436640a9d 100644
+--- a/codex-rs/tui/src/chatwidget/tests/subagent_activity_tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests/subagent_activity_tests.rs
+@@ -1,11 +1,19 @@
+ //! Subagent notifications must preserve one authoritative answer across streaming boundaries.
+ 
+ use super::*;
++use codex_app_server_protocol::SubAgentActivityKind;
+ use pretty_assertions::assert_eq;
+ 
+ const PREFIX: &str = "The top is PR #42.\n\n";
+ const SUFFIX: &str = "Branch: feature/rollout.";
+-const ACTIVITY: &str = "• Completed `/root/stack_tip`\n";
++// Lifecycle rows belong to Subagent Live; interactions remain in the transcript.
++const ACTIVITY_CASES: [(SubAgentActivityKind, Option<&str>); 2] = [
++    (SubAgentActivityKind::Completed, None),
++    (
++        SubAgentActivityKind::Interacted,
++        Some("• Interacted with `/root/stack_tip`\n"),
++    ),
++];
+ 
+ #[derive(Debug, PartialEq, Eq)]
+ enum FinalizedEvent {
+@@ -13,10 +21,10 @@ enum FinalizedEvent {
+     History(String),
+ }
+ 
+-fn complete_subagent(chat: &mut ChatWidget, id: &str) {
++fn subagent_activity(chat: &mut ChatWidget, id: &str, kind: SubAgentActivityKind) {
+     let item = AppServerThreadItem::SubAgentActivity {
+         id: id.to_string(),
+-        kind: codex_app_server_protocol::SubAgentActivityKind::Completed,
++        kind,
+         agent_thread_id: ThreadId::new().to_string(),
+         agent_path: "/root/stack_tip".to_string(),
+     };
+@@ -77,153 +85,166 @@ fn drain_finalized_transcript(
+ #[tokio::test]
+ async fn subagent_completion_preserves_stream_and_authoritative_answer() {
+     let answer = format!("{PREFIX}{SUFFIX}");
+-    for (before_activity, after_activity) in [
+-        // The reported session: all deltas precede activity, then the answer item completes.
+-        (answer.as_str(), ""),
+-        // The same activity can arrive before the remaining answer deltas.
+-        (PREFIX, SUFFIX),
+-        // Authoritative completion must still repair a dropped final delta.
+-        (PREFIX, ""),
+-    ] {
+-        let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+-        handle_turn_started(&mut chat, "turn-1");
+-        handle_agent_message_delta(&mut chat, before_activity);
+-        chat.run_commit_tick();
+-
+-        complete_subagent(&mut chat, "activity-1");
+-        assert!(chat.stream_controller.is_some());
+-        assert!(!chat.interrupts.is_empty());
+-        assert_eq!(
+-            drain_finalized_transcript(&mut rx),
+-            (Vec::new(), String::new())
+-        );
+-
+-        if !after_activity.is_empty() {
+-            handle_agent_message_delta(&mut chat, after_activity);
+-        }
+-        complete_assistant_message(&mut chat, "msg-1", &answer, Some(MessagePhase::FinalAnswer));
+-        handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+-
+-        let (events, rendered) = drain_finalized_transcript(&mut rx);
+-        assert_eq!(
+-            events,
+-            vec![
+-                FinalizedEvent::Answer(answer.clone()),
+-                FinalizedEvent::History(ACTIVITY.to_string()),
+-            ],
+-        );
+-        assert!(chat.interrupts.is_empty());
+-        assert_eq!(
+-            chat.transcript.last_agent_markdown.as_deref(),
+-            Some(answer.as_str())
+-        );
+-        insta::allow_duplicates! {
+-            insta::assert_snapshot!(rendered, @"
++    for (kind, activity) in ACTIVITY_CASES {
++        for (before_activity, after_activity) in [
++            // The reported session: all deltas precede activity, then the answer item completes.
++            (answer.as_str(), ""),
++            // The same activity can arrive before the remaining answer deltas.
++            (PREFIX, SUFFIX),
++            // Authoritative completion must still repair a dropped final delta.
++            (PREFIX, ""),
++        ] {
++            let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++            handle_turn_started(&mut chat, "turn-1");
++            handle_agent_message_delta(&mut chat, before_activity);
++            chat.run_commit_tick();
++
++            subagent_activity(&mut chat, "activity-1", kind);
++            assert!(chat.stream_controller.is_some());
++            assert!(!chat.interrupts.is_empty());
++            assert_eq!(
++                drain_finalized_transcript(&mut rx),
++                (Vec::new(), String::new())
++            );
++
++            if !after_activity.is_empty() {
++                handle_agent_message_delta(&mut chat, after_activity);
++            }
++            complete_assistant_message(
++                &mut chat,
++                "msg-1",
++                &answer,
++                Some(MessagePhase::FinalAnswer),
++            );
++            handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
++
++            let (events, rendered) = drain_finalized_transcript(&mut rx);
++            let mut expected = vec![FinalizedEvent::Answer(answer.clone())];
++            expected.extend(activity.map(|text| FinalizedEvent::History(text.to_string())));
++            assert_eq!(events, expected);
++            assert!(chat.interrupts.is_empty());
++            assert_eq!(
++                chat.transcript.last_agent_markdown.as_deref(),
++                Some(answer.as_str())
++            );
++            if activity.is_some() {
++                insta::allow_duplicates! {
++                    insta::assert_snapshot!(rendered, @"
+             • The top is PR #42.
+ 
+               Branch: feature/rollout.
+ 
+-            • Completed `/root/stack_tip`
++            • Interacted with `/root/stack_tip`
+             ");
++                }
++            } else {
++                insta::allow_duplicates! {
++                    insta::assert_snapshot!(rendered, @"
++                • The top is PR #42.
++
++                  Branch: feature/rollout.
++                ");
++                }
++            }
+         }
+     }
+ }
+ 
+ #[tokio::test]
+ async fn interrupted_answer_flushes_queued_subagent_activity() {
+-    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+-    handle_turn_started(&mut chat, "turn-1");
+-    handle_agent_message_delta(&mut chat, PREFIX);
+-    chat.run_commit_tick();
+-    complete_subagent(&mut chat, "activity-1");
+-    assert!(!chat.interrupts.is_empty());
+-
+-    handle_turn_interrupted(&mut chat, "turn-1");
+-
+-    let (events, _rendered) = drain_finalized_transcript(&mut rx);
+-    assert_eq!(events.len(), 3);
+-    assert_eq!(
+-        &events[..2],
+-        &[
+-            FinalizedEvent::Answer(PREFIX.trim_end().to_string()),
+-            FinalizedEvent::History(ACTIVITY.to_string()),
+-        ],
+-    );
+-    let FinalizedEvent::History(interrupted) = &events[2] else {
+-        panic!("expected interruption notice after the answer and subagent activity");
+-    };
+-    assert!(interrupted.starts_with("■ Conversation interrupted"));
+-    assert!(chat.interrupts.is_empty());
+-    assert!(chat.stream_controller.is_none());
+-}
+-
+-#[tokio::test]
+-async fn terminal_turn_drains_subagents_without_opening_queued_questions() {
+-    for status in [AppServerTurnStatus::Completed, AppServerTurnStatus::Failed] {
++    for (kind, activity) in ACTIVITY_CASES {
+         let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+         handle_turn_started(&mut chat, "turn-1");
+         handle_agent_message_delta(&mut chat, PREFIX);
+         chat.run_commit_tick();
+-        chat.on_request_user_input(ToolRequestUserInputParams {
+-            thread_id: "thread-1".to_string(),
+-            turn_id: "turn-1".to_string(),
+-            item_id: "question-1".to_string(),
+-            questions: vec![ToolRequestUserInputQuestion {
+-                id: "scope".to_string(),
+-                header: "Scope".to_string(),
+-                question: "Which change should I review?".to_string(),
+-                is_other: false,
+-                is_secret: false,
+-                options: None,
+-            }],
+-            is_blocking: true,
+-            auto_resolution_ms: None,
+-        });
+-        complete_subagent(&mut chat, "activity-1");
+-        assert!(chat.interrupts.has_pending_prompt());
+-        assert!(!chat.bottom_pane.has_active_view());
+-
+-        let mut expected = vec![
+-            FinalizedEvent::Answer(PREFIX.trim_end().to_string()),
+-            FinalizedEvent::History(ACTIVITY.to_string()),
+-        ];
+-        let error = (status == AppServerTurnStatus::Failed).then(|| {
+-            expected.push(FinalizedEvent::History(
+-                "■ stream disconnected\n".to_string(),
+-            ));
+-            AppServerTurnError {
+-                message: "stream disconnected".to_string(),
+-                misalignment: None,
+-                codex_error_info: None,
+-                additional_details: None,
+-            }
+-        });
+-        // There is no final answer item; turn termination must settle the stream and activity.
+-        chat.handle_server_notification(
+-            ServerNotification::TurnCompleted(TurnCompletedNotification {
+-                thread_id: "thread-1".to_string(),
+-                turn: app_server_turn("turn-1", status, /*duration_ms*/ None, error),
+-            }),
+-            /*replay_kind*/ None,
+-        );
+-        assert_eq!(drain_finalized_transcript(&mut rx).0, expected);
+-        assert!(chat.interrupts.has_pending_prompt());
+-        assert!(!chat.bottom_pane.has_active_view());
+-        assert!(!chat.turn_lifecycle.agent_turn_running);
+-        assert!(chat.stream_controller.is_none());
++        subagent_activity(&mut chat, "activity-1", kind);
++        assert!(!chat.interrupts.is_empty());
+ 
+-        // Another child may finish after the parent stops, while the old question remains queued.
+-        complete_subagent(&mut chat, "activity-2");
+-        assert_eq!(
+-            drain_finalized_transcript(&mut rx).0,
+-            vec![FinalizedEvent::History(ACTIVITY.to_string())],
+-        );
+-        assert!(!chat.bottom_pane.has_active_view());
+-        assert!(chat.interrupts.remove_resolved_prompt(
+-            &crate::app::app_server_requests::ResolvedAppServerRequest::UserInput {
+-                call_id: "question-1".to_string(),
+-            },
+-        ));
++        handle_turn_interrupted(&mut chat, "turn-1");
++
++        let (mut events, _rendered) = drain_finalized_transcript(&mut rx);
++        let Some(FinalizedEvent::History(interrupted)) = events.pop() else {
++            panic!("expected interruption notice after the answer and subagent activity");
++        };
++        assert!(interrupted.starts_with("■ Conversation interrupted"));
++        let mut expected = vec![FinalizedEvent::Answer(PREFIX.trim_end().to_string())];
++        expected.extend(activity.map(|text| FinalizedEvent::History(text.to_string())));
++        assert_eq!(events, expected);
+         assert!(chat.interrupts.is_empty());
++        assert!(chat.stream_controller.is_none());
++    }
++}
++
++#[tokio::test]
++async fn terminal_turn_drains_subagents_without_opening_queued_questions() {
++    for (kind, activity) in ACTIVITY_CASES {
++        for status in [AppServerTurnStatus::Completed, AppServerTurnStatus::Failed] {
++            let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
++            handle_turn_started(&mut chat, "turn-1");
++            handle_agent_message_delta(&mut chat, PREFIX);
++            chat.run_commit_tick();
++            chat.on_request_user_input(ToolRequestUserInputParams {
++                thread_id: "thread-1".to_string(),
++                turn_id: "turn-1".to_string(),
++                item_id: "question-1".to_string(),
++                questions: vec![ToolRequestUserInputQuestion {
++                    id: "scope".to_string(),
++                    header: "Scope".to_string(),
++                    question: "Which change should I review?".to_string(),
++                    is_other: false,
++                    is_secret: false,
++                    options: None,
++                }],
++                is_blocking: true,
++                auto_resolution_ms: None,
++            });
++            subagent_activity(&mut chat, "activity-1", kind);
++            assert!(chat.interrupts.has_pending_prompt());
++            assert!(!chat.bottom_pane.has_active_view());
++
++            let mut expected = vec![FinalizedEvent::Answer(PREFIX.trim_end().to_string())];
++            expected.extend(activity.map(|text| FinalizedEvent::History(text.to_string())));
++            let error = (status == AppServerTurnStatus::Failed).then(|| {
++                expected.push(FinalizedEvent::History(
++                    "■ stream disconnected\n".to_string(),
++                ));
++                AppServerTurnError {
++                    message: "stream disconnected".to_string(),
++                    misalignment: None,
++                    codex_error_info: None,
++                    additional_details: None,
++                }
++            });
++            // There is no final answer item; turn termination must settle the stream and activity.
++            chat.handle_server_notification(
++                ServerNotification::TurnCompleted(TurnCompletedNotification {
++                    thread_id: "thread-1".to_string(),
++                    turn: app_server_turn("turn-1", status, /*duration_ms*/ None, error),
++                }),
++                /*replay_kind*/ None,
++            );
++            assert_eq!(drain_finalized_transcript(&mut rx).0, expected);
++            assert!(chat.interrupts.has_pending_prompt());
++            assert!(!chat.bottom_pane.has_active_view());
++            assert!(!chat.turn_lifecycle.agent_turn_running);
++            assert!(chat.stream_controller.is_none());
++
++            // Another child may finish after the parent stops, while the old question remains queued.
++            subagent_activity(&mut chat, "activity-2", kind);
++            assert_eq!(
++                drain_finalized_transcript(&mut rx).0,
++                activity
++                    .map(|text| FinalizedEvent::History(text.to_string()))
++                    .into_iter()
++                    .collect::<Vec<_>>(),
++            );
++            assert!(!chat.bottom_pane.has_active_view());
++            assert!(chat.interrupts.remove_resolved_prompt(
++                &crate::app::app_server_requests::ResolvedAppServerRequest::UserInput {
++                    call_id: "question-1".to_string(),
++                },
++            ));
++            assert!(chat.interrupts.is_empty());
++        }
+     }
+ }
 diff --git a/codex-rs/tui/src/chatwidget/tests/terminal_title.rs b/codex-rs/tui/src/chatwidget/tests/terminal_title.rs
 index f454398803d069d7364a61ebb8211052a6e13343..d4287e3a752997a173d8c205494c9e55ca439b08 100644
 --- a/codex-rs/tui/src/chatwidget/tests/terminal_title.rs
@@ -4474,6 +5010,45 @@ index 2bc6083fcd85a1ba8d4825b57d1b8a48e59d0e51..712897364ffa517f744835819fe5d26c
 -    Bob [worker]: Error - tool timeout
 -
  • Closed Robie [explorer]
+diff --git a/codex-rs/tui/src/snapshots/codex_tui__startup_draft__layout__tests__owned_startup_layout.snap b/codex-rs/tui/src/snapshots/codex_tui__startup_draft__layout__tests__owned_startup_layout.snap
+index 9de37490a3a846aee15681ff68012ddf75efdffa..873076a9cf8e1200ccfeac6219f8bd5d5533043b 100644
+--- a/codex-rs/tui/src/snapshots/codex_tui__startup_draft__layout__tests__owned_startup_layout.snap
++++ b/codex-rs/tui/src/snapshots/codex_tui__startup_draft__layout__tests__owned_startup_layout.snap
+@@ -3,19 +3,19 @@ source: tui/src/startup_draft_layout_tests.rs
+ expression: startup_layout
+ ---
+ cursor=Some((13, 12))
+-╭───────────────────────────────────────╮       
+-│ >_ OpenAI Codex (v<VERSION>)              │       
+-│                                       │       
+-│ model:     loading   /model to change │       
+-│ directory: loading                    │       
+-╰───────────────────────────────────────╯       
+-                                                
+-                                                
+-                                                
+-                                                
+-                                                
+-› first line                                    
+-  second line                                   
+-                                                
+-                                                
++╭───────────────────────────────────────╮
++│ >_ OpenAI Codex (v<VERSION>-CSA)          │
++│                                       │
++│ model:     loading   /model to change │
++│ directory: loading                    │
++╰───────────────────────────────────────╯
++
++
++
++
++
++› first line
++  second line
++
++
+   Waiting for startup  · esc cancel
 diff --git a/codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_fresh_session_transitions.snap b/codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_fresh_session_transitions.snap
 index 32f6de9153ba7728c4ded596147e15777785e186..ad3398774220b422db3305014ba916956d5f128c 100644
 --- a/codex-rs/tui/src/snapshots/codex_tui__startup_draft__tests__startup_draft_fresh_session_transitions.snap
@@ -4585,6 +5160,19 @@ index 6284b0715efd2e4d358a280685ac07ea44854fc5..2980f4ef6ad059ed227d29e2cc1d1f80
  │                                       │
  │ model:     loading   /model to change │
  │ directory: loading                    │
+diff --git a/codex-rs/tui/src/startup_draft_layout_tests.rs b/codex-rs/tui/src/startup_draft_layout_tests.rs
+index b32d9f1e08e675e3d6b684db15f8853c743bebcc..9f78216c79bc48056fa6e1a06e9bfec467be6dc3 100644
+--- a/codex-rs/tui/src/startup_draft_layout_tests.rs
++++ b/codex-rs/tui/src/startup_draft_layout_tests.rs
+@@ -27,6 +27,8 @@ fn owned_startup_keeps_the_live_bottom_geometry() {
+             (area.x..area.right())
+                 .map(|x| buffer[(x, y)].symbol())
+                 .collect::<String>()
++                .trim_end()
++                .to_string()
+         })
+         .collect::<Vec<_>>()
+         .join("\n");
 diff --git a/codex-rs/tui/src/startup_orchestration.rs b/codex-rs/tui/src/startup_orchestration.rs
 index d25281e88ee9e169cc29d7e9350fe0bd20d42b48..9be92b2e8d3e01d2080178e0674b64b2ae056406 100644
 --- a/codex-rs/tui/src/startup_orchestration.rs
@@ -4679,6 +5267,32 @@ index babf331fa2bab5b24c3c12241680ce2445c85fb4..e04f321843d77bea56062d956e736f98
 +        );
 +    }
 +}
+diff --git a/codex-rs/tui/src/thread_transcript/other_items_tests.rs b/codex-rs/tui/src/thread_transcript/other_items_tests.rs
+index 845f25e2a11bc72de8c327386f0a3f386e1dd232..37b0391d873e0046cdeed69ce19fdd06b2b245a0 100644
+--- a/codex-rs/tui/src/thread_transcript/other_items_tests.rs
++++ b/codex-rs/tui/src/thread_transcript/other_items_tests.rs
+@@ -160,6 +160,12 @@ fn tool_and_notice_projection_uses_normal_transcript_presentation() {
+             agent_thread_id: "01912345-1234-7123-8123-123456789abc".to_string(),
+             agent_path: "/root/reviewer".to_string(),
+         },
++        ThreadItem::SubAgentActivity {
++            id: "agent-2".to_string(),
++            kind: SubAgentActivityKind::Interacted,
++            agent_thread_id: "01912345-1234-7123-8123-123456789abc".to_string(),
++            agent_path: "/root/reviewer".to_string(),
++        },
+         ThreadItem::ExitedReviewMode {
+             id: "review-end".to_string(),
+             review: "No findings".to_string(),
+@@ -183,7 +189,7 @@ fn tool_and_notice_projection_uses_normal_transcript_presentation() {
+     • Generated Image:
+       └ A diagram of the history pages
+     • Image generation · in_progress
+-    • Completed `/root/reviewer`
++    • Interacted with `/root/reviewer`
+     << Code review finished: No findings >>
+     • Context compacted
+     ");
 diff --git a/codex-rs/tui/src/tui.rs b/codex-rs/tui/src/tui.rs
 index 9f03439747615a5416006b3fc4ddcd628f70d6f9..6b841b8f658d2fc27526c5d5f1e044416a0e2a0e 100644
 --- a/codex-rs/tui/src/tui.rs
@@ -5106,6 +5720,19 @@ index 9dc117bd48c4a78f40d5c3249c32cbaf0926869a..6996e8af040d231e071269b7da7eb7a3
      }
  
      #[tokio::test(flavor = "current_thread", start_paused = true)]
+diff --git a/codex-rs/tui/src/update_prompt.rs b/codex-rs/tui/src/update_prompt.rs
+index 30e948da89cf261acceecb5b4a3a2d648fb5ebb4..2e232b7d4eaabafec004f147a77e822fdace3710 100644
+--- a/codex-rs/tui/src/update_prompt.rs
++++ b/codex-rs/tui/src/update_prompt.rs
+@@ -126,7 +126,7 @@ impl UpdatePromptScreen {
+         Self {
+             request_frame,
+             latest_version,
+-            current_version: env!("CARGO_PKG_VERSION").to_string(),
++            current_version: crate::version::CODEX_CLI_VERSION.to_string(),
+             update_action,
+             highlighted: UpdateSelection::UpdateNow,
+             selection: None,
 diff --git a/codex-rs/tui/src/version.rs b/codex-rs/tui/src/version.rs
 index 8c8d108dc61314c01eeb31a987f48cf508f6fa9d..81e78d0a6c1a31d5599e4c6f171795514b0f6243 100644
 --- a/codex-rs/tui/src/version.rs

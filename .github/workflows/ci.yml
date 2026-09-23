@@ -15,6 +15,10 @@ on:
         description: "Repository manifest path for the optional candidate"
         type: string
         default: ""
+      upstream_tui_baseline:
+        description: "Optional compatibility ID for unpatched Windows TUI diagnostics"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -25,6 +29,122 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  upstream-tui-baseline:
+    name: Unpatched Windows TUI diagnostics
+    if: github.event_name == 'workflow_dispatch' && inputs.upstream_tui_baseline != ''
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.13"
+      - id: authority
+        name: Resolve exact upstream from the candidate catalog
+        shell: bash
+        env:
+          COMPAT_ID: ${{ inputs.upstream_tui_baseline }}
+        run: |
+          set -euo pipefail
+          python scripts/compat_catalog.py resolve --repository . --selector "$COMPAT_ID" \
+            --target x86_64-pc-windows-msvc --github-output "$GITHUB_OUTPUT"
+          root="$RUNNER_TEMP/c"
+          mkdir -p "$root"
+          {
+            echo "SOURCE_ROOT=$root/s"
+            echo "CARGO_HOME=$root/h"
+          } >> "$GITHUB_ENV"
+      - name: Clone unpatched upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -c core.autocrlf=false clone --filter=blob:none --no-checkout \
+            --branch '${{ steps.authority.outputs.upstream_tag }}' --single-branch \
+            https://github.com/openai/codex.git "$SOURCE_ROOT"
+          git -C "$SOURCE_ROOT" -c core.autocrlf=false checkout --detach '${{ steps.authority.outputs.upstream_commit }}'
+          test "$(git -C "$SOURCE_ROOT" rev-parse HEAD)" = '${{ steps.authority.outputs.upstream_commit }}'
+          test "$(git -C "$SOURCE_ROOT" rev-parse 'refs/tags/${{ steps.authority.outputs.upstream_tag }}^{commit}')" = '${{ steps.authority.outputs.upstream_commit }}'
+          test -z "$(git -C "$SOURCE_ROOT" status --porcelain)"
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - name: Configure exact compiler and upstream native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc -Vv | grep -F 'commit-hash: ${{ steps.authority.outputs.rustc_commit }}'
+          cd "$SOURCE_ROOT/codex-rs"
+          version="$(python "$SOURCE_ROOT/.github/scripts/rusty_v8_bazel.py" resolved-v8-crate-version)"
+          base_url="https://github.com/openai/codex/releases/download/rusty-v8-v${version}"
+          binding_dir="$RUNNER_TEMP/rusty_v8"
+          suffix=ptrcomp_sandbox_release_x86_64-pc-windows-msvc
+          mkdir -p "$binding_dir"
+          for file in "rusty_v8_${suffix}.lib.gz" "src_binding_${suffix}.rs" "rusty_v8_${suffix}.sha256"; do
+            curl -fsSL "$base_url/$file" -o "$binding_dir/$file"
+          done
+          test "$(wc -l < "$binding_dir/rusty_v8_${suffix}.sha256")" -eq 2
+          (cd "$binding_dir" && tr -d '\r' < "rusty_v8_${suffix}.sha256" | sha256sum -c -)
+          {
+            echo "RUSTY_V8_ARCHIVE=$binding_dir/rusty_v8_${suffix}.lib.gz"
+            echo "RUSTY_V8_SRC_BINDING_PATH=$binding_dir/src_binding_${suffix}.rs"
+            echo "LIBSQLITE3_FLAGS=SQLITE_DISABLE_INTRINSIC"
+            echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)"
+          } >> "$GITHUB_ENV"
+      - name: Configure MSVC environment
+        shell: pwsh
+        run: '& "$env:SOURCE_ROOT/.github/actions/setup-msvc-env/setup-msvc-env.ps1" -Target x86_64-pc-windows-msvc'
+      - name: Compare directory and trust tests without CSA patches
+        shell: bash
+        env:
+          BASELINE_MANIFEST: ${{ steps.authority.outputs.manifest_path }}
+        run: |
+          set -euo pipefail
+          python -u - <<'PY' 2>&1 | tee "$RUNNER_TEMP/c/upstream-tui.log"
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          sys.path.insert(0, str(Path.cwd() / "scripts"))
+          from run_patch_contract import environment, load_contract
+          from verify_patch_payload import _load_payload, _payload_file
+          payload = _load_payload(Path(os.environ["BASELINE_MANIFEST"]).resolve())
+          contract = load_contract(_payload_file(payload, "test-contract.json"), payload.manifest["compat_id"])
+          step = next(step for step in contract["tests"] if step["name"] == "complete TUI library")
+          source = Path(os.environ["SOURCE_ROOT"]).resolve()
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "c"
+          env = environment(contract["common_env"], step.get("env", {}), source, evidence / "tests")
+          command = ["cargo", "test", "-p", "codex-tui", "--lib"]
+          names = [
+              "app::agents_overview::tests::overview_cold_resume_honors_working_directory_selection",
+              "app::agents_overview::tests::restored_server_permission_profile_survives_cd_without_turn_override",
+              "app::tests::background_task_defaults_tests::command_center_new_reads_server_defaults_for_actual_destination",
+              "app::tests::in_app_resume_uses_configured_or_explicit_cwd",
+              "app::tests::remembered_current_cwd_stays_at_launch_across_in_app_resumes",
+              "app::tests::session_lifecycle_requests::changing_directory_preserves_project_trust_permissions_history_and_hooks",
+              "worktree_startup::tests::refreshed_bundle_rechecks_source_during_config_reload",
+          ]
+          listing = subprocess.check_output(command + ["--", "--list"], cwd=source / "codex-rs", env=env)
+          (evidence / "upstream-tui-list.txt").write_bytes(listing)
+          listed = set(listing.decode("utf-8").splitlines())
+          assert all(f"{name}: test" in listed for name in names), "baseline test missing"
+          results = []
+          for name in names:
+              print(f"Baseline test: {name}", flush=True)
+              result = subprocess.run(command + [name, "--", "--exact", "--test-threads=1"], cwd=source / "codex-rs", env=env)
+              results.append({"name": name, "exit_code": result.returncode})
+          report = {"producer_commit": os.environ["GITHUB_SHA"], "upstream_commit": payload.manifest["upstream_commit"], "patched": False, "execution": "each selected test in a fresh process", "tests": results}
+          (evidence / "upstream-tui-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+          raise SystemExit(int(any(item["exit_code"] != 0 for item in results)))
+          PY
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: upstream-tui-baseline
+          path: ${{ runner.temp }}/c/upstream-tui*
+          if-no-files-found: warn
+          retention-days: 7
+
   quality:
     runs-on: ubuntu-24.04
     steps:

@@ -3395,7 +3395,7 @@ index 0000000000000000000000000000000000000000..3b89351b9fcf0a77f921e8f9a331b220
 +mod tests;
 diff --git a/codex-rs/tui/src/tui/mouse_capture_tests.rs b/codex-rs/tui/src/tui/mouse_capture_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..811197f09e04d42271557bec23c5f1dcc47269e0
+index 0000000000000000000000000000000000000000..0f0292e7e634d1de61e0b3263f74dd9f6197dc62
 --- /dev/null
 +++ b/codex-rs/tui/src/tui/mouse_capture_tests.rs
 @@ -0,0 +1,206 @@
@@ -3422,8 +3422,8 @@ index 0000000000000000000000000000000000000000..811197f09e04d42271557bec23c5f1dc
 +    }
 +}
 +
-+#[test]
-+fn startup_mouse_policy_applies_after_logging_and_warns_once_without_raw_value() {
++#[tokio::test]
++async fn startup_mouse_policy_applies_after_logging_and_warns_once_without_raw_value() {
 +    for (input, expected, warns) in [
 +        (
 +            Err(VarError::NotPresent),

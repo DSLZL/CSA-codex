@@ -24,7 +24,7 @@
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
     "CARGO_TARGET_DIR": "{cargo_target}",
-    "INSTA_OUTPUT": "none",
+    "INSTA_OUTPUT": "diff",
     "INSTA_UPDATE": "no",
     "INSTA_WORKSPACE_ROOT": "{source}/codex-rs",
     "RUST_MIN_STACK": "8388608",
