@@ -693,10 +693,10 @@ index bab6e567373108f8c410795f54573b369809e2ad..9d328c79365e915ccd9496504e04eba0
  
  fn bounded_summary(summary: &str) -> Option<String> {
 diff --git a/codex-rs/tui/src/app/agent_status_feed_tests.rs b/codex-rs/tui/src/app/agent_status_feed_tests.rs
-index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..5b95834e4955818d20f6b844ba2f4806a5a4518b 100644
+index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..1a25d92df3077fca7d8805f89a6c6a8118bfc137 100644
 --- a/codex-rs/tui/src/app/agent_status_feed_tests.rs
 +++ b/codex-rs/tui/src/app/agent_status_feed_tests.rs
-@@ -1,8 +1,119 @@
+@@ -1,8 +1,122 @@
  use super::*;
 +use codex_app_server_protocol::CollabAgentToolCallStatus;
  use codex_app_server_protocol::CommandExecutionSource;
@@ -724,6 +724,7 @@ index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..5b95834e4955818d20f6b844ba2f4806
 +
 +fn command_item(status: CommandExecutionStatus, output: Option<&str>) -> ThreadItem {
 +    ThreadItem::CommandExecution {
++        model_context: None,
 +        id: "command-1".to_string(),
 +        command: "cargo test -p codex-tui".to_string(),
 +        cwd: AbsolutePathBuf::try_from("/workspace")
@@ -762,6 +763,7 @@ index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..5b95834e4955818d20f6b844ba2f4806
 +        arguments: json!({"secret": secret}),
 +        app_context: None,
 +        mcp_app_resource_uri: None,
++        mcp_app_ui: None,
 +        plugin_id: None,
 +        read_only_hint: None,
 +        result: None,
@@ -811,12 +813,13 @@ index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..5b95834e4955818d20f6b844ba2f4806
 +        failure: None,
 +        saved_path: None,
 +        imagegen_request_id: None,
++        generation_id: None,
 +    })
 +}
  
  #[test]
  fn agent_status_uses_bounded_buffered_activity() {
-@@ -63,6 +174,8 @@ fn agent_status_uses_bounded_buffered_activity() {
+@@ -63,6 +177,8 @@ fn agent_status_uses_bounded_buffered_activity() {
        • `/root/reviewer`
          $ cargo test -p codex-tui
          Finished checking the focused TUI tests.
@@ -825,7 +828,7 @@ index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..5b95834e4955818d20f6b844ba2f4806
      "###);
      assert!(!rendered.contains("unbounded output"));
  }
-@@ -110,7 +223,210 @@ fn agent_status_uses_reasoning_summaries_only() {
+@@ -110,7 +226,210 @@ fn agent_status_uses_reasoning_summaries_only() {
  
        • `/root/reviewer`
          safe summary
@@ -1728,7 +1731,7 @@ index c4b1e6360712691286a2f11c52ce51fc700b368a..1ec2804606b5ca7eef609274c35f6a71
          side_threads: HashMap::new(),
          abandoned_side_threads: HashSet::new(),
 diff --git a/codex-rs/tui/src/app/tests.rs b/codex-rs/tui/src/app/tests.rs
-index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a093369de88 100644
+index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..7c5d5afeb30aab615d957c2039ec832d6994f50c 100644
 --- a/codex-rs/tui/src/app/tests.rs
 +++ b/codex-rs/tui/src/app/tests.rs
 @@ -379,14 +379,18 @@ async fn chat_widget_frame_reuses_active_cell_height_across_frame_passes() {
@@ -2242,7 +2245,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a09
 +    assert_eq!(app.subagent_live_panel_frame.borrow().panel_rect(), None);
 +
 +    app.overlay = None;
-+    app.chat_widget.open_multi_agent_enable_prompt();
++    app.chat_widget.open_feature_enable_prompt(Feature::Collab);
 +    assert!(app.chat_widget.has_active_view());
 +    assert!(
 +        app.subagent_live_panel_renderable(screen_size, Instant::now())
@@ -2403,7 +2406,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a09
 +    ));
 +    assert!(app_event_rx.try_recv().is_err());
 +
-+    app.chat_widget.open_multi_agent_enable_prompt();
++    app.chat_widget.open_feature_enable_prompt(Feature::Collab);
 +    app.handle_mouse_event(click(
 +        region.rect.x,
 +        region.rect.y,
@@ -2484,7 +2487,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a09
 +    assert_eq!(app.left_return_target(left), None);
 +    app.overlay = None;
 +
-+    app.chat_widget.open_multi_agent_enable_prompt();
++    app.chat_widget.open_feature_enable_prompt(Feature::Collab);
 +    assert_eq!(app.left_return_target(left), None);
 +}
 +
@@ -2749,7 +2752,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a09
              pending_server_profiles: HashMap::new(),
              agents_overview: Default::default(),
              side_threads: HashMap::new(),
-@@ -7063,6 +7943,44 @@ fn thread_closed_notification(thread_id: ThreadId) -> ServerNotification {
+@@ -7063,6 +7943,45 @@ fn thread_closed_notification(thread_id: ThreadId) -> ServerNotification {
      })
  }
  
@@ -2761,6 +2764,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a09
 +    completed: bool,
 +) -> ServerNotification {
 +    let item = ThreadItem::CommandExecution {
++        model_context: None,
 +        id: item_id.to_string(),
 +        plugin_id: None,
 +        script_path: None,
@@ -2794,7 +2798,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a09
  fn token_usage_notification(
      thread_id: ThreadId,
      turn_id: &str,
-@@ -8643,13 +9561,12 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
+@@ -8643,13 +9562,12 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
                          turn_id: "turn-1".to_string(),
                          started_at_ms: 0,
                          item: ThreadItem::CollabAgentToolCall {
@@ -2812,7 +2816,7 @@ index 9c884f2ed327037b5d7e6945e4db1a7f1f84ef53..0a9e31fc8238b67b43f93a425a199a09
                              model: None,
                              reasoning_effort: None,
                              agents_states: HashMap::new(),
-@@ -8663,17 +9580,17 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
+@@ -8663,17 +9581,17 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
          /*resume_restored_queue*/ false,
      );
  
@@ -4610,10 +4614,10 @@ index b12a0692f02dc9fea1833f16c0441c20ec0ba586..c95caffed6f9b5c8b4732c3e2b26a359
          rels.push(display);
      }
 diff --git a/codex-rs/tui/src/thread_transcript.rs b/codex-rs/tui/src/thread_transcript.rs
-index babf331fa2bab5b24c3c12241680ce2445c85fb4..8fc24e95c28425c0f8f3cd485008ab2caa0071e6 100644
+index babf331fa2bab5b24c3c12241680ce2445c85fb4..e04f321843d77bea56062d956e736f98eea26c09 100644
 --- a/codex-rs/tui/src/thread_transcript.rs
 +++ b/codex-rs/tui/src/thread_transcript.rs
-@@ -338,3 +338,55 @@ fn item_to_cells(
+@@ -338,3 +338,56 @@ fn item_to_cells(
      }
      cells
  }
@@ -4623,6 +4627,7 @@ index babf331fa2bab5b24c3c12241680ce2445c85fb4..8fc24e95c28425c0f8f3cd485008ab2c
 +    use std::collections::HashMap;
 +
 +    use super::*;
++    use crate::test_support::PathBufExt;
 +
 +    #[test]
 +    fn subagent_live_control_items_are_omitted_from_hydrated_transcripts() {
