@@ -813,7 +813,7 @@ index 0000000000000000000000000000000000000000..65be814fbb4d7da8a06c1f8212293b23
 +}
 diff --git a/codex-rs/core/tests/suite/multi_agent_join.rs b/codex-rs/core/tests/suite/multi_agent_join.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..1e9ec3f9234c040498a46132b28a346a898030df
+index 0000000000000000000000000000000000000000..c6d2a93418115373ca45c01905054bb72eba63fc
 --- /dev/null
 +++ b/codex-rs/core/tests/suite/multi_agent_join.rs
 @@ -0,0 +1,1928 @@
@@ -838,7 +838,6 @@ index 0000000000000000000000000000000000000000..1e9ec3f9234c040498a46132b28a346a
 +use codex_core::test_support::wait_on_test_sync_barrier;
 +use codex_features::Feature;
 +use codex_history::RolloutItem;
-+use codex_history::RolloutLine;
 +use codex_protocol::config_types::CollaborationMode;
 +use codex_protocol::config_types::ModeKind;
 +use codex_protocol::config_types::Settings;
@@ -856,6 +855,7 @@ index 0000000000000000000000000000000000000000..1e9ec3f9234c040498a46132b28a346a
 +use codex_protocol::protocol::ThreadMemoryMode;
 +use codex_protocol::protocol::ThreadSettingsOverrides;
 +use codex_protocol::user_input::UserInput;
++use codex_rollout::parse_rollout_line;
 +use codex_thread_store::ItemSortKey;
 +use codex_thread_store::ListItemsParams;
 +use codex_thread_store::ListTimelineParams;
@@ -1971,7 +1971,7 @@ index 0000000000000000000000000000000000000000..1e9ec3f9234c040498a46132b28a346a
 +        // Decode every persisted line strictly; a tolerant loader skipping a private enum is a failure.
 +        let lines = raw
 +            .lines()
-+            .map(serde_json::from_str::<RolloutLine>)
++            .map(parse_rollout_line)
 +            .collect::<std::result::Result<Vec<_>, _>>()?;
 +        if id == root_id {
 +            let responses = lines
