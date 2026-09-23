@@ -1420,10 +1420,10 @@ index 9d6c83f02d733f32a55ad4506dabe17418a40c5b..3b03a04e3dbb743e5587111d3bfc80da
                  && self.handle_composer_copy_event(tui, event, tui::Tui::copy_transcript_selection)
              {
 diff --git a/codex-rs/tui/src/app/owned_transcript_tests.rs b/codex-rs/tui/src/app/owned_transcript_tests.rs
-index 057885cac37a23d1754e7ed959ef31014700d288..6af7375eaf7dca305f10c351c40653b820e6e59d 100644
+index 057885cac37a23d1754e7ed959ef31014700d288..9effbaec1c7531c043230948b204e992d5f85f92 100644
 --- a/codex-rs/tui/src/app/owned_transcript_tests.rs
 +++ b/codex-rs/tui/src/app/owned_transcript_tests.rs
-@@ -32,6 +32,129 @@ fn user_cell(message: &str) -> Arc<dyn HistoryCell> {
+@@ -32,6 +32,134 @@ fn user_cell(message: &str) -> Arc<dyn HistoryCell> {
      })
  }
  
@@ -1460,7 +1460,6 @@ index 057885cac37a23d1754e7ed959ef31014700d288..6af7375eaf7dca305f10c351c40653b8
 +    tui.configure_subagent_live_mouse(Ok("on".into()));
 +    for width in [120, 80, 60] {
 +        let size = Size::new(width, 40);
-+        tui.terminal.resize(size)?;
 +        tui.screen_size_for_event(&TuiEvent::Resize(size))?;
 +        let bottom = app.render_owned_transcript(&mut tui, size)?;
 +        let panel = app
@@ -1482,10 +1481,16 @@ index 057885cac37a23d1754e7ed959ef31014700d288..6af7375eaf7dca305f10c351c40653b8
 +            modifiers: KeyModifiers::NONE,
 +        });
 +        while events.try_recv().is_ok() {}
++        // The handler redraws; keep its geometry aligned with the simulated resize.
++        tui.screen_size_for_event(&TuiEvent::Resize(size))?;
 +        assert!(app.handle_owned_transcript_event(&mut tui, &mut server, &click)?);
 +        assert!(matches!(events.try_recv(), Ok(AppEvent::SelectAgentThread(id)) if id == child));
 +    }
 +    tui.configure_subagent_live_mouse(Ok("off".into()));
++    // Full app input queries the test backend's fixed size again.
++    let size = tui.terminal.size()?;
++    tui.screen_size_for_event(&TuiEvent::Resize(size))?;
++    app.render_owned_transcript(&mut tui, size)?;
 +    let hit = app.subagent_live_panel_frame.borrow().hit_regions()[0].clone();
 +    while events.try_recv().is_ok() {}
 +    app.handle_tui_event(
@@ -1534,7 +1539,7 @@ index 057885cac37a23d1754e7ed959ef31014700d288..6af7375eaf7dca305f10c351c40653b8
 +        "untouched draft"
 +    );
 +    app.chat_widget.set_raw_output_mode(true);
-+    app.render_owned_transcript(&mut tui, Size::new(60, 40))?;
++    app.render_owned_transcript(&mut tui, size)?;
 +    assert!(
 +        app.subagent_live_panel_frame
 +            .borrow()
