@@ -62,16 +62,15 @@ widths, row clicks, unchanged composer drafts, native selection with CSA clicks
 disabled and raw-mode hiding. Old version-specific test skips are not carried
 forward without new evidence.
 
-On producer commit `b07575f72f33061f1c920420dbaff2a1c9e3ccd4`,
-[A8 Windows Actions](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/35883884279)
-passed Native Join integration, Subagent Live (including fullscreen input geometry)
-and Orbit checks. The complete TUI suite reached 5,414 passes, eight failures and
-five existing ignores. The unpatched same-version Windows diagnostic reproduced
-all seven directory/trust failures at the same assertions. A9 replaces the
-inconsistent active-project path helper with the existing persistence/loader helper,
-adds a Windows regression for saved trust and distrust, and completes the remaining
-session-header snapshots. These fixes still need native confirmation; all seven
-directory/trust tests remain required.
+On producer commit `cc5fa44e0cf5e499f4a44f9c5b9b7a05e0ec744e`,
+[A9 Windows Actions](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/35894915787)
+passed both complete TUI/configuration libraries and their Clippy checks, including
+the directory/trust and session-header repairs. Native Join, Live/fullscreen
+geometry, Orbit, the official runtime overlay, all 201 state tests, native protocol
+and core configuration checks also passed. The contract then stopped compiling
+the rollout policy test: the moved upstream `HasLegacyEvent` trait was not imported.
+A10 adds that test import and retains the single/batch, Legacy/Paginated exact
+persistence assertions. The remaining contract steps still need native confirmation.
 
 Producer CI accepts an optional `upstream_tui_baseline` compatibility ID to run the
 seven directory/trust cases on unpatched upstream on Windows. It resolves exact
@@ -86,7 +85,7 @@ Official Windows x64 binary SHA-256:
 All 69 migration SQL inputs in that verified binary match the native CRLF
 representation used by the Windows compatibility path.
 
-The complete native contract, TUI Clippy, final-source platform artifacts, matching
+The remaining native contract checks, final-source platform artifacts, matching
 official/candidate/official cold-unplug runs, real ConPTY coverage in both display
 modes, and terminal-specific Kitty/Sixel observations remain **NOT VERIFIED**.
 Source checks and earlier-source builds do not grant release acceptance. No

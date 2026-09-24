@@ -2923,15 +2923,16 @@ index 0000000000000000000000000000000000000000..578ef1bcfa3f7897ceda4ad145227485
 +}
 diff --git a/codex-rs/rollout/src/policy_tests.rs b/codex-rs/rollout/src/policy_tests.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..814ec8bda7ab83652360b88c361d527a060b3fc1
+index 0000000000000000000000000000000000000000..2180e4f2d9bf06b2e5950a55f19f68edc9d4ab0a
 --- /dev/null
 +++ b/codex-rs/rollout/src/policy_tests.rs
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,57 @@
 +use super::*;
 +use codex_protocol::ThreadId;
 +use codex_protocol::items::CollabAgentToolCallItem;
 +use codex_protocol::items::CollabAgentToolCallStatus;
 +use codex_protocol::protocol::AgentStatus;
++use codex_protocol::protocol::HasLegacyEvent;
 +use codex_protocol::protocol::ItemCompletedEvent;
 +use codex_protocol::protocol::ItemStartedEvent;
 +use pretty_assertions::assert_eq;
