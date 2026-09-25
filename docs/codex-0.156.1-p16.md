@@ -1,9 +1,10 @@
-# Codex 0.156.1 candidate and fullscreen reuse
+# Codex 0.156.1 and fullscreen reuse
 
 `rust-v0.156.1-native-join-p16` targets the official stable
 [`rust-v0.156.1`](https://github.com/openai/codex/releases/tag/rust-v0.156.1)
-at `b412ff32c417f855c2b2d1581b77058eed87c84b`. It remains a development candidate;
-the accepted/current route is still `rust-v0.154.0-native-join-p15`.
+at `b412ff32c417f855c2b2d1581b77058eed87c84b`. It is the accepted/current
+compatibility route, with the [Windows x64 acceptance record](../release/acceptance/rust-v0.156.1-native-join-p16/x86_64-pc-windows-msvc.json)
+binding the exact A10 artifact and runtime evidence. Earlier releases remain immutable.
 
 ## Adaptation
 
@@ -116,5 +117,6 @@ selection after resize, return to parent, raw hiding/restoration and completion.
 These are real executable observations with a local Responses fixture, not a
 credentialed live-provider evaluation. Other-platform runtime UI, actual Kitty/Sixel
 terminals, native clipboard integration and Unix suspend remain **NOT VERIFIED**;
-their unit/snapshot coverage is separate. The accepted route and installed CLI/home
-remain unchanged. This candidate has not been published or promoted.
+their unit/snapshot coverage is separate. Promotion and release do not modify an
+installed CLI or home. The formal release reuses the six A10 builds above, with
+unchanged native build inputs and the same accepted Windows executable hash.
