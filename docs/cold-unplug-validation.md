@@ -62,7 +62,9 @@ rtk proxy py -3 scripts/verify_cold_unplug.py \
 ```
 
 `--native-source` is the reviewed, exactly patched source used to compare the
-config schema with its upstream hash; the driver does not build that checkout.
+config schema byte hash with the Git blob at the pinned upstream commit. Unchanged
+schema files need not appear in the patch preimage inventory. The driver does not
+build that checkout.
 Do not substitute an arbitrary version or reuse a dirty fixture home.
 
 | Gate | Observation |
@@ -78,7 +80,7 @@ Both Legacy and Paginated homes run. Native timeline pages arrive newest first,
 with entries in ascending order inside each page. The driver checks that order
 and stable ties before prepending older pages; it does not sort away corruption.
 Readback compares full prior item content and turn order, not just final text.
-For exact reviewed official 0.153.2 and 0.154.0 Legacy readback only, omit known completed Wait display
+For exact reviewed official 0.153.2, 0.154.0 and 0.156.1 Legacy readback only, omit known completed Wait display
 items associated with verified Join or ordinary `wait_agent` calls from the expected
 candidate view. Use actual fixture call IDs and verify each complete canonical
 call/result/Wait triple before allowing that display omission. Unknown or unfinished
@@ -88,6 +90,23 @@ Wait completions must remain intact; prior canonical records must remain unchang
 after official continuation. Candidate and Paginated comparisons remain exact.
 Items retain their order within each turn; asynchronous child events can interleave
 turns in the item stream. Item and timeline readers must agree on that global order.
+
+The 0.156.1 rule is bound to upstream `b412ff32c417f855c2b2d1581b77058eed87c84b`
+and the official Windows executable SHA256
+`70bcb05f9bf1a4e7306edd0cd1b57d02af3267ad02a34b26f45c8c4bb20a3301`.
+A fresh stock V1 control on 2026-09-25 observed one live completed Wait in both
+modes, zero cold Legacy Wait items, and one cold Paginated Wait item. Both cold
+reads preserved canonical bytes and all four official processes exited normally.
+This diagnostic establishes the version-specific display rule; it does not mark
+the p16 candidate accepted.
+
+Reprojection uses a separate SQLite directory. Native resume first prepares the
+projection and shuts down normally; 0.156.1 may append its own
+`thread_settings_applied` checkpoint during that step. The gate preserves every
+prior canonical record and records those appends. A separate official reader then
+checks complete turns, items and timeline, forbids extra turns, and requires the
+canonical bytes and records to remain identical across those read-only calls.
+Join calls, complete results and unique Wait records are rechecked afterward.
 
 Native flat listing discovers roots; parent-edge queries discover children.
 For reprojection, discover the children before loading owner metadata, then resume
