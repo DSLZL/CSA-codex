@@ -67,6 +67,16 @@ def binary_identity(path: Path, env: dict[str, str] | None = None) -> dict[str, 
     return {**file_record(path), "version": result.stdout.strip()}
 
 
+def verify_upstream_config_schema(source: Path, upstream_commit: str) -> str:
+    catalog.require_string(upstream_commit, "upstream commit", pattern=catalog.LOWER_SHA1)
+    relative = "codex-rs/core/config.schema.json"
+    original = subprocess.run(["git", "-C", str(source), "show", f"{upstream_commit}:{relative}"], capture_output=True, timeout=30, check=False)
+    require(original.returncode == 0 and bool(original.stdout), "exact upstream config schema is unavailable")
+    digest = catalog.sha256_file(source / relative)
+    require(digest == hashlib.sha256(original.stdout).hexdigest(), "candidate source config schema differs from exact upstream")
+    return digest
+
+
 def timeline_key(row: dict[str, Any]) -> tuple[int, int, str]:
     # Native timeline cursors page backwards, with stable ties at one rollout ordinal.
     kind = {"turnStarted": 0, "item": 1, "realtime": 2, "turnCompleted": 3}[row["type"]]
@@ -455,7 +465,7 @@ def assert_history_preserved(before: dict[str, Any], after: dict[str, Any], *, o
         observed = new[positions[turn["id"]]]
         items = turn["items"]
         if official_legacy_wait_ids:
-            # Stock 0.153.2's public Legacy reader filters Wait before replay.
+            # The exact reviewed stock versions filter Wait from Legacy replay.
             # Canonical Join calls/results remain independently checked and preserved.
             items = [item for item in items if not (item.get("id") in official_legacy_wait_ids and item.get("type") == "collabAgentToolCall" and item.get("tool") == "wait" and item.get("status") == "completed")]
         require(items == observed["items"], f"native reader changed or dropped items in turn {turn['id']}")
@@ -770,6 +780,7 @@ def run_mode(mode: str, root: Path, evidence: Path, binaries: dict[str, Path], p
             require(len(database_before) == 6 and len(database_after) == 6, "both binaries must actually exercise all six native databases")
             original = read_canonical(home)
             rebuilt = {}
+            resume_appends = {}
             for index, (identifier, before) in enumerate(latest_histories.items()):
                 projection = open_phase("official", f"official-reproject-{index}", sqlite_home=root / mode / "rebuilt-databases")
                 # Discover canonical children before loading their owner's metadata.
@@ -780,12 +791,22 @@ def run_mode(mode: str, root: Path, evidence: Path, binaries: dict[str, Path], p
                     projection.resume(b)
                 # One child per process respects native V2 resident-thread capacity.
                 projection.resume(identifier)
-                after = read_thread(projection, identifier)
-                assert_history_preserved(before, after)
-                rebuilt[identifier] = check_paginated_readers(projection, after)
                 projection.close()
-            require(original == read_canonical(home), "native reprojection changed canonical bytes or records")
+                prepared = read_canonical(home)
+                assert_canonical_preserved(original, prepared)
+                # Native resume may append ThreadSettingsApplied (0.156.1). Fence
+                # that preparation before measuring the separate read-only APIs.
+                reader = open_phase("official", f"official-reproject-read-{index}", sqlite_home=root / mode / "rebuilt-databases")
+                after = read_thread(reader, identifier)
+                assert_history_preserved(before, after)
+                require(before["turns"] == after["turns"], "native reprojection added or changed a turn")
+                rebuilt[identifier] = check_paginated_readers(reader, after)
+                reader.close()
+                require(prepared == read_canonical(home), "native read-only reprojection changed canonical bytes or records")
+                resume_appends[identifier] = {path: current["rows"][original[path]["count"]:] for path, current in prepared.items() if current["count"] != original[path]["count"]}
+            require(verify_persisted_joins(read_canonical(home), b, [explorer, batch, fork], event_wait_ids) == persisted_joins, "native reprojection changed canonical Join records")
             observations["rebuilt_pages"] = rebuilt
+            observations["reprojection_resume_appends"] = resume_appends
 
         checksum_failures = {}
         for role in ("official", "candidate"):
@@ -864,6 +885,7 @@ def prepare_binaries(args: argparse.Namespace, root: Path, evidence: Path) -> tu
     require((resolution["codex_version"], resolution["upstream_commit"]) in {
         ("0.153.2", "657a993cbee87acf52d14b758ce49dbd46d1b8eb"),
         ("0.154.0", "6b9826e3aa83b1a5947db50f4332cb9c65f1b340"),
+        ("0.156.1", "b412ff32c417f855c2b2d1581b77058eed87c84b"),
     }, "official Legacy presentation requires an exact reviewed upstream version and commit")
     require((repository / resolution["manifest_path"]).resolve() == paths["manifest"], "explicit manifest differs from the catalog route")
     require(paths["official_binary"] != paths["candidate_binary"], "official and candidate executable paths must differ")
@@ -913,9 +935,8 @@ def prepare_binaries(args: argparse.Namespace, root: Path, evidence: Path) -> tu
         require(identities[role]["version"] == f"codex-cli {resolution['codex_version']}", f"{role} absolute executable version differs")
     require(identities["candidate"]["sha256"] == verified["sha256"] and identities["candidate"]["size"] == verified["size"], "candidate changed while preparing its isolated runtime")
     identities["official"]["archive_integrity"] = integrity
-    schema = paths["native_source"] / "codex-rs/core/config.schema.json"
-    schema_sha = catalog.sha256_file(schema)
-    require(schema_sha == manifest["preimage"]["codex-rs/core/config.schema.json"], "candidate source config schema differs from exact upstream")
+    # Unchanged files need not be patch preimages (including p16's native schema).
+    schema_sha = verify_upstream_config_schema(paths["native_source"], resolution["upstream_commit"])
     write_json(evidence / "preflight.json", {"resolution": resolution, "binaries": identities, "executable_paths": {role: str(path) for role, path in binaries.items()}, "verified_bundle": verified, "official_archive": file_record(paths["official_archive"]), "source_config_schema_sha256": schema_sha})
     build = {"provider": "github", "repository": receipt["builder_repository"], "source_commit": receipt["source_commit"], "workflow_run_id": run_id, "request_id": receipt["request_id"], "recipe_commit": receipt["recipe_commit"], "target_record": "build/target-record.json"}
     return resolution, binaries, {**identities, "build": build}

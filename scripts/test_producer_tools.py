@@ -994,6 +994,19 @@ def test_cold_unplug_boundaries(root: Path) -> None:
 
     root.mkdir(parents=True)
     owned = cold.fresh_root(root / "owned", root)
+    source = root / "native-source"
+    schema = source / "codex-rs/core/config.schema.json"
+    schema.parent.mkdir(parents=True)
+    schema.write_bytes(b'{"native":true}\n')
+    git(source, "init", "--quiet")
+    git(source, "config", "core.autocrlf", "false")
+    git(source, "add", "codex-rs/core/config.schema.json")
+    git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "native schema")
+    upstream = git(source, "rev-parse", "HEAD")
+    assert cold.verify_upstream_config_schema(source, upstream) == hashlib.sha256(schema.read_bytes()).hexdigest()
+    schema.write_bytes(b'{"native":true,"private":true}\n')
+    expect_error(lambda: cold.verify_upstream_config_schema(source, upstream), cold.ValidationError)
+    expect_error(lambda: cold.verify_upstream_config_schema(source, "0" * 40), cold.ValidationError)
     expect_error(lambda: cold.fresh_root(owned, root), cold.ValidationError)
     expect_error(lambda: cold.fresh_root(root.parent / "escape", root), cold.ValidationError)
     expect_error(lambda: cold.strict_json('{"id":1,"id":2}'), cold.ValidationError)

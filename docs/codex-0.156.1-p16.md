@@ -48,7 +48,7 @@ p15's 69 files and 6,048 lines. Native ownership reduces implementation adaptati
 points, while new coverage increases the total. The p16 family stores the final
 implementation in four ordered patches; previous families are immutable.
 
-## Verification and remaining gates
+## Verification and limits
 
 Local checks cover exact patch application/postimages, family/catalog integrity,
 producer Python tests, formatting and workflow syntax. Rust compilation, schema
@@ -62,15 +62,28 @@ widths, row clicks, unchanged composer drafts, native selection with CSA clicks
 disabled and raw-mode hiding. Old version-specific test skips are not carried
 forward without new evidence.
 
-On producer commit `cc5fa44e0cf5e499f4a44f9c5b9b7a05e0ec744e`,
-[A9 Windows Actions](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/35894915787)
-passed both complete TUI/configuration libraries and their Clippy checks, including
-the directory/trust and session-header repairs. Native Join, Live/fullscreen
-geometry, Orbit, the official runtime overlay, all 201 state tests, native protocol
-and core configuration checks also passed. The contract then stopped compiling
-the rollout policy test: the moved upstream `HasLegacyEvent` trait was not imported.
-A10 adds that test import and retains the single/batch, Legacy/Paginated exact
-persistence assertions. The remaining contract steps still need native confirmation.
+On source `9666a728ee38c66c09bec6b8d130608c49a04c0c`,
+[A10 Windows Actions](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/35968632530)
+passed all 39 contract steps and built the release binary. This includes generated
+schemas, complete TUI/configuration libraries, their Clippy checks, Join/context,
+Live/Orbit, all 201 state tests, native protocol/configuration, rollout persistence,
+cold child selection and shared prompts. The missing test trait import found in A9
+is fixed with all assertions retained. No background panic was found in the A10 log.
+
+The other five builds and
+[producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/35968656177) also passed:
+
+| Target | A10 run |
+| --- | --- |
+| Windows ARM64 | [35968636478](https://github.com/DSLZL/CSA-codex-windows-arm64/actions/runs/35968636478) |
+| Linux x64 | [35968640038](https://github.com/DSLZL/CSA-codex-linux-x64/actions/runs/35968640038) |
+| Linux ARM64 | [35968644583](https://github.com/DSLZL/CSA-codex-linux-arm64/actions/runs/35968644583) |
+| macOS x64 | [35968648505](https://github.com/DSLZL/CSA-codex-macos-x64/actions/runs/35968648505) |
+| macOS ARM64 | [35968652775](https://github.com/DSLZL/CSA-codex-macos-arm64/actions/runs/35968652775) |
+
+All six downloaded target bundles passed source/run/manifest/size/SHA256 validation.
+Their manifest SHA256 is
+`4196536f67032167a5f174806730eab12bdd7458f1b3c64b1e8bd14089376840`.
 
 Producer CI accepts an optional `upstream_tui_baseline` compatibility ID to run the
 seven directory/trust cases on unpatched upstream on Windows. It resolves exact
@@ -85,8 +98,23 @@ Official Windows x64 binary SHA-256:
 All 69 migration SQL inputs in that verified binary match the native CRLF
 representation used by the Windows compatibility path.
 
-The remaining native contract checks, final-source platform artifacts, matching
-official/candidate/official cold-unplug runs, real ConPTY coverage in both display
-modes, and terminal-specific Kitty/Sixel observations remain **NOT VERIFIED**.
-Source checks and earlier-source builds do not grant release acceptance. No
-installed CLI or user home is changed.
+Windows x64 candidate SHA256:
+`d47bc7c95a0d977c66ed3b00decb56ae46c3a14ff23d5f293e9241affe9b1004`.
+On 2026-09-25, this exact executable passed all 18 Legacy/Paginated A-I cold-unplug
+cells against the matching official executable. All 22 positive native processes
+exited normally; the report binds 419 evidence files. The version-specific Legacy
+display rule and separate resume/read-only projection checks are documented in
+[the runtime procedure](cold-unplug-validation.md).
+
+Ten fresh ConPTY launches passed the unset/auto/on/off/invalid mouse-policy checks
+across inline and fullscreen modes, including cold child navigation, raw-mode
+transitions, one generic invalid-value warning and terminal cleanup. Three further
+live loopback captures passed inline, fullscreen and fullscreen with
+`--no-alt-screen`: active child/title generation, 140/80/45-column layouts, mouse
+selection after resize, return to parent, raw hiding/restoration and completion.
+
+These are real executable observations with a local Responses fixture, not a
+credentialed live-provider evaluation. Other-platform runtime UI, actual Kitty/Sixel
+terminals, native clipboard integration and Unix suspend remain **NOT VERIFIED**;
+their unit/snapshot coverage is separate. The accepted route and installed CLI/home
+remain unchanged. This candidate has not been published or promoted.
