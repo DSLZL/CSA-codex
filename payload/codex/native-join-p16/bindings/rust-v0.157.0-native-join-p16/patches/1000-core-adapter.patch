@@ -101,7 +101,7 @@ index e15bb847b64c92e3bf14f54328be9c5695121811..29a86491d28f8c01fa8d6077d22873e5
      fn sandbox_mode_uses_executor_platform_and_sandbox_level() {
          use Platform::Linux;
 diff --git a/codex-rs/core/src/agent/control.rs b/codex-rs/core/src/agent/control.rs
-index fb048a5da5e1a1a548bb7b959cf3caa41a2e2475..b11ad279b1e7b644f9cbcf135a38592fc7e8f02e 100644
+index fb048a5da5e1a1a548bb7b959cf3caa41a2e2475..5151325d5b2e01d02c3556ebd8a1a690dafac1f6 100644
 --- a/codex-rs/core/src/agent/control.rs
 +++ b/codex-rs/core/src/agent/control.rs
 @@ -2,6 +2,10 @@ use crate::TurnInputRequest;
@@ -119,7 +119,7 @@ index fb048a5da5e1a1a548bb7b959cf3caa41a2e2475..b11ad279b1e7b644f9cbcf135a38592f
  use std::collections::VecDeque;
  use std::sync::Arc;
  use std::sync::Weak;
-+use tokio::sync::watch;
++use tokio::sync::watch::Receiver;
  use tracing::warn;
  use uuid::Uuid;
  
@@ -138,7 +138,7 @@ index fb048a5da5e1a1a548bb7b959cf3caa41a2e2475..b11ad279b1e7b644f9cbcf135a38592f
 +    pub(crate) fn subscribe_run(
 +        &self,
 +        target: &AgentRunRef,
-+    ) -> Result<watch::Receiver<AgentRunPhase>, JoinError> {
++    ) -> Result<Receiver<AgentRunPhase>, JoinError> {
 +        self.runtime.completion_registry.subscribe(target)
 +    }
 +

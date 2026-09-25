@@ -42,7 +42,12 @@ Paginated readback. Canonical bytes stayed unchanged; all four official processe
 exited normally. The [runtime procedure](cold-unplug-validation.md) pins this
 observation to the exact 0.157.0 commit and official executable.
 
+The first six-platform native attempt on `d0e4130` failed compiling `codex-core`:
+the adapter's `tokio::sync::watch` import collided with upstream's new `mod watch`.
+Importing the leaf `Receiver` type removes the collision without changing the
+completion channel type. The failed runs remain separate from the corrected build.
+
 Rust compilation, the native contract, matching-binary cold-unplug acceptance and
-terminal observations remain pending. The official migration-byte check is not
-database round-trip acceptance. Evidence for the accepted 0.156.1 executable does
-not certify this candidate.
+terminal observations still require passing results for the corrected candidate.
+The official migration-byte check is not database round-trip acceptance. Evidence
+for the accepted 0.156.1 executable does not certify this candidate.
