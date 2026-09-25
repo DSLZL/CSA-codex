@@ -1,0 +1,3145 @@
+diff --git a/codex-rs/config/src/config_toml.rs b/codex-rs/config/src/config_toml.rs
+index e15bb847b64c92e3bf14f54328be9c5695121811..29a86491d28f8c01fa8d6077d22873e5bea96bfa 100644
+--- a/codex-rs/config/src/config_toml.rs
++++ b/codex-rs/config/src/config_toml.rs
+@@ -8,6 +8,7 @@ use std::path::Path;
+ use crate::HooksToml;
+ use crate::browser_use::BrowserUseConfigToml;
+ use crate::computer_use::ComputerUseConfigToml;
++use crate::loader::normalized_project_trust_keys;
+ use crate::permissions_toml::PermissionsToml;
+ use crate::profile_toml::ConfigProfile;
+ use crate::types::AnalyticsConfigToml;
+@@ -55,7 +56,6 @@ use codex_protocol::openai_models::ReasoningEffort;
+ use codex_protocol::permissions::NetworkSandboxPolicy;
+ use codex_protocol::protocol::AskForApproval;
+ use codex_utils_absolute_path::AbsolutePathBuf;
+-use codex_utils_path::normalize_for_path_comparison;
+ use codex_utils_path_uri::Platform;
+ use schemars::JsonSchema;
+ use serde::Deserialize;
+@@ -868,14 +868,14 @@ impl ConfigToml {
+     ) -> Option<ProjectConfig> {
+         let projects = self.projects.as_ref()?;
+ 
+-        for normalized_cwd in normalized_project_lookup_keys(resolved_cwd) {
++        for normalized_cwd in normalized_project_trust_keys(resolved_cwd) {
+             if let Some(project_config) = project_config_for_lookup_key(projects, &normalized_cwd) {
+                 return Some(project_config);
+             }
+         }
+ 
+         if let Some(repo_root) = repo_root {
+-            for normalized_repo_root in normalized_project_lookup_keys(repo_root) {
++            for normalized_repo_root in normalized_project_trust_keys(repo_root) {
+                 if let Some(project_config_for_root) =
+                     project_config_for_lookup_key(projects, &normalized_repo_root)
+                 {
+@@ -888,24 +888,6 @@ impl ConfigToml {
+     }
+ }
+ 
+-/// Canonicalize the path and convert it to a string to be used as a key in the
+-/// projects trust map. On Windows, strips UNC, when possible, to try to ensure
+-/// that different paths that point to the same location have the same key.
+-fn normalized_project_lookup_keys(path: &Path) -> Vec<String> {
+-    let normalized_path = normalize_project_lookup_key(path.to_string_lossy().to_string());
+-    let normalized_canonical_path = normalize_project_lookup_key(
+-        normalize_for_path_comparison(path)
+-            .unwrap_or_else(|_| path.to_path_buf())
+-            .to_string_lossy()
+-            .to_string(),
+-    );
+-    if normalized_path == normalized_canonical_path {
+-        vec![normalized_canonical_path]
+-    } else {
+-        vec![normalized_canonical_path, normalized_path]
+-    }
+-}
+-
+ fn normalize_project_lookup_key(key: String) -> String {
+     if cfg!(windows) {
+         key.to_ascii_lowercase()
+@@ -1028,6 +1010,39 @@ mod tests {
+     const WORKSPACE_ID_A: &str = "123e4567-e89b-42d3-a456-426614174000";
+     const WORKSPACE_ID_B: &str = "123e4567-e89b-42d3-a456-426614174001";
+ 
++    #[cfg(windows)]
++    #[test]
++    fn active_project_uses_persisted_trust_for_verbatim_paths() -> std::io::Result<()> {
++        let dir = tempfile::tempdir()?;
++        let project = dir.path().canonicalize()?;
++        let child = project.join("child");
++        std::fs::create_dir(&child)?;
++        for trust_level in [TrustLevel::Trusted, TrustLevel::Untrusted] {
++            let expected = ProjectConfig {
++                trust_level: Some(trust_level),
++            };
++            let config = ConfigToml {
++                projects: Some(HashMap::from([(
++                    crate::loader::project_trust_key(&project),
++                    expected.clone(),
++                )])),
++                ..Default::default()
++            };
++            for cwd in [dir.path(), project.as_path()] {
++                assert_eq!(
++                    config.get_active_project(cwd, /*repo_root*/ None),
++                    Some(expected.clone())
++                );
++            }
++            assert_eq!(
++                config.get_active_project(&child, Some(&project)),
++                Some(expected)
++            );
++            assert_eq!(config.get_active_project(&child, /*repo_root*/ None), None);
++        }
++        Ok(())
++    }
++
+     #[test]
+     fn sandbox_mode_uses_executor_platform_and_sandbox_level() {
+         use Platform::Linux;
+diff --git a/codex-rs/core/src/agent/control.rs b/codex-rs/core/src/agent/control.rs
+index fb048a5da5e1a1a548bb7b959cf3caa41a2e2475..b11ad279b1e7b644f9cbcf135a38592fc7e8f02e 100644
+--- a/codex-rs/core/src/agent/control.rs
++++ b/codex-rs/core/src/agent/control.rs
+@@ -2,6 +2,10 @@ use crate::TurnInputRequest;
+ use crate::TurnInputSubmission;
+ use crate::TurnStartOptions;
+ use crate::agent::AgentStatus;
++use crate::agent::completion::AgentRunPhase;
++use crate::agent::completion::AgentRunRef;
++use crate::agent::completion::AgentRunTerminal;
++use crate::agent::completion::JoinError;
+ use crate::agent::role::DEFAULT_ROLE_NAME;
+ use crate::agent::role::resolve_role_config;
+ use crate::agent::status::is_final;
+@@ -58,6 +62,7 @@ use std::collections::HashSet;
+ use std::collections::VecDeque;
+ use std::sync::Arc;
+ use std::sync::Weak;
++use tokio::sync::watch;
+ use tracing::warn;
+ use uuid::Uuid;
+ 
+@@ -153,6 +158,21 @@ impl LocalAgentControl {
+         provider
+     }
+ 
++    pub(crate) fn register_run_running(&self, target: AgentRunRef) {
++        self.runtime.completion_registry.register_running(target);
++    }
++
++    pub(crate) fn complete_run(&self, target: AgentRunRef, terminal: Arc<AgentRunTerminal>) {
++        self.runtime.completion_registry.complete(target, terminal);
++    }
++
++    pub(crate) fn subscribe_run(
++        &self,
++        target: &AgentRunRef,
++    ) -> Result<watch::Receiver<AgentRunPhase>, JoinError> {
++        self.runtime.completion_registry.subscribe(target)
++    }
++
+     /// Send rich user input items to an existing agent thread.
+     pub(crate) async fn send_input(
+         &self,
+@@ -511,6 +531,7 @@ impl LocalAgentControl {
+         {
+             agents.push(LiveAgent {
+                 thread_id: root_thread_id,
++                initial_run_id: None,
+                 metadata: AgentMetadata {
+                     agent_id: Some(root_thread_id),
+                     agent_path: Some(root_path),
+@@ -536,6 +557,7 @@ impl LocalAgentControl {
+             };
+             agents.push(LiveAgent {
+                 thread_id,
++                initial_run_id: None,
+                 metadata,
+                 status: thread.agent_status().await,
+             });
+diff --git a/codex-rs/core/src/agent/control/inspection.rs b/codex-rs/core/src/agent/control/inspection.rs
+index 115037166a3e507f5a24f9484832ff934622bd57..d61cdd524a3687944e9cda77289b8da1ff223dba 100644
+--- a/codex-rs/core/src/agent/control/inspection.rs
++++ b/codex-rs/core/src/agent/control/inspection.rs
+@@ -21,6 +21,7 @@ impl LocalAgentControl {
+         Ok(AgentInfo::Loaded {
+             agent: LiveAgent {
+                 thread_id,
++                initial_run_id: None,
+                 metadata: self.get_agent_metadata(thread_id).unwrap_or_default(),
+                 status: thread.agent_status().await,
+             },
+diff --git a/codex-rs/core/src/agent/control/legacy.rs b/codex-rs/core/src/agent/control/legacy.rs
+index 6586f308e56bc2be8061e0e43dbe014cf7abe3df..9706153b344e4fce28324586ca6796a7b3bf90a7 100644
+--- a/codex-rs/core/src/agent/control/legacy.rs
++++ b/codex-rs/core/src/agent/control/legacy.rs
+@@ -54,6 +54,7 @@ impl LocalAgentControl {
+             Ok(thread) => {
+                 let agent = LiveAgent {
+                     thread_id: agent_id,
++                    initial_run_id: None,
+                     metadata: metadata.unwrap_or_default(),
+                     status: thread.agent_status().await,
+                 };
+diff --git a/codex-rs/core/src/agent/control/resume.rs b/codex-rs/core/src/agent/control/resume.rs
+index c5c81f075887f32bf71085e4fa63d5cfe31bf3da..6339dca55fe5d7753d9febfebb27f4932a797506 100644
+--- a/codex-rs/core/src/agent/control/resume.rs
++++ b/codex-rs/core/src/agent/control/resume.rs
+@@ -28,6 +28,7 @@ impl LocalAgentControl {
+         };
+         let agent = LiveAgent {
+             thread_id,
++            initial_run_id: None,
+             metadata: self.get_agent_metadata(thread_id).unwrap_or_default(),
+             status: thread.agent_status().await,
+         };
+diff --git a/codex-rs/core/src/agent/control/runtime.rs b/codex-rs/core/src/agent/control/runtime.rs
+index 6af364239628644fa355564f6656ac5c42c8b7cb..20ca5cee6eb888dae8495160f2a64a9182c290d2 100644
+--- a/codex-rs/core/src/agent/control/runtime.rs
++++ b/codex-rs/core/src/agent/control/runtime.rs
+@@ -4,6 +4,7 @@
+ use super::LocalAgentControl;
+ use super::execution::AgentExecutionLimiter;
+ use super::residency::V2Residency;
++use crate::agent::completion::AgentRunCompletionRegistry;
+ use crate::agent::registry::AgentRegistry;
+ use crate::config::RolloutBudgetConfig;
+ use crate::rollout_budget::RolloutBudget;
+@@ -34,6 +35,7 @@ pub(crate) struct LocalAgentRuntime {
+     pub(super) shared_thread_instructions_provider:
+         Arc<OnceLock<Arc<dyn ThreadInstructionsProvider>>>,
+     pub(super) registry: Arc<AgentRegistry>,
++    pub(super) completion_registry: Arc<AgentRunCompletionRegistry>,
+     pub(super) residency: Arc<V2Residency>,
+ }
+ 
+@@ -47,6 +49,7 @@ impl LocalAgentRuntime {
+             manager,
+             thread_id_generator,
+             registry: Arc::default(),
++            completion_registry: Arc::default(),
+             residency: Arc::default(),
+             agent_execution_limiter: Arc::default(),
+             rollout_budget: Arc::default(),
+diff --git a/codex-rs/core/src/agent/control/spawn.rs b/codex-rs/core/src/agent/control/spawn.rs
+index 304a09262b23272a4a137c6e8995176a98b68613..28d26d3c77d60932f16ee7302a3ee6c6e5570a95 100644
+--- a/codex-rs/core/src/agent/control/spawn.rs
++++ b/codex-rs/core/src/agent/control/spawn.rs
+@@ -634,6 +634,19 @@ impl LocalAgentControl {
+         options: SpawnAgentOptions,
+     ) -> CodexResult<(LiveAgent, ThreadConfigSnapshot)> {
+         let state = self.upgrade()?;
++        let mut config = config;
++        if let Some(parent_thread_id) = session_source
++            .as_ref()
++            .and_then(SessionSource::parent_thread_id)
++            && let Ok(parent_thread) = state.get_thread(parent_thread_id).await
++            && parent_thread.config_snapshot().await.model_provider_id == config.model_provider_id
++        {
++            config.model_provider.supports_websockets &= parent_thread
++                .session
++                .services
++                .model_client
++                .responses_websocket_enabled();
++        }
+         let multi_agent_version = state
+             .effective_multi_agent_version_for_spawn(
+                 &InitialHistory::New,
+@@ -809,10 +822,10 @@ impl LocalAgentControl {
+             cyber_access_program: options.cyber_access_program,
+             ..Default::default()
+         };
+-        match initial_input {
++        let initial_run_id = match initial_input {
+             SpawnInitialInput::UserInput(input) => {
+                 self.send_input(new_thread.thread_id, input, start_options)
+-                    .await?;
++                    .await?
+             }
+             SpawnInitialInput::InterAgentCommunication(communication, context) => {
+                 self.send_inter_agent_communication_after_capacity_check(
+@@ -822,9 +835,13 @@ impl LocalAgentControl {
+                     context,
+                     start_options,
+                 )
+-                .await?;
++                .await?
+             }
+-        }
++        };
++        self.register_run_running(AgentRunRef::new(
++            new_thread.thread_id,
++            initial_run_id.clone(),
++        ));
+         reservation.commit(agent_metadata.clone());
+         if let Some(residency_slot) = residency_slot {
+             residency_slot.commit(new_thread.thread_id);
+@@ -851,6 +868,7 @@ impl LocalAgentControl {
+ 
+         let agent = LiveAgent {
+             thread_id: new_thread.thread_id,
++            initial_run_id: Some(initial_run_id),
+             metadata: agent_metadata,
+             status: self.get_status(new_thread.thread_id).await,
+         };
+@@ -920,32 +938,53 @@ impl LocalAgentControl {
+             (MultiAgentVersion::Disabled | MultiAgentVersion::V1, _)
+             | (MultiAgentVersion::V2, _) => (None, None),
+         };
+-        let parent_history_mode = parent_thread.config_snapshot().await.history_mode;
+-        // `record_conversation_items` only queues persistence writes asynchronously.
+-        // Flush before snapshotting store history for a fork.
+-        parent_thread.ensure_rollout_materialized().await;
+-        parent_thread.flush_rollout().await?;
+-
++        let parent_config_snapshot = parent_thread.config_snapshot().await;
++        let parent_history_mode = parent_config_snapshot.history_mode;
+         let destination_history_mode = matches!(parent_history_mode, ThreadHistoryMode::Paginated)
+             .then_some(ThreadHistoryMode::Paginated);
+-        let mut forked_rollout_items =
++        let mut forked_rollout_items = if parent_config_snapshot.ephemeral {
++            let history = parent_thread.session.clone_history().await;
++            let reference_context_item = history.reference_context_item();
++            let mut rollout_items = history
++                .into_annotated_items()
++                .into_iter()
++                .map(RolloutItem::ResponseItem)
++                .collect::<Vec<_>>();
++            if let Some(reference_context_item) = reference_context_item {
++                rollout_items.push(RolloutItem::TurnContext(reference_context_item));
++            }
++            rollout_items
++        } else {
++            // `record_conversation_items` only queues persistence writes asynchronously.
++            // Flush before snapshotting store history for a fork.
++            parent_thread.ensure_rollout_materialized().await;
++            parent_thread.flush_rollout().await?;
+             load_agent_model_context(state, parent_thread_id, parent_history_mode)
+                 .await?
+                 .ok_or_else(|| {
+                     CodexErr::Fatal(format!(
+                         "parent thread history unavailable for fork: {parent_thread_id}"
+                     ))
+-                })?;
++                })?
++        };
+ 
+-        let selected_capability_roots = forked_rollout_items
+-            .iter()
+-            .find_map(|item| {
+-                let RolloutItem::SessionMeta(meta_line) = item else {
+-                    return None;
+-                };
+-                Some(meta_line.meta.selected_capability_roots.clone())
+-            })
+-            .unwrap_or_default();
++        let selected_capability_roots = if parent_config_snapshot.ephemeral {
++            parent_thread
++                .session
++                .services
++                .selected_capability_roots
++                .clone()
++        } else {
++            forked_rollout_items
++                .iter()
++                .find_map(|item| {
++                    let RolloutItem::SessionMeta(meta_line) = item else {
++                        return None;
++                    };
++                    Some(meta_line.meta.selected_capability_roots.clone())
++                })
++                .unwrap_or_default()
++        };
+         if let SpawnAgentForkMode::LastNTurns(last_n_turns) = fork_mode {
+             forked_rollout_items =
+                 truncate_rollout_to_last_n_fork_turns(forked_rollout_items, *last_n_turns);
+diff --git a/codex-rs/core/src/agent/control/watch.rs b/codex-rs/core/src/agent/control/watch.rs
+index 590ad822e512eded9a92dd052415231fde2e774c..f136741a776fdf4b321a3c9a7e1b11f0c6185469 100644
+--- a/codex-rs/core/src/agent/control/watch.rs
++++ b/codex-rs/core/src/agent/control/watch.rs
+@@ -23,6 +23,7 @@ impl LocalAgentControl {
+         let config = Box::new(thread.config_snapshot().await);
+         let initial = LiveAgent {
+             thread_id: agent_id,
++            initial_run_id: None,
+             metadata: self.get_agent_metadata(agent_id).unwrap_or_default(),
+             status: receiver.borrow_and_update().clone(),
+         };
+diff --git a/codex-rs/core/src/agent/control_tests.rs b/codex-rs/core/src/agent/control_tests.rs
+index 144f0b30acdb0ea8754fe19bc29961c45802d4e9..1c594c87967b456e03e64fb60b4e66b86871e159 100644
+--- a/codex-rs/core/src/agent/control_tests.rs
++++ b/codex-rs/core/src/agent/control_tests.rs
+@@ -8,6 +8,11 @@ use crate::agent::api::AgentInfo;
+ use crate::agent::api::AgentInput;
+ use crate::agent::api::AgentTarget;
+ use crate::agent::api::SpawnRequest;
++use crate::agent::completion::AgentRunOutcome;
++use crate::agent::completion::AgentRunPhase;
++use crate::agent::completion::AgentRunRef;
++use crate::agent::completion::AgentRunTerminal;
++use crate::agent::completion::JoinError;
+ use crate::agent::next_thread_spawn_depth;
+ use crate::agent::types::AgentMessage;
+ use crate::agent::types::LiveAgent;
+@@ -47,6 +52,7 @@ use codex_login::AuthManager;
+ use codex_login::CodexAuth;
+ use codex_protocol::AgentPath;
+ use codex_protocol::ResponseItemId;
++use codex_protocol::SessionId;
+ use codex_protocol::capabilities::CapabilityRootLocation;
+ use codex_protocol::capabilities::SelectedCapabilityRoot;
+ use codex_protocol::config_types::ApprovalsReviewer;
+@@ -105,6 +111,31 @@ use tokio::time::timeout;
+ use tokio_util::sync::CancellationToken;
+ use toml::Value as TomlValue;
+ 
++#[test]
++fn multi_agent_v2_runtime_rebinding_preserves_exact_run_completion() {
++    let parent = LocalAgentControl::default();
++    let child = parent.runtime.control(SessionId::default());
++    let target = AgentRunRef::new(ThreadId::new(), "initial-run".to_string());
++    parent.register_run_running(target.clone());
++    let observed = parent.subscribe_run(&target).expect("registered run");
++    let terminal = Arc::new(AgentRunTerminal {
++        outcome: AgentRunOutcome::Completed {
++            output: Some("child result".to_string()),
++        },
++    });
++    child.complete_run(target.clone(), Arc::clone(&terminal));
++    assert_eq!(*observed.borrow(), AgentRunPhase::Terminal(terminal));
++    assert_eq!(
++        child
++            .subscribe_run(&AgentRunRef::new(
++                target.thread_id,
++                "another-run".to_string()
++            ))
++            .expect_err("a different run has no completion receipt"),
++        JoinError::UnknownRun
++    );
++}
++
+ impl LocalAgentControl {
+     /// Create a child fixture through the production spawn entry point.
+     pub(crate) async fn spawn_agent_with_metadata(
+@@ -310,6 +341,40 @@ impl AgentControlHarness {
+     }
+ }
+ 
++#[tokio::test]
++async fn spawned_child_inherits_parent_http_fallback_for_the_same_provider() {
++    let (home, mut config) = test_config().await;
++    config.model_provider.supports_websockets = true;
++    let harness = AgentControlHarness::new_with_config(home, config).await;
++    let (parent_thread_id, parent_thread) = harness.start_thread().await;
++    let turn = parent_thread.session.new_default_turn().await;
++    assert!(
++        parent_thread
++            .session
++            .services
++            .model_client
++            .force_http_fallback(&turn.session_telemetry, turn.model_info().as_ref())
++    );
++
++    let child_thread_id = harness
++        .spawn_anonymous_child(parent_thread_id, SpawnAgentOptions::default())
++        .await;
++    let child_thread = harness
++        .manager
++        .get_thread(child_thread_id)
++        .await
++        .expect("spawned child should be registered");
++
++    assert!(
++        !child_thread
++            .session
++            .services
++            .model_client
++            .responses_websocket_enabled(),
++        "a child must not repeat a WebSocket transport failure already resolved by its parent"
++    );
++}
++
+ async fn persisted_originator(thread: &CodexThread) -> String {
+     thread.ensure_rollout_materialized().await;
+     thread
+diff --git a/codex-rs/core/src/agent/mod.rs b/codex-rs/core/src/agent/mod.rs
+index c9a1547990772eb64a83bfeb75e2cb8f30e20d76..354151a46c69bbddd90f280c183e4c54a6b43176 100644
+--- a/codex-rs/core/src/agent/mod.rs
++++ b/codex-rs/core/src/agent/mod.rs
+@@ -1,6 +1,7 @@
+ pub(crate) mod agent_resolver;
+ pub(crate) mod api;
+ pub(crate) mod child_config;
++pub(crate) mod completion;
+ pub(crate) mod control;
+ mod registry;
+ pub(crate) mod role;
+diff --git a/codex-rs/core/src/agent/types.rs b/codex-rs/core/src/agent/types.rs
+index 81dcd5354e39a22010234a46460b33037c5b33c2..9e3d8cd764e58ee7544cc589044f410461b67a09 100644
+--- a/codex-rs/core/src/agent/types.rs
++++ b/codex-rs/core/src/agent/types.rs
+@@ -42,6 +42,8 @@ pub struct SpawnAgentOptions {
+ #[derive(Clone, Debug)]
+ pub struct LiveAgent {
+     pub thread_id: ThreadId,
++    /// Receipt for the turn submitted by this spawn; absent for inspection/listing.
++    pub initial_run_id: Option<String>,
+     pub metadata: AgentMetadata,
+     pub status: AgentStatus,
+ }
+diff --git a/codex-rs/core/src/config/config_tests.rs b/codex-rs/core/src/config/config_tests.rs
+index 5013f50b301ae4514bd6dcda4cff7b5794037108..e01c8b868432b37be78f3562ac1b42a6208d4614 100644
+--- a/codex-rs/core/src/config/config_tests.rs
++++ b/codex-rs/core/src/config/config_tests.rs
+@@ -12109,19 +12109,35 @@ max_concurrent_threads_per_session = 17
+     let concurrency_guidance = "There are 17 available concurrency slots, meaning that up to 17 agents can be active at once, including you.";
+     let messages = ResolvedModelMessages::bundled().multi_agent();
+     assert!(config.wait_agent_enabled);
+-    for wait_agent_enabled in [true, false] {
+-        let mut config = config.clone();
+-        config.wait_agent_enabled = wait_agent_enabled;
+-        let usage_hints = resolve_usage_hints(
+-            &config, messages, /*omit_update_plan_instructions*/ false,
+-        );
+-        for hint in [usage_hints.root, usage_hints.subagent] {
+-            let hint = hint.expect("default usage hints should be present").body();
+-            assert!(hint.contains(concurrency_guidance));
+-            assert_eq!(
+-                hint.contains("When calling `wait_agent`, prefer longer waits"),
+-                wait_agent_enabled
++    let mut catalog = messages;
++    catalog.root = ResolvedMessage::Catalog("Catalog root guidance.");
++    catalog.subagent = ResolvedMessage::Catalog("Catalog child guidance.");
++    for messages in [messages, catalog] {
++        for wait_agent_enabled in [true, false] {
++            let mut config = config.clone();
++            config.wait_agent_enabled = wait_agent_enabled;
++            let usage_hints = resolve_usage_hints(
++                &config, messages, /*omit_update_plan_instructions*/ false,
+             );
++            for hint in [usage_hints.root, usage_hints.subagent] {
++                let hint = hint.expect("default usage hints should be present").body();
++                assert!(hint.contains(concurrency_guidance));
++                assert_eq!(
++                    hint.contains("When calling `wait_agent`, prefer longer waits"),
++                    wait_agent_enabled
++                );
++                for fragment in [
++                    "When replying to your parent,",
++                    "validation performed and its outcome",
++                    "remaining blockers",
++                    "not a transcript of your process",
++                ] {
++                    assert!(
++                        hint.contains(fragment),
++                        "missing child result guidance: {fragment}"
++                    );
++                }
++            }
+         }
+     }
+ 
+diff --git a/codex-rs/core/src/session/mod.rs b/codex-rs/core/src/session/mod.rs
+index b977bb16f6dc9413e63252e2e423c016f4964724..233ba3104dedd672005bb9afba1349e03a4e7114 100644
+--- a/codex-rs/core/src/session/mod.rs
++++ b/codex-rs/core/src/session/mod.rs
+@@ -14,6 +14,9 @@ use crate::agent::AgentStatus;
+ use crate::agent::LocalAgentControl;
+ use crate::agent::agent_status_from_event;
+ use crate::agent::api::AgentTurnOutcome;
++use crate::agent::completion::AgentRunOutcome;
++use crate::agent::completion::AgentRunRef;
++use crate::agent::completion::AgentRunTerminal;
+ use crate::agent::status::is_final;
+ use crate::agents_md_manager::SessionInstructions;
+ use crate::attestation::AttestationProvider;
+@@ -355,6 +358,7 @@ use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
+ use codex_protocol::protocol::AskForApproval;
+ use codex_protocol::protocol::CodexErrorInfo;
+ use codex_protocol::protocol::DeprecationNoticeEvent;
++use codex_protocol::protocol::ErrorEvent;
+ use codex_protocol::protocol::Event;
+ use codex_protocol::protocol::EventMsg;
+ use codex_protocol::protocol::ExecApprovalRequestEvent;
+@@ -500,6 +504,45 @@ pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
+ const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
+ const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
+ 
++fn agent_run_terminal_from_event(
++    msg: &EventMsg,
++    terminal_error: Option<&ErrorEvent>,
++) -> Option<AgentRunTerminal> {
++    if let Some(error) = terminal_error {
++        return Some(AgentRunTerminal {
++            outcome: AgentRunOutcome::Failed {
++                message: error.message.clone(),
++                reason: None,
++            },
++        });
++    }
++
++    let outcome = match msg {
++        EventMsg::TurnComplete(event) => AgentRunOutcome::Completed {
++            output: event.last_agent_message.clone(),
++        },
++        EventMsg::TurnAborted(event) => match event.reason {
++            TurnAbortReason::Interrupted => AgentRunOutcome::Cancelled {
++                reason: "interrupted".to_string(),
++            },
++            TurnAbortReason::BudgetLimited => AgentRunOutcome::Failed {
++                message: "child run exceeded its token budget".to_string(),
++                reason: Some("budget_limited".to_string()),
++            },
++            TurnAbortReason::Replaced => AgentRunOutcome::Failed {
++                message: "child run was replaced".to_string(),
++                reason: Some("replaced".to_string()),
++            },
++            TurnAbortReason::ReviewEnded => AgentRunOutcome::Failed {
++                message: "child review ended".to_string(),
++                reason: Some("review_ended".to_string()),
++            },
++        },
++        _ => return None,
++    };
++    Some(AgentRunTerminal { outcome })
++}
++
+ impl Session {
+     /// Spawn and initialize a new session.
+     /// Hide the concrete startup future from callers while keeping initialization lazy.
+@@ -2406,15 +2449,21 @@ impl Session {
+             return;
+         }
+ 
+-        let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+-            agent_path: Some(_),
+-            ..
+-        }) = &turn_context.session_source
++        let SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_path, .. }) =
++            &turn_context.session_source
+         else {
+             return;
+         };
+ 
+-        let status = match turn_context.terminal_error.lock().await.take() {
++        let terminal_error = turn_context.terminal_error.lock().await.take();
++        let Some(terminal) = agent_run_terminal_from_event(msg, terminal_error.as_ref()) else {
++            return;
++        };
++        self.services.agent_control.complete_run(
++            AgentRunRef::new(self.thread_id, turn_context.sub_id.clone()),
++            Arc::new(terminal),
++        );
++        let status = match terminal_error {
+             Some(error) => {
+                 let status = AgentStatus::Errored(error.message);
+                 self.agent_status.send_replace(status.clone());
+@@ -2431,6 +2480,10 @@ impl Session {
+             return;
+         }
+ 
++        if agent_path.is_none() {
++            return;
++        }
++
+         self.services
+             .agent_control
+             .notify_parent_of_terminal_turn(
+diff --git a/codex-rs/core/src/session/tests.rs b/codex-rs/core/src/session/tests.rs
+index 9a61d17de3916ff4aaf7b2b34a210949a9e9845d..9d48840cd5050482e43084301cef7ce7d4a7007f 100644
+--- a/codex-rs/core/src/session/tests.rs
++++ b/codex-rs/core/src/session/tests.rs
+@@ -236,6 +236,188 @@ use std::sync::Arc;
+ use std::sync::OnceLock;
+ use std::time::Duration as StdDuration;
+ 
++#[test]
++fn agent_run_terminal_mapper_preserves_exact_outcomes() {
++    let completed = EventMsg::TurnComplete(TurnCompleteEvent {
++        turn_id: "run".to_string(),
++        last_agent_message: Some("done".to_string()),
++        error: None,
++        started_at: None,
++        completed_at: None,
++        duration_ms: None,
++        time_to_first_token_ms: None,
++    });
++    assert_eq!(
++        agent_run_terminal_from_event(&completed, None),
++        Some(AgentRunTerminal {
++            outcome: AgentRunOutcome::Completed {
++                output: Some("done".to_string()),
++            },
++        })
++    );
++
++    let aborted = |reason| {
++        EventMsg::TurnAborted(TurnAbortedEvent {
++            turn_id: Some("run".to_string()),
++            reason,
++            started_at: None,
++            completed_at: None,
++            duration_ms: None,
++        })
++    };
++    assert_eq!(
++        agent_run_terminal_from_event(&aborted(TurnAbortReason::Interrupted), None),
++        Some(AgentRunTerminal {
++            outcome: AgentRunOutcome::Cancelled {
++                reason: "interrupted".to_string(),
++            },
++        })
++    );
++    assert!(matches!(
++        agent_run_terminal_from_event(&aborted(TurnAbortReason::BudgetLimited), None),
++        Some(AgentRunTerminal {
++            outcome: AgentRunOutcome::Failed {
++                reason: Some(reason),
++                ..
++            },
++        }) if reason == "budget_limited"
++    ));
++
++    let error = ErrorEvent {
++        misalignment: None,
++        message: "failed".to_string(),
++        codex_error_info: None,
++    };
++    assert_eq!(
++        agent_run_terminal_from_event(&completed, Some(&error)),
++        Some(AgentRunTerminal {
++            outcome: AgentRunOutcome::Failed {
++                message: "failed".to_string(),
++                reason: None,
++            },
++        })
++    );
++}
++
++#[tokio::test]
++async fn spawned_v2_terminal_events_publish_replayable_exact_run_outcomes() {
++    let cases = [
++        (
++            "completed",
++            EventMsg::TurnComplete(TurnCompleteEvent {
++                turn_id: "completed".to_string(),
++                last_agent_message: Some("done".to_string()),
++                error: None,
++                started_at: None,
++                completed_at: None,
++                duration_ms: None,
++                time_to_first_token_ms: None,
++            }),
++            None,
++            AgentRunOutcome::Completed {
++                output: Some("done".to_string()),
++            },
++        ),
++        (
++            "no-output",
++            EventMsg::TurnComplete(TurnCompleteEvent {
++                turn_id: "no-output".to_string(),
++                last_agent_message: None,
++                error: None,
++                started_at: None,
++                completed_at: None,
++                duration_ms: None,
++                time_to_first_token_ms: None,
++            }),
++            None,
++            AgentRunOutcome::Completed { output: None },
++        ),
++        (
++            "failed",
++            EventMsg::TurnComplete(TurnCompleteEvent {
++                turn_id: "failed".to_string(),
++                last_agent_message: None,
++                error: None,
++                started_at: None,
++                completed_at: None,
++                duration_ms: None,
++                time_to_first_token_ms: None,
++            }),
++            Some(ErrorEvent {
++                misalignment: None,
++                message: "child failed".to_string(),
++                codex_error_info: None,
++            }),
++            AgentRunOutcome::Failed {
++                message: "child failed".to_string(),
++                reason: None,
++            },
++        ),
++        (
++            "interrupted",
++            EventMsg::TurnAborted(TurnAbortedEvent {
++                turn_id: Some("interrupted".to_string()),
++                reason: TurnAbortReason::Interrupted,
++                started_at: None,
++                completed_at: None,
++                duration_ms: None,
++            }),
++            None,
++            AgentRunOutcome::Cancelled {
++                reason: "interrupted".to_string(),
++            },
++        ),
++        (
++            "budget-limited",
++            EventMsg::TurnAborted(TurnAbortedEvent {
++                turn_id: Some("budget-limited".to_string()),
++                reason: TurnAbortReason::BudgetLimited,
++                started_at: None,
++                completed_at: None,
++                duration_ms: None,
++            }),
++            None,
++            AgentRunOutcome::Failed {
++                message: "child run exceeded its token budget".to_string(),
++                reason: Some("budget_limited".to_string()),
++            },
++        ),
++    ];
++
++    for (run_id, event, terminal_error, expected) in cases {
++        let (session, mut turn_context, _rx) = make_session_and_context_with_rx().await;
++        let context = Arc::get_mut(&mut turn_context).expect("unshared test turn context");
++        context.sub_id = run_id.to_string();
++        context.multi_agent_version = MultiAgentVersion::V2;
++        context.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++            parent_thread_id: ThreadId::new(),
++            depth: 1,
++            agent_path: None,
++            agent_nickname: None,
++            agent_role: None,
++        });
++        *context.terminal_error.lock().await = terminal_error;
++
++        let target = AgentRunRef::new(session.thread_id, run_id.to_string());
++        session
++            .maybe_notify_parent_of_terminal_turn(context, &event)
++            .await;
++        session
++            .services
++            .agent_control
++            .register_run_running(target.clone());
++        let terminal = timeout(
++            StdDuration::from_secs(1),
++            crate::agent::completion::join_one(&session.services.agent_control, &target),
++        )
++        .await
++        .expect("published terminal should replay immediately")
++        .expect("published exact run");
++        assert_eq!(terminal.outcome, expected, "run {run_id}");
++        assert!(context.terminal_error.lock().await.is_none());
++    }
++}
++
+ pub(crate) fn mcp_config_for_test(config: &crate::config::Config) -> Arc<codex_mcp::McpConfig> {
+     Arc::new(config.to_mcp_config_with_loaded_plugins(
+         &codex_core_plugins::PluginLoadOutcome::default(),
+diff --git a/codex-rs/core/src/test_support.rs b/codex-rs/core/src/test_support.rs
+index 2badfd65468d19210a4b6e4eec18d93ac9baa6eb..6f5e86342f819ee86cdb47847e09bd20c5ca3347 100644
+--- a/codex-rs/core/src/test_support.rs
++++ b/codex-rs/core/src/test_support.rs
+@@ -114,6 +114,18 @@ pub fn set_deterministic_process_ids(enabled: bool) {
+     unified_exec::set_deterministic_process_ids_for_tests(enabled);
+ }
+ 
++pub async fn wait_for_test_sync_barrier_arrivals(id: &str, arrivals: usize) {
++    crate::tools::handlers::test_sync::wait_for_barrier_arrivals_for_tests(id, arrivals).await;
++}
++
++pub async fn wait_on_test_sync_barrier(
++    id: &str,
++    participants: usize,
++    timeout_ms: u64,
++) -> Result<(), String> {
++    crate::tools::handlers::test_sync::wait_on_barrier_for_tests(id, participants, timeout_ms).await
++}
++
+ pub fn auth_manager_from_auth(auth: CodexAuth) -> Arc<AuthManager> {
+     AuthManager::from_auth_for_testing(auth)
+ }
+diff --git a/codex-rs/core/src/tools/handlers/mod.rs b/codex-rs/core/src/tools/handlers/mod.rs
+index 38cc41c7482ec99e242d69d990552038afe6efab..f01e3c646eac688ba98e856627703ff905103ca7 100644
+--- a/codex-rs/core/src/tools/handlers/mod.rs
++++ b/codex-rs/core/src/tools/handlers/mod.rs
+@@ -27,7 +27,7 @@ pub(crate) mod request_user_input_spec;
+ mod send_message_to_user_async;
+ pub(crate) mod shell_spec;
+ mod sleep;
+-mod test_sync;
++pub(crate) mod test_sync;
+ pub(crate) mod test_sync_spec;
+ mod tool_search;
+ pub(crate) mod tool_search_spec;
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_spec.rs b/codex-rs/core/src/tools/handlers/multi_agents_spec.rs
+index 52c24f8f0611e3015f3ba907c8861c6169a8abd6..58aeeb25db7e2ead75b5f5fdad26d8175fd435c9 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_spec.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_spec.rs
+@@ -219,7 +219,7 @@ pub fn create_followup_task_tool() -> ToolSpec {
+         (
+             "target".to_string(),
+             JsonSchema::string(Some(
+-                "Agent id or canonical task name to send a follow-up task to (from spawn_agent)."
++                "Agent ID, relative task name, or canonical task path of the original child (from spawn_agent)."
+                     .to_string(),
+             )),
+         ),
+@@ -234,7 +234,7 @@ pub fn create_followup_task_tool() -> ToolSpec {
+ 
+     ToolSpec::Function(ResponsesApiTool {
+         name: "followup_task".to_string(),
+-        description: "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes."
++        description: "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. Reuse the original worker for test failures, reviewer/checker findings, and small omissions: continue the same child with its own history and send the relevant findings and next action. This does not inherit the current parent or reviewer transcript. A completed or interrupted turn does not mean the child is closed. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes. If the target cannot be resolved or restored, report the error instead of silently spawning a replacement. Success confirms submission, not completion or durable persistence. The run_id returned by the initial spawn does not identify this follow-up."
+             .to_string(),
+         strict: false,
+         defer_loading: None,
+@@ -293,6 +293,81 @@ pub fn create_wait_agent_tool_v2(options: WaitAgentTimeoutOptions) -> ToolSpec {
+     })
+ }
+ 
++pub fn create_join_agent_tool_v2() -> ToolSpec {
++    let properties = BTreeMap::from([
++        (
++            "target".to_string(),
++            JsonSchema::string(Some(
++                "Relative or canonical task name, or native child thread id.".to_string(),
++            )),
++        ),
++        (
++            "run_id".to_string(),
++            JsonSchema::string(Some(
++                "Opaque exact run id returned by spawn_agent. Pass it unchanged.".to_string(),
++            )),
++        ),
++    ]);
++
++    ToolSpec::Function(ResponsesApiTool {
++        name: "join_agent".to_string(),
++        description: "Wait for the exact native subagent run identified by target and the opaque run_id returned by spawn_agent. The runtime keeps this single call pending until that run completes, fails, or is cancelled. Do not repeatedly call wait_agent or query status while this call is pending."
++            .to_string(),
++        strict: false,
++        defer_loading: None,
++        parameters: JsonSchema::object(
++            properties,
++            Some(vec!["target".to_string(), "run_id".to_string()]),
++            Some(false.into()),
++        ),
++        output_schema: Some(join_agent_output_schema().into()),
++    })
++}
++
++pub fn create_join_agents_tool_v2() -> ToolSpec {
++    let run_properties = BTreeMap::from([
++        (
++            "target".to_string(),
++            JsonSchema::string(Some(
++                "Relative or canonical task name, or native child thread id.".to_string(),
++            )),
++        ),
++        (
++            "run_id".to_string(),
++            JsonSchema::string(Some(
++                "Opaque exact run id returned by spawn_agent. Pass it unchanged.".to_string(),
++            )),
++        ),
++    ]);
++    let properties = BTreeMap::from([(
++        "runs".to_string(),
++        JsonSchema::array(
++            JsonSchema::object(
++                run_properties,
++                Some(vec!["target".to_string(), "run_id".to_string()]),
++                Some(false.into()),
++            ),
++            Some(
++                "All exact child runs returned by spawn_agent. Include every run once.".to_string(),
++            ),
++        ),
++    )]);
++
++    ToolSpec::Function(ResponsesApiTool {
++        name: "join_agents".to_string(),
++        description: "Wait for all supplied native subagent runs in one call. Use this after spawning multiple agents so the parent resumes only once, after every exact target/run_id pair has completed, failed, or been cancelled. Do not call join_agent separately for each run, repeatedly call wait_agent, or query status while this call is pending."
++            .to_string(),
++        strict: false,
++        defer_loading: None,
++        parameters: JsonSchema::object(
++            properties,
++            Some(vec!["runs".to_string()]),
++            Some(false.into()),
++        ),
++        output_schema: Some(join_agents_output_schema().into()),
++    })
++}
++
+ pub fn create_list_agents_tool() -> ToolSpec {
+     let properties = BTreeMap::from([(
+         "path_prefix".to_string(),
+@@ -419,9 +494,13 @@ fn spawn_agent_output_schema_v2(hide_agent_metadata: bool) -> Value {
+                 "task_name": {
+                     "type": "string",
+                     "description": "Canonical task name for the spawned agent."
++                },
++                "run_id": {
++                    "type": "string",
++                    "description": "Opaque exact run id for this initial child run. Pass it unchanged to join_agent."
+                 }
+             },
+-            "required": ["task_name"],
++            "required": ["task_name", "run_id"],
+             "additionalProperties": false
+         });
+     }
+@@ -433,12 +512,16 @@ fn spawn_agent_output_schema_v2(hide_agent_metadata: bool) -> Value {
+                 "type": "string",
+                 "description": "Canonical task name for the spawned agent."
+             },
++            "run_id": {
++                "type": "string",
++                "description": "Opaque exact run id for this initial child run. Pass it unchanged to join_agent."
++            },
+             "nickname": {
+                 "type": ["string", "null"],
+                 "description": "User-facing nickname for the spawned agent when available."
+             }
+         },
+-        "required": ["task_name", "nickname"],
++        "required": ["task_name", "run_id", "nickname"],
+         "additionalProperties": false
+     })
+ }
+@@ -534,6 +617,39 @@ fn wait_output_schema_v2() -> Value {
+     })
+ }
+ 
++fn join_agent_output_schema() -> Value {
++    json!({
++        "type": "object",
++        "properties": {
++            "target": { "type": "string" },
++            "run_id": { "type": "string" },
++            "status": {
++                "type": "string",
++                "enum": ["completed", "failed", "cancelled"]
++            },
++            "output": { "type": ["string", "null"] },
++            "error": { "type": ["string", "null"] },
++            "reason": { "type": ["string", "null"] }
++        },
++        "required": ["target", "run_id", "status", "output", "error", "reason"],
++        "additionalProperties": false
++    })
++}
++
++fn join_agents_output_schema() -> Value {
++    json!({
++        "type": "object",
++        "properties": {
++            "results": {
++                "type": "array",
++                "items": join_agent_output_schema()
++            }
++        },
++        "required": ["results"],
++        "additionalProperties": false
++    })
++}
++
+ fn agent_previous_status_output_schema(previous_status_description: &str) -> Value {
+     json!({
+         "type": "object",
+@@ -632,7 +748,7 @@ fn spawn_agent_common_properties_v2(agent_type_description: &str) -> BTreeMap<St
+         (
+             "message".to_string(),
+             JsonSchema::string(Some(
+-                "Initial plain-text task for the new agent.".to_string(),
++                "Initial plain-text task for the new agent. Provide a self-contained handoff with the relevant goal, scope, known findings, constraints, and expected return.".to_string(),
+             ))
+             .with_encrypted(),
+         ),
+@@ -645,7 +761,7 @@ fn spawn_agent_common_properties_v2(agent_type_description: &str) -> BTreeMap<St
+         (
+             "fork_turns".to_string(),
+             JsonSchema::string(Some(
+-                "Optional number of turns to fork. Defaults to `all`. Use `none`, `all`, or a positive integer string such as `3` to fork only the most recent turns."
++                "Optional number of turns to fork. Defaults to `none` (fresh context without the parent transcript). Use `none`, `all`, or a positive integer string such as `3` to fork only the most recent turns."
+                     .to_string(),
+             )),
+         ),
+@@ -765,7 +881,14 @@ The spawned agent will have the same tools as you and the ability to spawn its o
+ It will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.
+ The new agent's canonical task name will be provided to it along with the message.
+ 
+-Note that passing `fork_turns="none"` will not pass any surrounding context to the spawned subagent, which may cause the agent to lack the context it needs to complete its task, whereas `fork_turns="all"` will provide the subagent with all surrounding context."#
++Omitting `fork_turns` or passing `fork_turns="none"` starts the subagent with fresh context and no parent transcript. Include the task context it needs in `message`. Pass `fork_turns="all"` explicitly when it needs the full parent history, or a positive integer string to include only the most recent turns.
++
++Handoff contract: include known, relevant information; omit unknown fields rather than inventing facts or filling empty sections.
++- Explorer: QUESTION, SCOPE, KNOWN ENTRY POINTS, CONSTRAINTS, RETURN.
++- Worker: GOAL, OWNERSHIP, TARGETS, KNOWN FINDINGS, DECISIONS, CURRENT STATE, CONSTRAINTS, VALIDATION, RETURN. Keep ownership explicit and preserve other contributors' changes.
++- For other roles, use the applicable fields and preserve the selected role's instructions.
++Pass explorer conclusions and evidence to the worker, not the exploration transcript. Pass the worker's change summary and validation results to the reviewer/checker. Send review findings to the original worker with `followup_task`, continuing the same child.
++Use ordinary message text; do not make an extra model call solely to summarize a handoff."#
+         )
+     };
+ 
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs b/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs
+index e2f943c7ab86da1da7079ab48b1d4c166be145a3..1e1d71e42d8a42d42e507429bd79489907bb7352 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_spec_tests.rs
+@@ -126,7 +126,7 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
+     );
+     assert_eq!(
+         output_schema.expect("spawn_agent output schema").to_value()["required"],
+-        json!(["task_name", "nickname"])
++        json!(["task_name", "run_id", "nickname"])
+     );
+ }
+ 
+@@ -298,6 +298,7 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
+     let ToolSpec::Function(ResponsesApiTool {
+         description,
+         parameters,
++        output_schema,
+         ..
+     }) = tool
+     else {
+@@ -314,6 +315,12 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
+     assert!(!properties.contains_key("service_tier"));
+     assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
+     assert!(description.contains("Available model overrides"));
++    assert_eq!(
++        output_schema
++            .expect("hidden spawn_agent output schema")
++            .to_value()["required"],
++        json!(["task_name", "run_id"])
++    );
+ }
+ 
+ #[test]
+@@ -407,7 +414,7 @@ fn followup_task_tool_requires_message_and_has_no_output_schema() {
+     assert_eq!(name, "followup_task");
+     assert_eq!(
+         description,
+-        "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes."
++        "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. Reuse the original worker for test failures, reviewer/checker findings, and small omissions: continue the same child with its own history and send the relevant findings and next action. This does not inherit the current parent or reviewer transcript. A completed or interrupted turn does not mean the child is closed. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes. If the target cannot be resolved or restored, report the error instead of silently spawning a replacement. Success confirms submission, not completion or durable persistence. The run_id returned by the initial spawn does not identify this follow-up."
+     );
+     assert_eq!(
+         parameters.schema_type,
+@@ -476,6 +483,63 @@ fn wait_agent_tool_v2_uses_timeout_only_summary_output() {
+     );
+ }
+ 
++#[test]
++fn join_agent_tool_requires_exact_run_without_timeout() {
++    let ToolSpec::Function(ResponsesApiTool {
++        description,
++        parameters,
++        output_schema,
++        ..
++    }) = create_join_agent_tool_v2()
++    else {
++        panic!("join_agent should be a function tool");
++    };
++    let properties = parameters
++        .properties
++        .as_ref()
++        .expect("join_agent should use object params");
++    assert_eq!(
++        parameters.required.as_ref(),
++        Some(&vec!["target".to_string(), "run_id".to_string()])
++    );
++    assert!(properties.contains_key("target"));
++    assert!(properties.contains_key("run_id"));
++    assert!(!properties.contains_key("timeout_ms"));
++    assert!(description.contains("single call pending"));
++    assert_eq!(
++        output_schema.expect("join output schema").to_value()["required"],
++        json!(["target", "run_id", "status", "output", "error", "reason"])
++    );
++}
++
++#[test]
++fn join_agents_tool_requires_all_exact_runs_in_one_call() {
++    let ToolSpec::Function(ResponsesApiTool {
++        description,
++        parameters,
++        output_schema,
++        ..
++    }) = create_join_agents_tool_v2()
++    else {
++        panic!("join_agents should be a function tool");
++    };
++    let properties = parameters
++        .properties
++        .as_ref()
++        .expect("join_agents should use object params");
++    assert_eq!(
++        parameters.required.as_ref(),
++        Some(&vec!["runs".to_string()])
++    );
++    assert!(properties.contains_key("runs"));
++    assert!(!properties.contains_key("timeout_ms"));
++    assert!(description.contains("parent resumes only once"));
++    assert_eq!(
++        output_schema.expect("join_agents output schema").to_value()["required"],
++        json!(["results"])
++    );
++}
++
+ #[test]
+ fn list_agents_tool_includes_path_prefix_and_agent_fields() {
+     let ToolSpec::Function(ResponsesApiTool {
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_tests.rs b/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
+index 0bba76c7f209dd68bf7f89ce2a905d3925633d98..f581442844f9d9da232ed4c37596a193949eaab8 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
+@@ -4,6 +4,9 @@ use crate::ThreadManager;
+ use crate::agent::child_config::apply_spawn_agent_service_tier;
+ use crate::agent::child_config::build_agent_resume_config;
+ use crate::agent::child_config::build_agent_spawn_config;
++use crate::agent::completion::AgentRunOutcome;
++use crate::agent::completion::AgentRunRef;
++use crate::agent::completion::AgentRunTerminal;
+ use crate::config::AgentRoleConfig;
+ use crate::config::DEFAULT_AGENT_MAX_DEPTH;
+ use crate::config::PermissionProfileSnapshot;
+@@ -22,6 +25,8 @@ use crate::thread_manager::thread_store_from_config;
+ use crate::tools::context::ToolOutput;
+ use crate::tools::handlers::multi_agents_v2::FollowupTaskHandler as FollowupTaskHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::InterruptAgentHandler;
++use crate::tools::handlers::multi_agents_v2::JoinAgentHandler;
++use crate::tools::handlers::multi_agents_v2::JoinAgentsHandler;
+ use crate::tools::handlers::multi_agents_v2::ListAgentsHandler as ListAgentsHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
+@@ -760,7 +765,8 @@ async fn spawn_agent_full_history_fork_inherits_root_service_tier() {
+ }
+ 
+ #[tokio::test]
+-async fn multi_agent_v2_full_history_fork_inherits_root_service_tier() {
++async fn multi_agent_v2_ephemeral_full_history_fork_uses_live_context_and_inherits_root_service_tier()
++ {
+     #[derive(Debug, Deserialize)]
+     struct SpawnAgentResult {
+         task_name: String,
+@@ -771,6 +777,7 @@ async fn multi_agent_v2_full_history_fork_inherits_root_service_tier() {
+         .with_model("gpt-5.5".to_string(), &session.services.models_manager)
+         .await;
+     let mut config = (*turn.config).clone();
++    config.ephemeral = true;
+     config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
+     config
+         .features
+@@ -782,6 +789,18 @@ async fn multi_agent_v2_full_history_fork_inherits_root_service_tier() {
+         .start_thread(StartThreadOptions::new((*turn.config).clone()))
+         .await
+         .expect("root thread should start");
++    root.thread
++        .inject_response_items(vec![ResponseItem::Message {
++            id: None,
++            role: "user".to_string(),
++            content: vec![ContentItem::InputText {
++                text: "ephemeral parent context".to_string(),
++            }],
++            phase: None,
++            internal_chat_message_metadata_passthrough: None,
++        }])
++        .await
++        .expect("inject ephemeral parent context");
+     set_agent_control(
+         &mut session,
+         root.thread.session.services.agent_control.clone(),
+@@ -797,7 +816,8 @@ async fn multi_agent_v2_full_history_fork_inherits_root_service_tier() {
+             "spawn_agent",
+             function_payload(json!({
+                 "message": "inspect this repo",
+-                "task_name": "fork_with_tier"
++                "task_name": "fork_with_tier",
++                "fork_turns": "all"
+             })),
+         ))
+         .await
+@@ -815,17 +835,32 @@ async fn multi_agent_v2_full_history_fork_inherits_root_service_tier() {
+         )
+         .await
+         .expect("spawned task name should resolve");
+-    let snapshot = manager
++    let child_thread = manager
+         .get_thread(child_thread_id)
+         .await
+-        .expect("spawned agent thread should exist")
+-        .config_snapshot()
+-        .await;
++        .expect("spawned agent thread should exist");
++    let snapshot = child_thread.config_snapshot().await;
+ 
+     assert_eq!(
+         snapshot.service_tier,
+         Some(ServiceTier::Fast.request_value().to_string())
+     );
++    assert!(
++        child_thread
++            .session
++            .clone_history()
++            .await
++            .raw_items()
++            .any(|item| matches!(
++                item,
++                ResponseItem::Message { content, .. }
++                    if content.iter().any(|content| matches!(
++                        content,
++                        ContentItem::InputText { text } if text == "ephemeral parent context"
++                    ))
++            )),
++        "ephemeral full-history fork should inherit live parent context"
++    );
+ }
+ 
+ #[tokio::test]
+@@ -1966,6 +2001,154 @@ async fn multi_agent_v2_followup_task_completion_notifies_parent_on_every_turn()
+     assert_eq!(notifications.len(), 2);
+ }
+ 
++#[tokio::test]
++async fn multi_agent_v2_followup_restores_same_child_and_never_spawns_on_errors() {
++    let (mut session, mut turn) = make_session_and_context().await;
++    let mut config = (*turn.config).clone();
++    for feature in [Feature::MultiAgentV2, Feature::Sqlite] {
++        config.features.enable(feature).expect("enable v2 storage");
++    }
++    let state_db = init_state_db(&config).await.expect("initialize state db");
++    let manager = ThreadManager::with_models_provider_home_and_state_for_tests(
++        CodexAuth::from_api_key("dummy"),
++        config.model_provider.clone(),
++        config.codex_home.to_path_buf(),
++        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
++        Some(state_db),
++    );
++    let root = manager
++        .start_thread(StartThreadOptions::new(config.clone()))
++        .await
++        .expect("start parent");
++    root.thread.session.new_default_turn().await;
++    set_agent_control(
++        &mut session,
++        root.thread.session.services.agent_control.clone(),
++    );
++    session.thread_id = root.thread_id;
++    set_turn_config(&mut turn, config);
++    let session = Arc::new(session);
++    let turn = Arc::new(turn);
++    SpawnAgentHandlerV2::default()
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "spawn_agent",
++            function_payload(json!({"task_name": "worker", "message": "original work"})),
++        ))
++        .await
++        .expect("spawn original worker");
++    let control = &session.services.agent_control;
++    let agent_id = control
++        .resolve_agent_reference(session.thread_id, &turn.session_source, "worker")
++        .await
++        .expect("resolve original worker");
++
++    for (target, message) in [
++        (ThreadId::new().to_string(), "fix the failed test"),
++        ("worker".to_string(), " \t\n "),
++    ] {
++        let before_ids = manager.list_thread_ids().await;
++        let before_ops = manager.captured_ops().len();
++        let error = FollowupTaskHandlerV2
++            .handle(invocation(
++                session.clone(),
++                turn.clone(),
++                "followup_task",
++                function_payload(json!({"target": target, "message": message})),
++            ))
++            .await
++            .err()
++            .expect("invalid follow-up should fail");
++        assert!(matches!(error, FunctionCallError::RespondToModel(_)));
++        assert_eq!(manager.list_thread_ids().await, before_ids);
++        assert_eq!(manager.captured_ops().len(), before_ops);
++    }
++
++    let worker = manager.get_thread(agent_id).await.expect("loaded worker");
++    worker
++        .inject_response_items(vec![ResponseItem::Message {
++            id: None,
++            role: "user".to_string(),
++            content: vec![ContentItem::InputText {
++                text: "durable original worker context".to_string(),
++            }],
++            phase: None,
++            internal_chat_message_metadata_passthrough: None,
++        }])
++        .await
++        .expect("persist child context");
++    worker.shutdown_and_wait().await.expect("flush and unload");
++    let rollout_path = worker
++        .read_thread(
++            /*include_archived*/ true, /*include_history*/ false,
++        )
++        .await
++        .expect("read native child metadata")
++        .rollout_path
++        .expect("durable child rollout");
++    assert!(manager.remove_thread(&agent_id).await.is_some());
++    assert!(control.ensure_agent_known(agent_id).is_ok());
++    let output = FollowupTaskHandlerV2
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "followup_task",
++            function_payload(json!({
++                "target": "/root/worker",
++                "message": "review findings for the original worker",
++            })),
++        ))
++        .await
++        .expect("direct follow-up should reload the same child");
++    assert_eq!(expect_text_output(output), (String::new(), Some(true)));
++    let restored = manager.get_thread(agent_id).await.expect("same child ID");
++    assert_eq!(manager.list_thread_ids().await.len(), 2);
++    assert!(manager.captured_ops().iter().any(|(id, op)| {
++        *id == agent_id
++            && matches!(op, Op::InterAgentCommunication { communication, .. }
++                if communication.recipient.as_str() == "/root/worker"
++                    && communication.trigger_turn
++                    && communication.encrypted_content.as_deref()
++                        == Some("review findings for the original worker"))
++    }));
++
++    restored
++        .shutdown_and_wait()
++        .await
++        .expect("unload restored child");
++    assert!(manager.remove_thread(&agent_id).await.is_some());
++    let rollout_path = std::fs::canonicalize(rollout_path).expect("fixture rollout path");
++    let fixture_home = std::fs::canonicalize(&turn.config.codex_home).expect("fixture home");
++    assert!(rollout_path.starts_with(fixture_home));
++    std::fs::remove_file(rollout_path).expect("simulate unavailable native child history");
++    for explicitly_closed in [false, true] {
++        if explicitly_closed {
++            control
++                .close_agent(agent_id)
++                .await
++                .expect("close unavailable child");
++        }
++        let before_ops = manager.captured_ops().len();
++        let error = FollowupTaskHandlerV2
++            .handle(invocation(
++                session.clone(),
++                turn.clone(),
++                "followup_task",
++                function_payload(json!({
++                    "target": agent_id.to_string(),
++                    "message": "continue the original worker only",
++                })),
++            ))
++            .await
++            .err()
++            .expect("unavailable or closed child must not be replaced");
++        assert!(matches!(error, FunctionCallError::RespondToModel(_)));
++        assert_eq!(manager.list_thread_ids().await, vec![root.thread_id]);
++        assert_eq!(manager.captured_ops().len(), before_ops);
++    }
++}
++
+ #[tokio::test]
+ async fn multi_agent_v2_followup_task_rejects_legacy_items_field() {
+     let (mut session, mut turn) = make_session_and_context().await;
+@@ -2822,6 +3005,289 @@ async fn resume_agent_rejects_when_depth_limit_exceeded() {
+     );
+ }
+ 
++#[tokio::test]
++async fn multi_agent_v2_join_rejects_invalid_arguments_targets_and_runs() {
++    let (mut session, mut turn) = make_session_and_context().await;
++    let manager = thread_manager();
++    let root = manager
++        .start_thread(StartThreadOptions::new((*turn.config).clone()))
++        .await
++        .expect("root thread should start");
++    set_agent_control(&mut session, manager.agent_control());
++    session.thread_id = root.thread_id;
++    let mut config = (*turn.config).clone();
++    config
++        .features
++        .enable(Feature::MultiAgentV2)
++        .expect("test config should allow feature update");
++    set_turn_config(&mut turn, config);
++    let mut session = Arc::new(session);
++    let mut turn = Arc::new(turn);
++
++    let extra_field_error = JoinAgentHandler
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "join_agent",
++            function_payload(json!({
++                "target": "/root",
++                "run_id": "run",
++                "extra": true
++            })),
++        ))
++        .await
++        .err()
++        .expect("join_agent should reject extra fields");
++    assert!(matches!(
++        extra_field_error,
++        FunctionCallError::RespondToModel(message) if message.contains("unknown field `extra`")
++    ));
++
++    let empty_run_error = JoinAgentHandler
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "join_agent",
++            function_payload(json!({"target": "/root", "run_id": "   "})),
++        ))
++        .await
++        .err()
++        .expect("join_agent should reject an empty run id");
++    assert_eq!(
++        empty_run_error,
++        FunctionCallError::RespondToModel(
++            "run_id must be the non-empty opaque value returned by spawn_agent".to_string()
++        )
++    );
++
++    let missing_target_error = JoinAgentHandler
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "join_agent",
++            function_payload(json!({"target": "missing", "run_id": "run"})),
++        ))
++        .await
++        .err()
++        .expect("join_agent should reject an unknown target");
++    assert!(matches!(
++        missing_target_error,
++        FunctionCallError::RespondToModel(message) if message.contains("missing")
++    ));
++
++    let root_error = JoinAgentHandler
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "join_agent",
++            function_payload(json!({"target": "/root", "run_id": "run"})),
++        ))
++        .await
++        .err()
++        .expect("join_agent should reject root");
++    assert_eq!(
++        root_error,
++        FunctionCallError::RespondToModel("root is not a spawned agent".to_string())
++    );
++
++    let spawn_output = SpawnAgentHandlerV2::default()
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "spawn_agent",
++            function_payload(json!({
++                "message": "inspect this repo",
++                "task_name": "worker"
++            })),
++        ))
++        .await
++        .expect("spawn worker");
++    let (spawn_output, _) = expect_text_output(spawn_output);
++    let spawn_output: serde_json::Value =
++        serde_json::from_str(&spawn_output).expect("spawn result should be json");
++    let worker_path = spawn_output["task_name"]
++        .as_str()
++        .expect("spawn result task name");
++    let worker_id = session
++        .services
++        .agent_control
++        .resolve_agent_reference(session.thread_id, &turn.session_source, worker_path)
++        .await
++        .expect("spawned worker should resolve");
++
++    let unknown_run_error = JoinAgentHandler
++        .handle(invocation(
++            session.clone(),
++            turn.clone(),
++            "join_agent",
++            function_payload(json!({"target": worker_path, "run_id": "unknown-run"})),
++        ))
++        .await
++        .err()
++        .expect("join_agent should reject an unknown exact run");
++    assert_eq!(
++        unknown_run_error,
++        FunctionCallError::RespondToModel(format!(
++            "unknown run_id for target {worker_path}: no native run receipt exists for the supplied target/run_id pair"
++        ))
++    );
++
++    Arc::get_mut(&mut session)
++        .expect("test session should be uniquely owned")
++        .thread_id = worker_id;
++    Arc::get_mut(&mut turn)
++        .expect("test turn should be uniquely owned")
++        .session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++        parent_thread_id: root.thread_id,
++        depth: 1,
++        agent_path: Some(AgentPath::try_from(worker_path).expect("worker path")),
++        agent_nickname: None,
++        agent_role: None,
++    });
++    let self_error = JoinAgentHandler
++        .handle(invocation(
++            session,
++            turn,
++            "join_agent",
++            function_payload(json!({"target": worker_id.to_string(), "run_id": "run"})),
++        ))
++        .await
++        .err()
++        .expect("join_agent should reject self");
++    assert_eq!(
++        self_error,
++        FunctionCallError::RespondToModel("an agent cannot join its own run".to_string())
++    );
++}
++
++#[tokio::test]
++async fn join_agents_waits_for_every_exact_run_and_preserves_order() {
++    let (mut session, mut turn) = make_session_and_context().await;
++    let manager = thread_manager();
++    let root = manager
++        .start_thread(StartThreadOptions::new((*turn.config).clone()))
++        .await
++        .expect("root thread should start");
++    set_agent_control(&mut session, manager.agent_control());
++    session.thread_id = root.thread_id;
++    let mut config = (*turn.config).clone();
++    config
++        .features
++        .enable(Feature::MultiAgentV2)
++        .expect("test config should allow feature update");
++    set_turn_config(&mut turn, config);
++    let session = Arc::new(session);
++    let turn = Arc::new(turn);
++
++    let mut agents = Vec::new();
++    let mut targets = Vec::new();
++    let mut runs = Vec::new();
++    let mut arguments = Vec::new();
++    for name in ["a", "b", "c"] {
++        let output = SpawnAgentHandlerV2::default()
++            .handle(invocation(
++                session.clone(),
++                turn.clone(),
++                "spawn_agent",
++                function_payload(json!({
++                    "message": format!("read fixture {name}"),
++                    "task_name": format!("worker_{name}")
++                })),
++            ))
++            .await
++            .expect("spawn worker");
++        let (output, _) = expect_text_output(output);
++        let output: serde_json::Value =
++            serde_json::from_str(&output).expect("spawn result should be json");
++        let target = output["task_name"]
++            .as_str()
++            .expect("spawn result task name")
++            .to_string();
++        let agent_id = session
++            .services
++            .agent_control
++            .resolve_agent_reference(session.thread_id, &turn.session_source, &target)
++            .await
++            .expect("spawned worker should resolve");
++        let run_id = format!("batch-run-{name}");
++        let run_ref = AgentRunRef::new(agent_id, run_id.clone());
++        session
++            .services
++            .agent_control
++            .register_run_running(run_ref.clone());
++        agents.push(agent_id);
++        targets.push(target.clone());
++        runs.push(run_ref);
++        arguments.push(json!({"target": target, "run_id": run_id}));
++    }
++
++    let mut pending = JoinAgentsHandler.handle(invocation(
++        session.clone(),
++        turn.clone(),
++        "join_agents",
++        function_payload(json!({"runs": arguments})),
++    ));
++    assert!(
++        timeout(Duration::from_millis(50), pending.as_mut())
++            .await
++            .is_err(),
++        "join_agents should remain pending before any run is terminal"
++    );
++
++    for (index, run) in runs.iter().take(2).enumerate() {
++        session.services.agent_control.complete_run(
++            run.clone(),
++            Arc::new(AgentRunTerminal {
++                outcome: AgentRunOutcome::Completed {
++                    output: Some(format!("child-{index}")),
++                },
++            }),
++        );
++        assert!(
++            timeout(Duration::from_millis(50), pending.as_mut())
++                .await
++                .is_err(),
++            "join_agents should remain pending after only {} terminal runs",
++            index + 1
++        );
++    }
++
++    session.services.agent_control.complete_run(
++        runs[2].clone(),
++        Arc::new(AgentRunTerminal {
++            outcome: AgentRunOutcome::Completed {
++                output: Some("child-2".to_string()),
++            },
++        }),
++    );
++    let output = timeout(Duration::from_secs(1), pending.as_mut())
++        .await
++        .expect("join_agents should finish after every run is terminal")
++        .expect("join_agents should succeed");
++    let (content, success) = expect_text_output(output);
++    let result: serde_json::Value =
++        serde_json::from_str(&content).expect("join_agents result should be json");
++    let results = result["results"]
++        .as_array()
++        .expect("join_agents results should be an array");
++    assert_eq!(results.len(), 3);
++    for (index, result) in results.iter().enumerate() {
++        assert_eq!(result["target"], json!(targets[index]));
++        assert_eq!(result["run_id"], json!(runs[index].run_id));
++        assert_eq!(result["status"], json!("completed"));
++        assert_eq!(result["output"], json!(format!("child-{index}")));
++    }
++    assert_eq!(success, Some(true));
++
++    for agent_id in agents {
++        let _ = manager
++            .agent_control()
++            .shutdown_live_agent(agent_id)
++            .await
++            .expect("shutdown spawned agent");
++    }
++}
++
+ #[tokio::test]
+ async fn wait_agent_rejects_non_positive_timeout() {
+     let (session, turn) = make_session_and_context().await;
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2.rs
+index ea44c0a427837bad62969097cacc947d9b0ed069..da9ca3dfdddc65d851a16b1addf45e3b61ece99f 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2.rs
+@@ -27,6 +27,8 @@ use serde_json::Value as JsonValue;
+ 
+ pub(crate) use followup_task::Handler as FollowupTaskHandler;
+ pub(crate) use interrupt_agent::Handler as InterruptAgentHandler;
++pub(crate) use join::Handler as JoinAgentHandler;
++pub(crate) use join_many::Handler as JoinAgentsHandler;
+ pub(crate) use list_agents::Handler as ListAgentsHandler;
+ pub(crate) use send_message::Handler as SendMessageHandler;
+ pub(crate) use spawn::Handler as SpawnAgentHandler;
+@@ -35,6 +37,8 @@ pub(crate) use wait::Handler as WaitAgentHandler;
+ mod analytics;
+ mod followup_task;
+ mod interrupt_agent;
++mod join;
++mod join_many;
+ mod list_agents;
+ mod message_tool;
+ mod send_message;
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
+index f48eb89a8b63a8d2e66dd71239c739357f3d2ec4..14ea850bcfa2b8aed7befd587ef501ed9472ab3f 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
+@@ -208,6 +208,9 @@ async fn handle_spawn_agent(
+         .await
+         .map_err(collab_spawn_error)?;
+     let new_thread_id = spawned_agent.thread_id;
++    let run_id = spawned_agent.initial_run_id.ok_or_else(|| {
++        FunctionCallError::Fatal("spawned agent missing initial run id".to_string())
++    })?;
+     let agent_status = spawned_agent.status;
+     let nickname = agent_snapshot
+         .session_source
+@@ -234,10 +237,11 @@ async fn handle_spawn_agent(
+ 
+     let hide_agent_metadata = turn.config.multi_agent_v2.hide_spawn_agent_metadata;
+     let output = if hide_agent_metadata {
+-        SpawnAgentResult::HiddenMetadata { task_name }
++        SpawnAgentResult::HiddenMetadata { task_name, run_id }
+     } else {
+         SpawnAgentResult::WithNickname {
+             task_name,
++            run_id,
+             nickname,
+         }
+     };
+@@ -275,7 +279,7 @@ impl SpawnAgentArgs {
+             .as_deref()
+             .map(str::trim)
+             .filter(|fork_turns| !fork_turns.is_empty())
+-            .unwrap_or("all");
++            .unwrap_or("none");
+ 
+         if fork_turns.eq_ignore_ascii_case("none") {
+             return Ok(None);
+@@ -304,10 +308,12 @@ impl SpawnAgentArgs {
+ pub(crate) enum SpawnAgentResult {
+     WithNickname {
+         task_name: String,
++        run_id: String,
+         nickname: Option<String>,
+     },
+     HiddenMetadata {
+         task_name: String,
++        run_id: String,
+     },
+ }
+ 
+diff --git a/codex-rs/core/src/tools/handlers/test_sync.rs b/codex-rs/core/src/tools/handlers/test_sync.rs
+index f9f15f01ad691fbd9e6ed8220befecfc4bbe3445..f0d80b920c15d99c88425d6aa14732f258cd77fe 100644
+--- a/codex-rs/core/src/tools/handlers/test_sync.rs
++++ b/codex-rs/core/src/tools/handlers/test_sync.rs
+@@ -30,6 +30,7 @@ static BARRIERS: OnceLock<tokio::sync::Mutex<HashMap<String, BarrierState>>> = O
+ struct BarrierState {
+     barrier: Arc<Barrier>,
+     participants: usize,
++    arrivals: usize,
+ }
+ 
+ #[derive(Debug, Deserialize)]
+@@ -154,7 +155,7 @@ async fn wait_on_barrier(args: BarrierArgs) -> Result<(), FunctionCallError> {
+     let barrier_id = args.id.clone();
+     let barrier = {
+         let mut map = barrier_map().lock().await;
+-        match map.entry(barrier_id.clone()) {
++        let state = match map.entry(barrier_id.clone()) {
+             Entry::Occupied(entry) => {
+                 let state = entry.get();
+                 if state.participants != args.participants {
+@@ -163,17 +164,16 @@ async fn wait_on_barrier(args: BarrierArgs) -> Result<(), FunctionCallError> {
+                         "barrier {barrier_id} already registered with {existing} participants"
+                     )));
+                 }
+-                state.barrier.clone()
++                entry.into_mut()
+             }
+-            Entry::Vacant(entry) => {
+-                let barrier = Arc::new(Barrier::new(args.participants));
+-                entry.insert(BarrierState {
+-                    barrier: barrier.clone(),
+-                    participants: args.participants,
+-                });
+-                barrier
+-            }
+-        }
++            Entry::Vacant(entry) => entry.insert(BarrierState {
++                barrier: Arc::new(Barrier::new(args.participants)),
++                participants: args.participants,
++                arrivals: 0,
++            }),
++        };
++        state.arrivals += 1;
++        state.barrier.clone()
+     };
+ 
+     let timeout = Duration::from_millis(args.timeout_ms);
+@@ -194,3 +194,31 @@ async fn wait_on_barrier(args: BarrierArgs) -> Result<(), FunctionCallError> {
+ 
+     Ok(())
+ }
++
++pub(crate) async fn wait_for_barrier_arrivals_for_tests(id: &str, arrivals: usize) {
++    loop {
++        if barrier_map()
++            .lock()
++            .await
++            .get(id)
++            .is_some_and(|state| state.arrivals >= arrivals)
++        {
++            return;
++        }
++        tokio::task::yield_now().await;
++    }
++}
++
++pub(crate) async fn wait_on_barrier_for_tests(
++    id: &str,
++    participants: usize,
++    timeout_ms: u64,
++) -> Result<(), String> {
++    wait_on_barrier(BarrierArgs {
++        id: id.to_string(),
++        participants,
++        timeout_ms,
++    })
++    .await
++    .map_err(|err| format!("{err:?}"))
++}
+diff --git a/codex-rs/core/src/tools/spec_plan.rs b/codex-rs/core/src/tools/spec_plan.rs
+index 335ce59526c79c998417365ca20f9b4520052839..d30aa13ab574ec7d0641c055e7ed8b0ebbbcdb44 100644
+--- a/codex-rs/core/src/tools/spec_plan.rs
++++ b/codex-rs/core/src/tools/spec_plan.rs
+@@ -45,6 +45,8 @@ use crate::tools::handlers::multi_agents_spec::SpawnAgentToolOptions;
+ use crate::tools::handlers::multi_agents_spec::WaitAgentTimeoutOptions;
+ use crate::tools::handlers::multi_agents_v2::FollowupTaskHandler as FollowupTaskHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::InterruptAgentHandler;
++use crate::tools::handlers::multi_agents_v2::JoinAgentHandler;
++use crate::tools::handlers::multi_agents_v2::JoinAgentsHandler;
+ use crate::tools::handlers::multi_agents_v2::ListAgentsHandler as ListAgentsHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
+@@ -1310,6 +1312,14 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, registry: &mut Too
+                 exposure,
+             );
+             if turn_context.config.multi_agent_v2.wait_agent_enabled {
++                registry.register_trusted_with_exposure(
++                    multi_agent_v2_handler(JoinAgentsHandler, None, None, None),
++                    exposure,
++                );
++                registry.register_trusted_with_exposure(
++                    multi_agent_v2_handler(JoinAgentHandler, None, None, None),
++                    exposure,
++                );
+                 registry.register_trusted_with_exposure(
+                     multi_agent_v2_handler(
+                         WaitAgentHandlerV2::new(context.wait_agent_timeouts),
+diff --git a/codex-rs/core/src/tools/spec_plan_tests.rs b/codex-rs/core/src/tools/spec_plan_tests.rs
+index 151855840956a55510302c2dc2fe21efcd4c676c..02aa61495364aa58febb32c1897807456b67d2a3 100644
+--- a/codex-rs/core/src/tools/spec_plan_tests.rs
++++ b/codex-rs/core/src/tools/spec_plan_tests.rs
+@@ -2786,6 +2786,7 @@ async fn multi_agent_feature_selects_one_agent_tool_family() {
+         );
+     }
+     assert!(!properties.contains_key("agent_type"));
++    assert!(!spawn_agent.description.contains("Handoff contract:"));
+ 
+     let v2 = probe(|turn| {
+         set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+@@ -2850,8 +2851,22 @@ async fn multi_agent_feature_selects_one_agent_tool_family() {
+     let spawn_agent_description = spawn_agent.description.as_str();
+     assert!(!spawn_agent_description.contains("max_concurrent_threads_per_session"));
+     assert!(spawn_agent_description.contains(
+-        "Note that passing `fork_turns=\"none\"` will not pass any surrounding context to the spawned subagent"
++        "Omitting `fork_turns` or passing `fork_turns=\"none\"` starts the subagent with fresh context and no parent transcript"
+     ));
++    for fragment in [
++        "Explorer: QUESTION, SCOPE, KNOWN ENTRY POINTS, CONSTRAINTS, RETURN",
++        "Worker: GOAL, OWNERSHIP, TARGETS, KNOWN FINDINGS, DECISIONS, CURRENT STATE, CONSTRAINTS, VALIDATION, RETURN",
++        "omit unknown fields rather than inventing facts",
++        "Pass explorer conclusions and evidence to the worker",
++        "Pass the worker's change summary and validation results to the reviewer/checker",
++        "original worker with `followup_task`, continuing the same child",
++        "do not make an extra model call solely to summarize a handoff",
++    ] {
++        assert!(
++            spawn_agent_description.contains(fragment),
++            "missing handoff guidance: {fragment}"
++        );
++    }
+ 
+     let direct_model_only = probe(|turn| {
+         set_features(
+@@ -3149,6 +3164,8 @@ async fn code_mode_only_can_expose_namespaced_multi_agent_v2_as_normal_tools() {
+             "wait",
+             "request_user_input",
+             "agents",
++            "join_agents",
++            "join_agent",
+             // Hosted Responses tool.
+             "web_search",
+         ]
+@@ -3315,6 +3332,8 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
+             "request_user_input",
+             // Multi-agent v2 tools.
+             MULTI_AGENT_V2_NAMESPACE,
++            "join_agents",
++            "join_agent",
+             // Hosted Responses tools.
+             "web_search",
+         ]
+diff --git a/codex-rs/core/tests/suite/mod.rs b/codex-rs/core/tests/suite/mod.rs
+index 8b4d4ff2fc80ee12d5d5a65b5fa7b2939eda1c47..e13b3b761033b01dcd70a0f6ae6e40bd8c8a60a2 100644
+--- a/codex-rs/core/tests/suite/mod.rs
++++ b/codex-rs/core/tests/suite/mod.rs
+@@ -135,6 +135,7 @@ mod model_visible_layout;
+ mod models_cache_auth;
+ mod models_cache_ttl;
+ mod models_etag_responses;
++mod multi_agent_join;
+ mod multi_agent_mode;
+ mod multi_agent_resume;
+ mod multi_agent_tool_descriptions;
+@@ -198,6 +199,7 @@ mod step_settings;
+ mod step_settings_snapshots;
+ mod stream_error_allows_next_turn;
+ mod stream_no_completed;
++mod subagent_context;
+ mod subagent_notifications;
+ mod subagent_service_tier;
+ mod token_budget;
+diff --git a/codex-rs/core/tests/suite/multi_agent_resume.rs b/codex-rs/core/tests/suite/multi_agent_resume.rs
+index b263522d6fa644c096759e43eef1f5658010d889..4282a919d6a222d67d48df1d442ed7b069acdd53 100644
+--- a/codex-rs/core/tests/suite/multi_agent_resume.rs
++++ b/codex-rs/core/tests/suite/multi_agent_resume.rs
+@@ -1,9 +1,12 @@
+ use anyhow::Result;
+ use codex_core::TurnInputRequest;
+ use codex_core::config::AgentRoleConfig;
++use codex_core::test_support::wait_for_test_sync_barrier_arrivals;
++use codex_core::test_support::wait_on_test_sync_barrier;
+ use codex_features::Feature;
+ use codex_protocol::models::PermissionProfile;
+ use codex_protocol::openai_models::ReasoningEffort;
++use codex_protocol::protocol::AgentStatus;
+ use codex_protocol::protocol::EventMsg;
+ use codex_protocol::protocol::Op;
+ use codex_protocol::protocol::ThreadSettingsOverrides;
+@@ -12,6 +15,7 @@ use core_test_support::responses::assert_parent_turn;
+ use core_test_support::responses::assert_root_turn;
+ use core_test_support::responses::ev_assistant_message;
+ use core_test_support::responses::ev_completed;
++use core_test_support::responses::ev_function_call;
+ use core_test_support::responses::ev_function_call_with_namespace;
+ use core_test_support::responses::ev_response_created;
+ use core_test_support::responses::mount_sse_once;
+@@ -27,6 +31,7 @@ use serde_json::json;
+ use std::time::Duration;
+ use tokio::time::Instant;
+ use tokio::time::sleep;
++use tokio::time::timeout;
+ 
+ #[path = "multi_agent_restore_tests.rs"]
+ mod restore_tests;
+@@ -168,6 +173,171 @@ fn configure_multi_agent_v2_with_role(
+     );
+ }
+ 
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn multi_agent_v2_followup_reuses_busy_and_completed_worker_history() -> Result<()> {
++    const PARENT_ONLY: &str = "parent-private-resume-routing-context";
++    const START_PROMPT: &str = "parent-private-resume-routing-context: start the original worker";
++    const BUSY_PROMPT: &str = "parent-private-resume-routing-context: send the failed test details";
++    const OMIT_PROMPT: &str = "parent-private-resume-routing-context: request the small omission";
++    const BUSY_TASK: &str = "Test failure: fix the parser validation case in your original work";
++    const BUSY_RESULT: &str = "Original worker fixed the parser validation failure";
++    const OMIT_TASK: &str = "Small omission: add the missing assertion to your validation case";
++    const GATE_ID: &str = "original-worker-resume-routing-gate";
++    const GATE_CALL_ID: &str = "original-worker-pending-tool";
++
++    let server = start_mock_server().await;
++    let model_provider_base_url = format!("{}/v1", server.uri());
++    let test = test_codex()
++        .with_config(move |config| {
++            configure_multi_agent_v2_with_role(config, &model_provider_base_url);
++        })
++        .with_model_info_override(ROLE_MODEL, |model| {
++            model
++                .experimental_supported_tools
++                .push("test_sync_tool".to_string());
++        })
++        // The catalog override also selects the model; keep root requests distinct.
++        .with_model("gpt-5.5")
++        .build_with_auto_env(&server)
++        .await?;
++    let root_thread_id = test.session_configured.thread_id;
++    let mut created_threads = test.thread_manager.subscribe_thread_created();
++    mount_root_collaboration_call(
++        &server,
++        START_PROMPT,
++        "spawn-original-worker",
++        "spawn_agent",
++        &json!({
++            "task_name": "worker",
++            "agent_type": ROLE_NAME,
++            "message": INITIAL_TASK,
++        })
++        .to_string(),
++    )
++    .await;
++    let initial_request = mount_sse_once_match(
++        &server,
++        |request: &wiremock::Request| {
++            request_has_model(request, ROLE_MODEL) && body_contains(request, INITIAL_TASK)
++        },
++        sse(vec![
++            ev_response_created("resp-original-worker-busy"),
++            ev_function_call(
++                GATE_CALL_ID,
++                "test_sync_tool",
++                &json!({"barrier": {"id": GATE_ID, "participants": 2, "timeout_ms": 30_000}})
++                    .to_string(),
++            ),
++            ev_completed("resp-original-worker-busy"),
++        ]),
++    )
++    .await;
++    test.submit_turn(START_PROMPT).await?;
++    let worker_thread_id = timeout(Duration::from_secs(5), created_threads.recv()).await??;
++    let worker = test.thread_manager.get_thread(worker_thread_id).await?;
++    timeout(
++        Duration::from_secs(5),
++        wait_for_test_sync_barrier_arrivals(GATE_ID, /*arrivals*/ 1),
++    )
++    .await
++    .expect("original worker should reach the pending tool gate");
++    assert_eq!(worker.agent_status().await, AgentStatus::Running);
++
++    mount_root_collaboration_call(
++        &server,
++        BUSY_PROMPT,
++        "followup-busy-worker",
++        "followup_task",
++        &json!({"target": worker_thread_id.to_string(), "message": BUSY_TASK}).to_string(),
++    )
++    .await;
++    let busy_request = mount_sse_once_match(
++        &server,
++        |request: &wiremock::Request| {
++            request_has_model(request, ROLE_MODEL) && body_contains(request, BUSY_TASK)
++        },
++        sse(vec![
++            ev_response_created("resp-original-worker-fixed"),
++            ev_assistant_message("msg-original-worker-fixed", BUSY_RESULT),
++            ev_completed("resp-original-worker-fixed"),
++        ]),
++    )
++    .await;
++    test.submit_turn(BUSY_PROMPT).await?;
++    assert_eq!(worker.agent_status().await, AgentStatus::Running);
++    assert!(busy_request.requests().is_empty());
++    assert_eq!(test.thread_manager.list_thread_ids().await.len(), 2);
++    wait_on_test_sync_barrier(GATE_ID, /*participants*/ 2, /*timeout_ms*/ 30_000)
++        .await
++        .map_err(anyhow::Error::msg)?;
++    wait_for_event(worker.as_ref(), |event| {
++        matches!(event, EventMsg::TurnComplete(_))
++    })
++    .await;
++
++    mount_root_collaboration_call(
++        &server,
++        OMIT_PROMPT,
++        "followup-completed-worker",
++        "followup_task",
++        &json!({"target": "worker", "message": OMIT_TASK}).to_string(),
++    )
++    .await;
++    let completed_request = mount_sse_once_match(
++        &server,
++        |request: &wiremock::Request| {
++            request_has_model(request, ROLE_MODEL) && body_contains(request, OMIT_TASK)
++        },
++        sse(vec![
++            ev_response_created("resp-original-worker-omission"),
++            ev_assistant_message("msg-original-worker-omission", "Missing assertion added"),
++            ev_completed("resp-original-worker-omission"),
++        ]),
++    )
++    .await;
++    test.submit_turn(OMIT_PROMPT).await?;
++    wait_for_event(worker.as_ref(), |event| {
++        matches!(event, EventMsg::TurnComplete(_))
++    })
++    .await;
++
++    let initial = initial_request.single_request();
++    let busy = busy_request.single_request();
++    let completed = completed_request.single_request();
++    for request in [&initial, &busy, &completed] {
++        let body = request.body_json();
++        assert_eq!(
++            body["client_metadata"]["thread_id"],
++            json!(worker_thread_id)
++        );
++        assert_eq!(
++            body["client_metadata"]["x-codex-parent-thread-id"],
++            json!(root_thread_id)
++        );
++        assert!(request.body_contains_text(INITIAL_TASK));
++        assert!(request.body_contains_text(ROLE_DEVELOPER_INSTRUCTIONS));
++        assert!(!request.body_contains_text(PARENT_ONLY));
++        assert!(
++            request
++                .inputs_of_type("agent_message")
++                .iter()
++                .any(|item| { item["author"] == "/root" && item["recipient"] == "/root/worker" })
++        );
++    }
++    for request in [&busy, &completed] {
++        assert!(request.body_contains_text(GATE_CALL_ID));
++        assert!(request.body_contains_text(BUSY_TASK));
++    }
++    assert!(completed.body_contains_text(BUSY_RESULT));
++    assert!(completed.body_contains_text(OMIT_TASK));
++    let thread_ids = test.thread_manager.list_thread_ids().await;
++    assert_eq!(thread_ids.len(), 2);
++    assert!(thread_ids.contains(&root_thread_id));
++    assert!(thread_ids.contains(&worker_thread_id));
++    assert!(created_threads.try_recv().is_err());
++    Ok(())
++}
++
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+ async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Result<()> {
+     let server = start_mock_server().await;
+@@ -538,6 +708,10 @@ openai_base_url = "{redirected_base_url}"
+     .await;
+     assert!(followup_child_request.requests().iter().any(|request| {
+         request.body_contains_text(FOLLOWUP_TASK)
++            && request.body_contains_text(INITIAL_TASK)
++            && request.body_contains_text(NESTED_CALL_ID)
++            && !request.body_contains_text(INITIAL_PROMPT)
++            && !request.body_contains_text(FOLLOWUP_PROMPT)
+             && request.body_contains_text(ROLE_DEVELOPER_INSTRUCTIONS)
+             && request.body_contains_text("<permission_profile type=\"disabled\">")
+             && !request.body_contains_text(SUBAGENT_DEVELOPER_INSTRUCTIONS)
+diff --git a/codex-rs/core/tests/suite/subagent_notifications.rs b/codex-rs/core/tests/suite/subagent_notifications.rs
+index ccd44bb92d83a6b78f3c3a9949cca4eabafab44d..22d665e5dca9d3180c5b8966dea7b9e77e1ae49d 100644
+--- a/codex-rs/core/tests/suite/subagent_notifications.rs
++++ b/codex-rs/core/tests/suite/subagent_notifications.rs
+@@ -1461,7 +1461,7 @@ enum FullHistoryV2ModelSelection {
+     MultiAgentModeTransitions,
+ }
+ 
+-#[test_case(FullHistoryV2ModelSelection::ConfiguredDefault; "configured default with omitted fork_turns")]
++#[test_case(FullHistoryV2ModelSelection::ConfiguredDefault; "configured default with fork_turns all")]
+ #[test_case(FullHistoryV2ModelSelection::ExplicitOverride; "explicit override with fork_turns all")]
+ #[test_case(FullHistoryV2ModelSelection::WorldStateIdentity; "world state appends context window when agent identity changes")]
+ #[test_case(FullHistoryV2ModelSelection::CurrentTimeReminders; "full fork drops inherited current-time reminders")]
+@@ -1493,6 +1493,7 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
+             json!({
+                 "message": CHILD_PROMPT,
+                 "task_name": "worker",
++                "fork_turns": "all",
+             }),
+             V2_DEFAULT_MODEL,
+             V2_DEFAULT_REASONING_EFFORT,
+@@ -2799,8 +2800,9 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn() -> R
+     const SPAWN_REQUESTER_PROMPT: &str = "spawn the completion-routing requester";
+     const READ_RESULT_PROMPT: &str = "read the completion-routing worker result";
+     const WORKER_INITIAL_TASK: &str = "finish the worker initial task";
+-    const REQUESTER_TASK: &str = "ask the sibling worker to do more";
+-    const WORKER_FOLLOWUP_TASK: &str = "finish the peer-requested worker task";
++    const REQUESTER_TASK: &str =
++        "review the implementation and send findings to the original worker";
++    const WORKER_FOLLOWUP_TASK: &str = "Reviewer/checker findings: add the omitted validation case";
+     const WORKER_CALL_ID: &str = "spawn-routing-worker";
+     const REQUESTER_CALL_ID: &str = "spawn-routing-requester";
+     const FOLLOWUP_CALL_ID: &str = "request-peer-followup";
+@@ -3002,6 +3004,10 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn() -> R
+             (body["client_metadata"]["thread_id"] == json!(worker_thread_id)
+                 && request.body_contains_text(WORKER_FOLLOWUP_TASK))
+             .then(|| {
++                assert!(request.body_contains_text(WORKER_INITIAL_TASK));
++                assert!(request.body_contains_text("initial worker finished"));
++                assert!(!request.body_contains_text(REQUESTER_TASK));
++                assert!(!request.body_contains_text(SPAWN_REQUESTER_PROMPT));
+                 let metadata: Value = serde_json::from_str(
+                     body["client_metadata"]["x-codex-turn-metadata"]
+                         .as_str()
+@@ -3016,6 +3022,11 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn() -> R
+             })
+         })
+         .expect("worker follow-up model request");
++    let thread_ids = test.thread_manager.list_thread_ids().await;
++    assert_eq!(thread_ids.len(), 3);
++    for thread_id in [root_thread_id, worker_thread_id, requester_thread_id] {
++        assert!(thread_ids.contains(&thread_id));
++    }
+     let completed = timeout(
+         Duration::from_secs(5),
+         wait_for_event_match(requester_thread.as_ref(), |event| match event {
+diff --git a/codex-rs/install-context/src/lib.rs b/codex-rs/install-context/src/lib.rs
+index 1a9be86a1169e701e07d07152a9dd9a9886be000..d8cf334d8a735ccbdaff263f54dfa4a3946baa8c 100644
+--- a/codex-rs/install-context/src/lib.rs
++++ b/codex-rs/install-context/src/lib.rs
+@@ -13,6 +13,7 @@ const CODE_MODE_HOST_EXECUTABLE_NAME: &str = if cfg!(windows) {
+ } else {
+     "codex-code-mode-host"
+ };
++const CSA_OFFICIAL_PACKAGE_ROOT_ENV: &str = "CSA_CODEX_OFFICIAL_PACKAGE_ROOT";
+ const PACKAGE_METADATA_FILENAME: &str = "codex-package.json";
+ const PATH_DIRNAME: &str = "codex-path";
+ const RELEASES_DIRNAME: &str = "releases";
+@@ -103,7 +104,27 @@ impl InstallContext {
+         method_override: Option<InstallMethod>,
+         codex_home: Option<&Path>,
+     ) -> Self {
+-        let package_layout = current_exe.and_then(CodexPackageLayout::from_exe);
++        Self::from_exe_with_official_package_root(
++            is_macos,
++            current_exe,
++            method_override,
++            codex_home,
++            None,
++        )
++    }
++
++    fn from_exe_with_official_package_root(
++        is_macos: bool,
++        current_exe: Option<&Path>,
++        method_override: Option<InstallMethod>,
++        codex_home: Option<&Path>,
++        official_package_root: Option<&Path>,
++    ) -> Self {
++        let package_layout = match official_package_root {
++            Some(package_root) => current_exe
++                .and_then(|exe| CodexPackageLayout::from_overlay_and_official(exe, package_root)),
++            None => current_exe.and_then(CodexPackageLayout::from_exe),
++        };
+         let method = if let Some(method) = method_override {
+             method
+         } else if let Some(exe_path) = current_exe {
+@@ -132,10 +153,15 @@ impl InstallContext {
+             } else {
+                 None
+             };
+-            Self::from_exe(
++            let codex_home = codex_utils_home_dir::find_codex_home().ok();
++            let official_package_root =
++                std::env::var_os(CSA_OFFICIAL_PACKAGE_ROOT_ENV).map(PathBuf::from);
++            Self::from_exe_with_official_package_root(
+                 cfg!(target_os = "macos"),
+                 current_exe.as_deref(),
+                 method_override,
++                codex_home.as_deref(),
++                official_package_root.as_deref(),
+             )
+         })
+     }
+@@ -151,12 +177,9 @@ impl InstallContext {
+ 
+     pub fn rg_command(&self) -> PathBuf {
+         if let Some(package_layout) = &self.package_layout
+-            && let Some(path_dir) = &package_layout.path_dir
++            && let Some(bundled_rg) = package_layout.path_file(default_rg_command())
+         {
+-            let bundled_rg = path_dir.join(default_rg_command());
+-            if bundled_rg.is_file() {
+-                return bundled_rg.into_path_buf();
+-            }
++            return bundled_rg.into_path_buf();
+         }
+ 
+         if let InstallMethod::Standalone {
+@@ -183,20 +206,22 @@ impl InstallContext {
+     }
+ 
+     fn code_mode_host_program_from_exe(&self, current_exe: Option<&Path>) -> PathBuf {
+-        let executable_dir = if let Some(package_layout) = &self.package_layout {
+-            Some(package_layout.bin_dir.clone())
++        let executable = if let Some(package_layout) = &self.package_layout {
++            package_layout.bin_file(CODE_MODE_HOST_EXECUTABLE_NAME)
+         } else if let InstallMethod::Standalone { release_dir, .. } = &self.method {
+-            Some(release_dir.clone())
++            let executable = release_dir.join(CODE_MODE_HOST_EXECUTABLE_NAME);
++            executable.is_file().then_some(executable)
+         } else {
+             current_exe
+                 .and_then(Path::parent)
+                 .and_then(canonical_absolute_path)
++                .and_then(|directory| {
++                    let executable = directory.join(CODE_MODE_HOST_EXECUTABLE_NAME);
++                    executable.is_file().then_some(executable)
++                })
+         };
+-        if let Some(executable_dir) = executable_dir {
+-            let executable = executable_dir.join(CODE_MODE_HOST_EXECUTABLE_NAME);
+-            if executable.is_file() {
+-                return executable.into_path_buf();
+-            }
++        if let Some(executable) = executable {
++            return executable.into_path_buf();
+         }
+ 
+         current_exe
+@@ -207,12 +232,9 @@ impl InstallContext {
+ 
+     pub fn bundled_resource(&self, file_name: impl AsRef<Path>) -> Option<AbsolutePathBuf> {
+         if let Some(package_layout) = &self.package_layout
+-            && let Some(resources_dir) = &package_layout.resources_dir
++            && let Some(resource) = package_layout.resource_file(file_name.as_ref())
+         {
+-            let resource = resources_dir.join(file_name.as_ref());
+-            if resource.is_file() {
+-                return Some(resource);
+-            }
++            return Some(resource);
+         }
+ 
+         if let InstallMethod::Standalone {
+@@ -299,6 +321,48 @@ impl CodexPackageLayout {
+             bin_dir,
+         })
+     }
++
++    fn from_overlay_and_official(exe_path: &Path, official_package_root: &Path) -> Option<Self> {
++        let overlay_bin_dir = canonical_absolute_path(exe_path)?.parent()?;
++        if overlay_bin_dir.file_name() != Some(OsStr::new(BIN_DIRNAME)) {
++            return None;
++        }
++        let overlay_root = overlay_bin_dir.parent()?;
++        let official_root = canonical_absolute_path(official_package_root)?;
++        let official = Self::from_package_bin_dir(official_root.join(BIN_DIRNAME))?;
++        Some(Self {
++            package_dir: official.package_dir,
++            bin_dir: overlay_bin_dir,
++            resources_dir: existing_dir(overlay_root.join(RESOURCES_DIRNAME))
++                .or(official.resources_dir),
++            path_dir: existing_dir(overlay_root.join(PATH_DIRNAME)).or(official.path_dir),
++        })
++    }
++
++    fn bin_file(&self, file_name: impl AsRef<Path>) -> Option<AbsolutePathBuf> {
++        existing_file(self.bin_dir.join(file_name.as_ref()))
++            .or_else(|| existing_file(self.package_dir.join(BIN_DIRNAME).join(file_name.as_ref())))
++    }
++
++    fn resource_file(&self, file_name: impl AsRef<Path>) -> Option<AbsolutePathBuf> {
++        self.resources_dir
++            .as_ref()
++            .and_then(|directory| existing_file(directory.join(file_name.as_ref())))
++            .or_else(|| {
++                existing_file(
++                    self.package_dir
++                        .join(RESOURCES_DIRNAME)
++                        .join(file_name.as_ref()),
++                )
++            })
++    }
++
++    fn path_file(&self, file_name: impl AsRef<Path>) -> Option<AbsolutePathBuf> {
++        self.path_dir
++            .as_ref()
++            .and_then(|directory| existing_file(directory.join(file_name.as_ref())))
++            .or_else(|| existing_file(self.package_dir.join(PATH_DIRNAME).join(file_name.as_ref())))
++    }
+ }
+ 
+ fn install_method_from_exe(
+@@ -363,6 +427,10 @@ fn existing_dir(path: AbsolutePathBuf) -> Option<AbsolutePathBuf> {
+     path.is_dir().then_some(path)
+ }
+ 
++fn existing_file(path: AbsolutePathBuf) -> Option<AbsolutePathBuf> {
++    path.is_file().then_some(path)
++}
++
+ fn default_rg_command() -> PathBuf {
+     if cfg!(windows) {
+         PathBuf::from("rg.exe")
+@@ -765,6 +833,99 @@ mod tests {
+         Ok(())
+     }
+ 
++    #[test]
++    fn csa_overlay_prefers_owned_files_and_falls_back_to_the_official_package()
++    -> std::io::Result<()> {
++        let root = tempfile::tempdir()?;
++        let overlay = root.path().join("overlay/runtime");
++        let overlay_bin = overlay.join(BIN_DIRNAME);
++        let overlay_resources = overlay.join(RESOURCES_DIRNAME);
++        let overlay_path = overlay.join(PATH_DIRNAME);
++        let official = root.path().join("official");
++        let official_bin = official.join(BIN_DIRNAME);
++        let official_resources = official.join(RESOURCES_DIRNAME);
++        let official_path = official.join(PATH_DIRNAME);
++        for directory in [
++            &overlay_bin,
++            &overlay_resources,
++            &overlay_path,
++            &official_bin,
++            &official_resources,
++            &official_path,
++        ] {
++            fs::create_dir_all(directory)?;
++        }
++        fs::write(
++            official.join(PACKAGE_METADATA_FILENAME),
++            r#"{"version":"1.2.3"}"#,
++        )?;
++        let exe = overlay_bin.join(if cfg!(windows) { "codex.exe" } else { "codex" });
++        let overlay_host = overlay_bin.join(CODE_MODE_HOST_EXECUTABLE_NAME);
++        let official_host = official_bin.join(CODE_MODE_HOST_EXECUTABLE_NAME);
++        let overlay_resource = overlay_resources.join(TEST_RESOURCE_NAME);
++        let official_resource = official_resources.join(TEST_RESOURCE_NAME);
++        let overlay_rg = overlay_path.join(default_rg_command());
++        let official_rg = official_path.join(default_rg_command());
++        for (path, contents) in [
++            (&exe, "patched codex"),
++            (&overlay_host, "overlay host"),
++            (&official_host, "official host"),
++            (&overlay_resource, "overlay resource"),
++            (&official_resource, "official resource"),
++            (&overlay_rg, "overlay rg"),
++            (&official_rg, "official rg"),
++        ] {
++            fs::write(path, contents)?;
++        }
++
++        let context = InstallContext::from_exe_with_official_package_root(
++            /*is_macos*/ false,
++            /*current_exe*/ Some(&exe),
++            /*method_override*/ Some(InstallMethod::Bun),
++            /*codex_home*/ None,
++            /*official_package_root*/ Some(&official),
++        );
++        assert_eq!(
++            context.package_manifest(),
++            Some(CodexPackageManifest {
++                version: Version::new(1, 2, 3),
++            })
++        );
++        assert_eq!(
++            context.code_mode_host_program(),
++            AbsolutePathBuf::from_absolute_path(overlay_host.canonicalize()?)?.into_path_buf()
++        );
++        assert_eq!(
++            context.rg_command(),
++            AbsolutePathBuf::from_absolute_path(overlay_rg.canonicalize()?)?.into_path_buf()
++        );
++        assert_eq!(
++            context.bundled_resource(TEST_RESOURCE_NAME),
++            Some(AbsolutePathBuf::from_absolute_path(
++                overlay_resource.canonicalize()?
++            )?)
++        );
++
++        fs::remove_file(overlay_host)?;
++        fs::remove_file(overlay_resource)?;
++        fs::remove_file(overlay_rg)?;
++        assert_eq!(
++            context.code_mode_host_program(),
++            AbsolutePathBuf::from_absolute_path(official_host.canonicalize()?)?.into_path_buf()
++        );
++        assert_eq!(
++            context.rg_command(),
++            AbsolutePathBuf::from_absolute_path(official_rg.canonicalize()?)?.into_path_buf()
++        );
++        assert_eq!(
++            context.bundled_resource(TEST_RESOURCE_NAME),
++            Some(AbsolutePathBuf::from_absolute_path(
++                official_resource.canonicalize()?
++            )?)
++        );
++        Ok(())
++    }
++
+     #[test]
+     fn standalone_package_rg_falls_back_when_codex_path_is_missing() -> std::io::Result<()> {
+         let package_dir = tempfile::tempdir()?;
+diff --git a/codex-rs/prompts/src/multi_agent_instructions.rs b/codex-rs/prompts/src/multi_agent_instructions.rs
+index b9ed30e9b7d8e1d8f44a8627c80e485acc461bb2..a25a65db64ca6f019ad0fed2f882f45a3ce82ce3 100644
+--- a/codex-rs/prompts/src/multi_agent_instructions.rs
++++ b/codex-rs/prompts/src/multi_agent_instructions.rs
+@@ -5,7 +5,7 @@ use crate::without_update_plan_instructions;
+ use codex_context_fragments::ContextualUserFragment;
+ use codex_protocol::models::ContentItemKind;
+ 
+-const DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT: &str = "Full-history forks (`fork_turns` omitted or `\"all\"`) inherit the parent model and reasoning effort and do not accept overrides. Only set `model` or `reasoning_effort` when explicitly requested by the user, applicable `AGENTS.md` instructions, or skill instructions; when doing so, set `fork_turns` to `\"none\"` or a positive integer string.";
++const DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT: &str = "Full-history forks (`fork_turns=\"all\"`) inherit the parent model and reasoning effort and do not accept overrides. Omitting `fork_turns` starts a fresh subagent without the parent transcript. Only set `model` or `reasoning_effort` when explicitly requested by the user, applicable `AGENTS.md` instructions, or skill instructions; when doing so, omit `fork_turns` or set it to `\"none\"` or a positive integer string.";
+ const DEFAULT_MULTI_AGENT_V2_WAIT_AGENT_USAGE_HINT_TEXT: &str =
+     "When calling `wait_agent`, prefer longer waits (minutes) to avoid busy polling.";
+ const DEFAULT_MULTI_AGENT_V2_SHARED_USAGE_HINT_TEXT: &str = r#"Note that collaboration tools cannot be called from inside `functions.exec`. Call `spawn_agent`, `send_message`, `followup_task`, `wait_agent`, `interrupt_agent`, and `list_agents` only as direct tool calls using the recipient shown in their tool definitions, such as `to=functions.collaboration.spawn_agent`, since they are intentionally absent from the `functions.exec` `tools.*` namespace. Available tools in `functions.exec` are explicitly described with a `tools` namespace in the developer message.
+@@ -14,6 +14,8 @@ All agents share the same directory. In detail:
+ - All agents have access to the same container and filesystem as you.
+ - All agents use the same current working directory.
+ - As a result, edits made by one agent are immediately visible to all other agents.
++
++When replying to your parent, keep the final response compact and actionable. For exploration, return the answer or findings with useful file/symbol references. For implementation or review, return the result, changed files, validation performed and its outcome, and remaining blockers, as applicable. Distinguish verified facts from assumptions and unrun checks. Return conclusions and work state, not a transcript of your process.
+ "#;
+ 
+ /// Multi-agent role text and the captured capabilities used to render its context segment.
+diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
+index c82b5ce958c81b10c57d829951bf8fdee7efef6e..29a92c35114395060f397380106278f870ddb732 100644
+--- a/codex-rs/rollout/src/policy.rs
++++ b/codex-rs/rollout/src/policy.rs
+@@ -1,6 +1,7 @@
+ use crate::RolloutItem;
+ use crate::protocol::EventMsg;
+ use codex_extension_items::ExtensionItem;
++use codex_protocol::items::CollabAgentTool;
+ use codex_protocol::items::TurnItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::protocol::SubAgentActivityKind;
+@@ -109,6 +110,10 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode)
+                     TurnItem::SubAgentActivity(item)
+                         if item.kind == SubAgentActivityKind::Completed
+                 )
++                || matches!(
++                    &event.item,
++                    TurnItem::CollabAgentToolCall(item) if item.tool == CollabAgentTool::Wait
++                )
+         }
+         EventMsg::TokenCount(_)
+         | EventMsg::ThreadGoalUpdated(_)
+@@ -204,3 +209,7 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode)
+         | EventMsg::CollabResumeBegin(_) => false,
+     }
+ }
++
++#[cfg(test)]
++#[path = "policy_tests.rs"]
++mod tests;
+diff --git a/codex-rs/state/src/migrations.rs b/codex-rs/state/src/migrations.rs
+index efbb76cc09483a47a029cc942faa20214043f279..4963c38ae6671dbc1730108b63c96f7c61f32623 100644
+--- a/codex-rs/state/src/migrations.rs
++++ b/codex-rs/state/src/migrations.rs
+@@ -1,5 +1,8 @@
+ use std::borrow::Cow;
+ 
++use sqlx::AssertSqlSafe;
++use sqlx::SqlSafeStr;
++use sqlx::migrate::Migration;
+ use sqlx::migrate::Migrator;
+ use sqlx_sqlite::SqlitePool;
+ 
+@@ -19,7 +22,14 @@ pub(crate) static THREAD_HISTORY_MIGRATOR: Migrator =
+ /// checksum, so this only relaxes the "database is ahead of me" case.
+ fn runtime_migrator(base: &'static Migrator) -> Migrator {
+     Migrator {
+-        migrations: Cow::Borrowed(base.migrations.as_ref()),
++        // Official 0.157.0 Windows x64 embeds CRLF SQL. Match that input even when cross-built
++        // from an LF checkout; never rewrite a database's recorded checksums to fit this binary.
++        // Other targets retain upstream's embedded bytes until their artifact contract is verified.
++        migrations: if cfg!(all(windows, target_arch = "x86_64")) {
++            Cow::Owned(base.migrations.iter().map(migration_with_crlf).collect())
++        } else {
++            Cow::Borrowed(base.migrations.as_ref())
++        },
+         ignore_missing: true,
+         locking: base.locking,
+         no_tx: base.no_tx,
+@@ -28,6 +38,21 @@ fn runtime_migrator(base: &'static Migrator) -> Migrator {
+     }
+ }
+ 
++fn migration_with_crlf(migration: &Migration) -> Migration {
++    let sql = migration
++        .sql
++        .as_str()
++        .replace("\r\n", "\n")
++        .replace('\n', "\r\n");
++    Migration::new(
++        migration.version,
++        migration.description.clone(),
++        migration.migration_type,
++        AssertSqlSafe(sql).into_sql_str(),
++        migration.no_tx,
++    )
++}
++
+ pub(crate) fn runtime_state_migrator() -> Migrator {
+     runtime_migrator(&STATE_MIGRATOR)
+ }
+diff --git a/codex-rs/state/src/migrations_tests.rs b/codex-rs/state/src/migrations_tests.rs
+index f80ecc8f8356b94c1d77dc3ea936455c09c15b8a..19da41ec821e6d9377ab2522bc13dd5010971ea7 100644
+--- a/codex-rs/state/src/migrations_tests.rs
++++ b/codex-rs/state/src/migrations_tests.rs
+@@ -2,6 +2,8 @@ use codex_utils_absolute_path::test_support::PathExt;
+ use pretty_assertions::assert_eq;
+ use sqlx::Connection;
+ use sqlx::Row;
++#[cfg(all(windows, target_arch = "x86_64"))]
++use sqlx::SqlSafeStr;
+ use sqlx::migrate::Migration;
+ use sqlx::migrate::Migrator;
+ use std::borrow::Cow;
+@@ -9,6 +11,7 @@ use std::borrow::Cow;
+ use super::STATE_MIGRATOR;
+ use super::THREAD_HISTORY_MIGRATOR;
+ use super::repair_legacy_recency_migration_version;
++use super::runtime_state_migrator;
+ use crate::PINNED_THREAD_SECTION_ID;
+ use crate::PINNED_THREAD_SECTION_NAME;
+ 
+@@ -32,6 +35,274 @@ fn migrator_through(version: i64) -> Migrator {
+     }
+ }
+ 
++async fn insert_migration_line_endings_sentinel(pool: &sqlx_sqlite::SqlitePool) {
++    sqlx::query(
++        "INSERT INTO projects (id, name, position, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?)",
++    )
++    .bind("migration-line-endings")
++    .bind("sentinel")
++    .bind(0_i64)
++    .bind(1_i64)
++    .bind(1_i64)
++    .execute(pool)
++    .await
++    .expect("sentinel project should insert");
++}
++
++async fn assert_migration_line_endings_sentinel(pool: &sqlx_sqlite::SqlitePool) {
++    let name = sqlx::query_scalar::<_, String>("SELECT name FROM projects WHERE id = ?")
++        .bind("migration-line-endings")
++        .fetch_one(pool)
++        .await
++        .expect("sentinel project should load");
++    assert_eq!(name, "sentinel");
++}
++
++async fn migration_history(
++    pool: &sqlx_sqlite::SqlitePool,
++) -> Vec<(i64, String, Vec<u8>, bool, i64)> {
++    sqlx::query_as(
++        "SELECT version, description, checksum, success, execution_time FROM _sqlx_migrations ORDER BY version",
++    )
++    .fetch_all(pool)
++    .await
++    .expect("migration history should load")
++}
++
++fn migration_checksum_hex(migration: &Migration) -> String {
++    let mut hex = String::with_capacity(migration.checksum.len() * 2);
++    for byte in migration.checksum.iter() {
++        std::fmt::Write::write_fmt(&mut hex, format_args!("{byte:02x}"))
++            .expect("writing to a string should succeed");
++    }
++    hex
++}
++
++#[tokio::test]
++async fn runtime_migration_inputs_preserve_all_six_database_histories() {
++    // First-migration checksums from the hash-verified official 0.157.0 Windows x64 binary
++    // ed1c7b36e44536809c868864c833af8a857f56599a7a7fe23b908a1ba1093b1f.
++    let cases = [
++        (
++            &super::STATE_MIGRATOR,
++            super::runtime_state_migrator(),
++            "54bbd6f47905a4e4c674034575963d82da7b534e66e9a37a81ec2afb6a4b56ce6de9b3ecf3032796a800f650239847d4",
++        ),
++        (
++            &super::LOGS_MIGRATOR,
++            super::runtime_logs_migrator(),
++            "f477e6056db490de009f392c16761f4719b17ba37d043ca92d907b5ff885846f6e8c821a357475d74b6d0d6f511eb279",
++        ),
++        (
++            &super::GOALS_MIGRATOR,
++            super::runtime_goals_migrator(),
++            "9d4af4ba7688052dd22a508b567b977e6d79ba20cd49c8989e7bc828ac947cd7344be7d2559d3e901cc81a3793ea66d2",
++        ),
++        (
++            &super::MEMORIES_MIGRATOR,
++            super::runtime_memories_migrator(),
++            "7178a6d5072f7aa00e036aad06cc53143b834b68c84ba17285277a8ee68652a8ee1d6a9ff9965c7dafe8193293641769",
++        ),
++        (
++            &super::QUEUE_MIGRATOR,
++            super::runtime_queue_migrator(),
++            "21910955e848becb4eeee41d3a2c9ac395f183d26fdfc86aea7222e58e007db3d450ae20c9372f659d9cd4bf0787e904",
++        ),
++        (
++            &super::THREAD_HISTORY_MIGRATOR,
++            super::runtime_thread_history_migrator(),
++            "3d81349432ecbf6e5255dbe0a075d27811144fd3c32941ac1cbba640a83e278fa562309fb3b226964ee4251e97b4b513",
++        ),
++    ];
++    let sqlite_home = crate::runtime::test_support::unique_temp_dir();
++    tokio::fs::create_dir_all(&sqlite_home)
++        .await
++        .expect("create fixture directory");
++    let _cleanup = scopeguard::guard(sqlite_home.clone(), |path| {
++        let _ = std::fs::remove_dir_all(path);
++    });
++    let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
++    for (index, (base, migrator, windows_checksum)) in cases.into_iter().enumerate() {
++        let expected = if cfg!(all(windows, target_arch = "x86_64")) {
++            windows_checksum.to_string()
++        } else {
++            migration_checksum_hex(&base.migrations[0])
++        };
++        assert_eq!(migration_checksum_hex(&migrator.migrations[0]), expected);
++        let path = sqlite_home.join(format!("migration-{index}.sqlite"));
++        let pool = sqlite
++            .open_read_write_pool(&path)
++            .await
++            .expect("open fixture DB");
++        migrator.run(&pool).await.expect("create native database");
++        sqlx::query("CREATE TABLE fixture_sentinel (value TEXT NOT NULL)")
++            .execute(&pool)
++            .await
++            .expect("create fixture sentinel");
++        sqlx::query("INSERT INTO fixture_sentinel VALUES ('preserved')")
++            .execute(&pool)
++            .await
++            .expect("insert fixture sentinel");
++        let before = migration_history(&pool).await;
++        pool.close().await;
++        let pool = sqlite
++            .open_read_write_pool(&path)
++            .await
++            .expect("reopen fixture DB");
++        migrator
++            .run(&pool)
++            .await
++            .expect("reopen matching native database");
++        assert_eq!(migration_history(&pool).await, before);
++        let sentinel: String = sqlx::query_scalar("SELECT value FROM fixture_sentinel")
++            .fetch_one(&pool)
++            .await
++            .expect("read fixture sentinel");
++        assert_eq!(sentinel, "preserved");
++        pool.close().await;
++    }
++}
++
++#[tokio::test]
++async fn migration_line_endings_matching_database_round_trips() {
++    let sqlite_home = crate::runtime::test_support::unique_temp_dir();
++    tokio::fs::create_dir_all(&sqlite_home)
++        .await
++        .expect("sqlite home should be created");
++    let _cleanup = scopeguard::guard(sqlite_home.clone(), |sqlite_home| {
++        let _ = std::fs::remove_dir_all(sqlite_home);
++    });
++    let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
++    let state_path = sqlite.state_db_path();
++    let official = runtime_state_migrator();
++    let pool = sqlite
++        .open_read_write_pool(&state_path)
++        .await
++        .expect("official database should open");
++    official
++        .run(&pool)
++        .await
++        .expect("matching native migrations should apply");
++    insert_migration_line_endings_sentinel(&pool).await;
++    let before = migration_history(&pool).await;
++    pool.close().await;
++
++    let patched = runtime_state_migrator();
++    let pool = sqlite
++        .open_state_db(&patched, None)
++        .await
++        .expect("patched runtime should open the official database");
++    official
++        .run(&pool)
++        .await
++        .expect("official runtime should reopen the patched database");
++    assert_eq!(migration_history(&pool).await, before);
++    assert_migration_line_endings_sentinel(&pool).await;
++    pool.close().await;
++}
++
++#[cfg(all(windows, target_arch = "x86_64"))]
++#[tokio::test]
++async fn migration_line_endings_mismatch_is_rejected_without_repair() {
++    let sqlite_home = crate::runtime::test_support::unique_temp_dir();
++    tokio::fs::create_dir_all(&sqlite_home)
++        .await
++        .expect("sqlite home should be created");
++    let _cleanup = scopeguard::guard(sqlite_home.clone(), |sqlite_home| {
++        let _ = std::fs::remove_dir_all(sqlite_home);
++    });
++    let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
++    let state_path = sqlite.state_db_path();
++    let legacy = Migrator::with_migrations(
++        STATE_MIGRATOR
++            .migrations
++            .iter()
++            .map(|migration| {
++                Migration::new(
++                    migration.version,
++                    migration.description.clone(),
++                    migration.migration_type,
++                    sqlx::AssertSqlSafe(migration.sql.as_str().replace("\r\n", "\n"))
++                        .into_sql_str(),
++                    migration.no_tx,
++                )
++            })
++            .collect(),
++    );
++    let pool = sqlite
++        .open_read_write_pool(&state_path)
++        .await
++        .expect("legacy database should open");
++    legacy
++        .run(&pool)
++        .await
++        .expect("legacy LF migrations should apply");
++    insert_migration_line_endings_sentinel(&pool).await;
++    let before = migration_history(&pool).await;
++    pool.close().await;
++
++    let error = sqlite
++        .open_state_db(&runtime_state_migrator(), /*telemetry_override*/ None)
++        .await
++        .expect_err("a known EOL mismatch must not trigger a database rewrite");
++    assert!(
++        error
++            .to_string()
++            .contains("migration 1 was previously applied but has been modified")
++    );
++    let pool = sqlite
++        .open_read_write_pool(&state_path)
++        .await
++        .expect("database should reopen for verification");
++    assert_eq!(migration_history(&pool).await, before);
++    assert_migration_line_endings_sentinel(&pool).await;
++    pool.close().await;
++}
++
++#[tokio::test]
++async fn migration_line_endings_unrelated_checksum_is_not_rewritten() {
++    let sqlite_home = crate::runtime::test_support::unique_temp_dir();
++    tokio::fs::create_dir_all(&sqlite_home)
++        .await
++        .expect("sqlite home should be created");
++    let _cleanup = scopeguard::guard(sqlite_home.clone(), |sqlite_home| {
++        let _ = std::fs::remove_dir_all(sqlite_home);
++    });
++    let sqlite = crate::SqliteConfig::new_for_testing(sqlite_home.as_path().abs());
++    let state_path = sqlite.state_db_path();
++    let pool = sqlite
++        .open_read_write_pool(&state_path)
++        .await
++        .expect("legacy database should open");
++    runtime_state_migrator()
++        .run(&pool)
++        .await
++        .expect("matching native migrations should apply");
++    sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 1")
++        .bind(vec![0x5a_u8; 48])
++        .execute(&pool)
++        .await
++        .expect("unrelated checksum should be staged");
++    let before = migration_history(&pool).await;
++    pool.close().await;
++
++    let error = sqlite
++        .open_state_db(&runtime_state_migrator(), None)
++        .await
++        .expect_err("patched runtime must reject an unrelated checksum");
++    assert!(
++        error
++            .to_string()
++            .contains("migration 1 was previously applied but has been modified")
++    );
++    let pool = sqlite
++        .open_read_write_pool(&state_path)
++        .await
++        .expect("database should reopen for verification");
++    assert_eq!(migration_history(&pool).await, before);
++    pool.close().await;
++}
++
+ #[tokio::test]
+ async fn guardian_metadata_cleanup_preserves_custom_names_and_titles() {
+     let sqlite_home = crate::runtime::test_support::unique_temp_dir();
+@@ -897,7 +1168,7 @@ INSERT INTO threads (
+ }
+ 
+ #[tokio::test]
+-async fn repairs_recency_migration_that_was_applied_as_version_38() {
++async fn native_recency_migration_repairs_version_38_without_changing_checksums() {
+     let sqlite_home = crate::runtime::test_support::unique_temp_dir();
+     tokio::fs::create_dir_all(&sqlite_home)
+         .await
+@@ -911,22 +1182,24 @@ async fn repairs_recency_migration_that_was_applied_as_version_38() {
+         .open_read_write_pool(&state_path)
+         .await
+         .expect("sqlite database should open");
+-    migrator_through(/*version*/ 37)
++    let legacy = runtime_state_migrator();
++    let mut legacy_migrations = legacy
++        .migrations
++        .iter()
++        .filter(|migration| migration.version <= 37)
++        .cloned()
++        .collect::<Vec<_>>();
++    Migrator::with_migrations(legacy_migrations.clone())
+         .run(&pool)
+         .await
+         .expect("pre-recency migrations should apply");
+ 
+-    let recency_migration = STATE_MIGRATOR
++    let official = runtime_state_migrator();
++    let recency_migration = legacy
+         .migrations
+         .iter()
+         .find(|migration| migration.version == 39)
+         .expect("recency migration should exist");
+-    let mut legacy_migrations = STATE_MIGRATOR
+-        .migrations
+-        .iter()
+-        .filter(|migration| migration.version <= 37)
+-        .cloned()
+-        .collect::<Vec<_>>();
+     legacy_migrations.push(Migration::new(
+         38,
+         recency_migration.description.clone(),
+@@ -940,10 +1213,10 @@ async fn repairs_recency_migration_that_was_applied_as_version_38() {
+         .await
+         .expect("legacy recency migration should apply as version 38");
+ 
+-    repair_legacy_recency_migration_version(&pool, &STATE_MIGRATOR)
++    repair_legacy_recency_migration_version(&pool, &official)
+         .await
+         .expect("legacy migration history should be repaired");
+-    STATE_MIGRATOR
++    official
+         .run(&pool)
+         .await
+         .expect("current migrations should apply after repair");
+@@ -962,7 +1235,7 @@ async fn repairs_recency_migration_that_was_applied_as_version_38() {
+         )
+     })
+     .collect::<Vec<_>>();
+-    let expected = STATE_MIGRATOR
++    let expected = official
+         .migrations
+         .iter()
+         .filter(|migration| migration.version >= 38)
+diff --git a/codex-rs/state/src/runtime.rs b/codex-rs/state/src/runtime.rs
+index 376ad682ed10c22f489b793c7db220784d7f9628..c3c213317856963d480c93786f30dad8367c02ab 100644
+--- a/codex-rs/state/src/runtime.rs
++++ b/codex-rs/state/src/runtime.rs
+@@ -463,7 +463,6 @@ mod tests {
+     use super::test_support::unique_temp_dir;
+     use crate::DB_INIT_METRIC;
+     use crate::DbTelemetry;
+-    use crate::migrations::STATE_MIGRATOR;
+     use codex_protocol::ThreadId;
+     use codex_utils_absolute_path::test_support::PathExt;
+     use pretty_assertions::assert_eq;
+@@ -636,7 +635,9 @@ mod tests {
+             .open_read_write_pool(&state_path)
+             .await
+             .expect("open state db");
+-        STATE_MIGRATOR
++        let mut strict_migrator = runtime_state_migrator();
++        strict_migrator.ignore_missing = false;
++        strict_migrator
+             .run(&pool)
+             .await
+             .expect("apply current state schema");
+@@ -654,7 +655,7 @@ mod tests {
+         pool.close().await;
+ 
+         let strict_pool = open_db_pool(state_path.as_path()).await;
+-        let strict_err = STATE_MIGRATOR
++        let strict_err = strict_migrator
+             .run(&strict_pool)
+             .await
+             .expect_err("strict migrator should reject newer applied migrations");
+diff --git a/codex-rs/state/src/runtime/logs.rs b/codex-rs/state/src/runtime/logs.rs
+index 0cdc91124c5626561696d0e417d8347f86503802..a692594125e8ee7ca70931654e1e683ece6b08ec 100644
+--- a/codex-rs/state/src/runtime/logs.rs
++++ b/codex-rs/state/src/runtime/logs.rs
+@@ -540,7 +540,7 @@ mod tests {
+     use super::test_support::unique_temp_dir;
+     use crate::LogEntry;
+     use crate::LogQuery;
+-    use crate::migrations::LOGS_MIGRATOR;
++    use crate::migrations::runtime_logs_migrator;
+     use chrono::Utc;
+     use codex_utils_absolute_path::test_support::PathExt;
+     use pretty_assertions::assert_eq;
+@@ -610,13 +610,11 @@ mod tests {
+             .expect("create codex home");
+         let logs_path =
+             crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()).logs_db_path();
++        let current_migrator = runtime_logs_migrator();
+         let old_logs_migrator = Migrator {
+-            migrations: Cow::Owned(vec![LOGS_MIGRATOR.migrations[0].clone()]),
++            migrations: Cow::Owned(vec![current_migrator.migrations[0].clone()]),
+             ignore_missing: false,
+-            locking: true,
+-            no_tx: false,
+-            table_name: LOGS_MIGRATOR.table_name.clone(),
+-            create_schemas: LOGS_MIGRATOR.create_schemas.clone(),
++            ..current_migrator
+         };
+         let pool = crate::SqliteConfig::new_for_testing(codex_home.as_path().abs())
+             .open_read_write_pool(&logs_path)
+diff --git a/codex-rs/state/src/runtime/queued_items_tests.rs b/codex-rs/state/src/runtime/queued_items_tests.rs
+index 3f97eb3bde7c91a3a944f64d9e9556d63395a604..b6a978be776f8b1c679220000585bbef16e853df 100644
+--- a/codex-rs/state/src/runtime/queued_items_tests.rs
++++ b/codex-rs/state/src/runtime/queued_items_tests.rs
+@@ -1,5 +1,5 @@
+ use super::*;
+-use crate::migrations::QUEUE_MIGRATOR;
++use crate::migrations::runtime_queue_migrator;
+ use crate::runtime::test_support::test_thread_metadata;
+ use crate::runtime::test_support::unique_temp_dir;
+ use codex_utils_absolute_path::test_support::PathExt;
+@@ -49,13 +49,11 @@ async fn migrating_existing_queue_backfills_thread_revisions() {
+     tokio::fs::create_dir_all(&home).await.unwrap();
+     let sqlite = crate::SqliteConfig::new_for_testing(home.as_path().abs());
+     let queue_path = sqlite.queue_db_path();
++    let current_migrator = runtime_queue_migrator();
+     let old_queue_migrator = Migrator {
+-        migrations: Cow::Owned(vec![QUEUE_MIGRATOR.migrations[0].clone()]),
++        migrations: Cow::Owned(vec![current_migrator.migrations[0].clone()]),
+         ignore_missing: false,
+-        locking: true,
+-        no_tx: false,
+-        table_name: QUEUE_MIGRATOR.table_name.clone(),
+-        create_schemas: QUEUE_MIGRATOR.create_schemas.clone(),
++        ..current_migrator
+     };
+     let pool = sqlite.open_read_write_pool(&queue_path).await.unwrap();
+     old_queue_migrator.run(&pool).await.unwrap();
+diff --git a/codex-rs/state/src/runtime/remote_control.rs b/codex-rs/state/src/runtime/remote_control.rs
+index f09bb015d3f3189c01ef13b6b168682378da5db2..90c29ad4bcb2fabd34f67237fb23aeda7c991aa4 100644
+--- a/codex-rs/state/src/runtime/remote_control.rs
++++ b/codex-rs/state/src/runtime/remote_control.rs
+@@ -156,7 +156,7 @@ mod tests {
+     use super::RemoteControlEnrollmentRecord;
+     use super::StateRuntime;
+     use super::test_support::unique_temp_dir;
+-    use crate::migrations::STATE_MIGRATOR;
++    use crate::migrations::runtime_state_migrator;
+     use codex_utils_absolute_path::test_support::PathExt;
+     use pretty_assertions::assert_eq;
+     use sqlx::migrate::Migrator;
+@@ -334,9 +334,10 @@ mod tests {
+         tokio::fs::create_dir_all(&codex_home)
+             .await
+             .expect("create codex home");
++        let current_migrator = runtime_state_migrator();
+         let old_state_migrator = Migrator {
+             migrations: Cow::Owned(
+-                STATE_MIGRATOR
++                current_migrator
+                     .migrations
+                     .iter()
+                     .filter(|migration| migration.version <= 36)
+@@ -344,10 +345,7 @@ mod tests {
+                     .collect(),
+             ),
+             ignore_missing: false,
+-            locking: true,
+-            no_tx: false,
+-            table_name: STATE_MIGRATOR.table_name.clone(),
+-            create_schemas: STATE_MIGRATOR.create_schemas.clone(),
++            ..current_migrator
+         };
+         let sqlite = crate::SqliteConfig::new_for_testing(codex_home.as_path().abs());
+         let pool = sqlite
