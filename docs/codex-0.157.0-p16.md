@@ -32,6 +32,15 @@ pinned source, comparison of all 119 patched paths with the reviewed worktree,
 family/catalog validation, previous-payload immutability, workflow guards, producer
 Python tests and formatting checks for the affected Rust packages. The existing
 source-dependent Python fixture was skipped; exact-source preflight ran separately.
+All 73 paths with unchanged upstream preimages retain identical accepted-p16
+postimages. [Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36128450673)
+also passed quality and both Linux recovery jobs.
+
+A fresh official V1 control confirms the same version-specific Wait presentation:
+one live completed item in both modes, zero on cold Legacy readback and one on cold
+Paginated readback. Canonical bytes stayed unchanged; all four official processes
+exited normally. The [runtime procedure](cold-unplug-validation.md) pins this
+observation to the exact 0.157.0 commit and official executable.
 
 Rust compilation, the native contract, matching-binary cold-unplug acceptance and
 terminal observations remain pending. The official migration-byte check is not
