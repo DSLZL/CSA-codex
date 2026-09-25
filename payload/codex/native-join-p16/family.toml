@@ -11,4 +11,4 @@ sha256 = "4196536f67032167a5f174806730eab12bdd7458f1b3c64b1e8bd14089376840"
 [[bindings]]
 compat_id = "rust-v0.157.0-native-join-p16"
 manifest = "bindings/rust-v0.157.0-native-join-p16/manifest.toml"
-sha256 = "f8410e8e113a399dd243a3d8d149544f2bbde1f51ccd13e33972af0b68222ec1"
+sha256 = "9f87772d7d7cca826e3fb950224d971b1fdcc39c2b6e26d41c67c04147f57d5c"

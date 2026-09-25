@@ -4,7 +4,7 @@
 [`rust-v0.157.0`](https://github.com/openai/codex/releases/tag/rust-v0.157.0)
 at `00c972ed5d6ff6499317fd41b7f23605b8e6850d`, addressing
 [issue #18](https://github.com/DSLZL/CSA-codex/issues/18).
-The binding is a buildable candidate with publication disabled. The accepted
+The binding is a candidate with builds enabled and publication disabled. The accepted
 route remains 0.156.1; its payload and the shared p16 additions are unchanged.
 
 ## Adaptation
@@ -33,7 +33,7 @@ family/catalog validation, previous-payload immutability, workflow guards, produ
 Python tests and formatting checks for the affected Rust packages. The existing
 source-dependent Python fixture was skipped; exact-source preflight ran separately.
 All 73 paths with unchanged upstream preimages retain identical accepted-p16
-postimages. [Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36128450673)
+postimages. [Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36139781340)
 also passed quality and both Linux recovery jobs.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
@@ -46,6 +46,13 @@ The first six-platform native attempt on `d0e4130` failed compiling `codex-core`
 the adapter's `tokio::sync::watch` import collided with upstream's new `mod watch`.
 Importing the leaf `Receiver` type removes the collision without changing the
 completion channel type. The failed runs remain separate from the corrected build.
+
+The second attempt on `fdc98a7` passed the first 13 Windows contract steps, then
+failed compiling `codex-tui`. All six targets reported E0061 in
+`bottom_pane_desired_height`: the adapter omitted the new `composer_gap` argument.
+The height helper now passes `None`, matching inline rendering; fullscreen
+rendering continues to pass its per-frame gap. All callers were checked, and the
+existing complete-TUI contract includes the inline panel placement regression.
 
 Rust compilation, the native contract, matching-binary cold-unplug acceptance and
 terminal observations still require passing results for the corrected candidate.

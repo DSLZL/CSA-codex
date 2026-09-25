@@ -3544,7 +3544,7 @@ index 984a9582cc931881eaa786f721a2c652840a8411..4f1757ee89d9835a320d15bec3b26201
      show_welcome_banner: bool,
      // One-shot tooltip override for the primary startup session.
 diff --git a/codex-rs/tui/src/chatwidget/rendering.rs b/codex-rs/tui/src/chatwidget/rendering.rs
-index e4047f34090d46adad1f1f85341520ef5862c010..83d67340f5df9d399a6c9da642adee85b77a9022 100644
+index e4047f34090d46adad1f1f85341520ef5862c010..15d3940c7dd58364e40dc4bfa1ef19accf66165c 100644
 --- a/codex-rs/tui/src/chatwidget/rendering.rs
 +++ b/codex-rs/tui/src/chatwidget/rendering.rs
 @@ -120,6 +120,13 @@ impl ExternalWriterNotice {
@@ -3571,14 +3571,15 @@ index e4047f34090d46adad1f1f85341520ef5862c010..83d67340f5df9d399a6c9da642adee85
          flex.push(
              /*flex*/ 0,
              self.bottom_pane_renderable(
-@@ -202,6 +212,15 @@ impl ChatWidget {
+@@ -202,6 +212,16 @@ impl ChatWidget {
          RenderableItem::Owned(Box::new(flex))
      }
  
 +    pub(crate) fn bottom_pane_desired_height(&self, width: u16) -> u16 {
 +        self.bottom_pane_renderable(
-+            None,
++            /*footer*/ None,
 +            crate::bottom_pane::CommandPopupPlacement::AboveComposer,
++            /*composer_gap*/ None,
 +        )
 +        .inset(Insets::tlbr(1, 0, 0, 0))
 +        .desired_height(width)
