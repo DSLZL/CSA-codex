@@ -27,6 +27,7 @@
     "INSTA_OUTPUT": "diff",
     "INSTA_UPDATE": "no",
     "INSTA_WORKSPACE_ROOT": "{source}/codex-rs",
+    "RUST_BACKTRACE": "1",
     "RUST_MIN_STACK": "8388608",
     "STABLE_GIT_COMMIT": "00c972ed5d6ff6499317fd41b7f23605b8e6850d"
   },
@@ -96,10 +97,26 @@
         "codex-prompts",
         "-p",
         "codex-config",
+        "-p",
+        "codex-git-utils",
         "--",
         "--check"
       ],
       "name": "Affected package formatting"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "codex-git-utils",
+        "--lib",
+        "status::tests",
+        "--",
+        "--format=terse"
+      ],
+      "name": "Git status sharing and runtime shutdown isolation",
+      "output": "failure-only"
     },
     {
       "argv": [
@@ -479,13 +496,15 @@
         "codex-tui",
         "-p",
         "codex-config",
+        "-p",
+        "codex-git-utils",
         "--lib",
         "--tests",
         "--",
         "-D",
         "warnings"
       ],
-      "name": "TUI and configuration clippy"
+      "name": "TUI, configuration and Git utilities clippy"
     },
     {
       "argv": [

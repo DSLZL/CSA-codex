@@ -44,6 +44,8 @@
     "codex-rs/core/tests/suite/mod.rs": "4dddce465550d90cd6983742d8d8ab4994c951e016826b8253b4a88779ed25b5",
     "codex-rs/core/tests/suite/multi_agent_resume.rs": "ca50eedf18f8a59a798264d20693a29bac7027e4d46673f3845c1f12f229573e",
     "codex-rs/core/tests/suite/subagent_notifications.rs": "6715472aea3370fb2064c3c5946c55d9e60176e12cccaa2fa61dfa5a94942165",
+    "codex-rs/git-utils/src/status.rs": "b2efac158bd7709878853f9c7212b74d3eca7e4cd32469fcb005b4c25489c5d1",
+    "codex-rs/git-utils/src/status_tests.rs": "e71745abeb47d95098c1aedd510159272efdd19c91c80a21570b6263ed15a765",
     "codex-rs/install-context/src/lib.rs": "b7305f28586f61f7a3cc7d3c53c95dacabca05529b1ba3aa4b5e42d306db2ae5",
     "codex-rs/prompts/src/multi_agent_instructions.rs": "d82cd8713ee61fedfd0d488782b4f253cc50ab88890890541c93d6224b3f3231",
     "codex-rs/rollout/src/policy.rs": "9963db1dad94a26dbddcfd9792624ff975615c795bb212c12d0f9441db1ad395",

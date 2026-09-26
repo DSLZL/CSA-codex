@@ -2360,6 +2360,158 @@ index ccd44bb92d83a6b78f3c3a9949cca4eabafab44d..22d665e5dca9d3180c5b8966dea7b9e7
      let completed = timeout(
          Duration::from_secs(5),
          wait_for_event_match(requester_thread.as_ref(), |event| match event {
+diff --git a/codex-rs/git-utils/src/status.rs b/codex-rs/git-utils/src/status.rs
+index ba24d52e37dcb5044646367842f61df8c34e0f89..286ad1a0873db1f0a3e881ca0d5a5ee5e9d06080 100644
+--- a/codex-rs/git-utils/src/status.rs
++++ b/codex-rs/git-utils/src/status.rs
+@@ -16,6 +16,7 @@ use crate::info::run_git_command_with_timeout_from;
+ struct GitStatusKey {
+     git: PathBuf,
+     repo_root: PathBuf,
++    runtime: tokio::runtime::Id,
+ }
+ 
+ type GitStatusFuture = BoxFuture<'static, Option<bool>>;
+@@ -44,7 +45,12 @@ async fn git_status_key(git: PathBuf, repo_root: &Path) -> GitStatusKey {
+     let repo_root = tokio::fs::canonicalize(repo_root)
+         .await
+         .unwrap_or_else(|_| repo_root.to_path_buf());
+-    GitStatusKey { git, repo_root }
++    GitStatusKey {
++        git,
++        repo_root,
++        // Shared command futures contain timers and I/O owned by this runtime.
++        runtime: tokio::runtime::Handle::current().id(),
++    }
+ }
+ 
+ async fn share_git_status_run<F, Fut>(key: GitStatusKey, run: F) -> Option<bool>
+diff --git a/codex-rs/git-utils/src/status_tests.rs b/codex-rs/git-utils/src/status_tests.rs
+index 6da16af542901153ebe9087a2c4805b738e2d6e1..7fca7918d66950ad38b6963d6a2e8803039d8e95 100644
+--- a/codex-rs/git-utils/src/status_tests.rs
++++ b/codex-rs/git-utils/src/status_tests.rs
+@@ -9,7 +9,6 @@ use futures::future::join_all;
+ use pretty_assertions::assert_eq;
+ use tempfile::TempDir;
+ 
+-use super::GitStatusKey;
+ use super::get_has_changes_in_repo;
+ use super::git_status_key;
+ use super::git_status_runs;
+@@ -50,10 +49,7 @@ async fn status_keys_coalesce_symlink_aliases_of_the_same_worktree() {
+ #[tokio::test]
+ async fn concurrent_status_requests_share_one_repository_scan() {
+     let repository = TempDir::new().expect("create repository");
+-    let key = GitStatusKey {
+-        git: PathBuf::from("git"),
+-        repo_root: repository.path().to_path_buf(),
+-    };
++    let key = git_status_key(PathBuf::from("git"), repository.path()).await;
+     let scan_count = Arc::new(AtomicUsize::new(0));
+ 
+     let results = join_all((0..32).map(|_| {
+@@ -71,6 +67,41 @@ async fn concurrent_status_requests_share_one_repository_scan() {
+     assert_eq!(scan_count.load(Ordering::Relaxed), 1);
+ }
+ 
++#[test]
++fn status_requests_do_not_reuse_a_scan_from_a_shutdown_runtime() {
++    let repository = TempDir::new().expect("create repository");
++    let first_runtime = tokio::runtime::Builder::new_current_thread()
++        .enable_all()
++        .build()
++        .expect("create first runtime");
++    let retained_result = first_runtime.block_on(async {
++        let key = git_status_key(PathBuf::from("git"), repository.path()).await;
++        let mut first = std::pin::pin!(share_git_status_run(key.clone(), || async {
++            tokio::time::sleep(Duration::from_secs(60)).await;
++            Some(true)
++        }));
++        assert!(futures::poll!(first.as_mut()).is_pending());
++        git_status_runs()
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .get(&key)
++            .and_then(WeakShared::upgrade)
++            .expect("retain the timer-backed scan across runtime shutdown")
++    });
++    drop(first_runtime);
++
++    let second_runtime = tokio::runtime::Builder::new_current_thread()
++        .enable_all()
++        .build()
++        .expect("create second runtime");
++    let result = second_runtime.block_on(async {
++        let key = git_status_key(PathBuf::from("git"), repository.path()).await;
++        share_git_status_run(key, || async { Some(false) }).await
++    });
++    assert_eq!(result, Some(false));
++    drop(retained_result);
++}
++
+ #[tokio::test]
+ async fn status_requests_do_not_share_different_repositories() {
+     let first_repository = TempDir::new().expect("create first repository");
+@@ -101,10 +132,7 @@ async fn status_requests_do_not_share_different_repositories() {
+ #[tokio::test]
+ async fn completed_status_requests_start_fresh_scans_and_prune_expired_entries() {
+     let first_repository = TempDir::new().expect("create first repository");
+-    let first_key = GitStatusKey {
+-        git: PathBuf::from("git"),
+-        repo_root: first_repository.path().to_path_buf(),
+-    };
++    let first_key = git_status_key(PathBuf::from("git"), first_repository.path()).await;
+     let scan_count = Arc::new(AtomicUsize::new(0));
+ 
+     let first_scan_count = Arc::clone(&scan_count);
+@@ -132,10 +160,7 @@ async fn completed_status_requests_start_fresh_scans_and_prune_expired_entries()
+     let third_scan_count = Arc::clone(&scan_count);
+     assert_eq!(
+         share_git_status_run(
+-            GitStatusKey {
+-                git: PathBuf::from("git"),
+-                repo_root: second_repository.path().to_path_buf(),
+-            },
++            git_status_key(PathBuf::from("git"), second_repository.path()).await,
+             move || async move {
+                 third_scan_count.fetch_add(1, Ordering::Relaxed);
+                 Some(true)
+@@ -156,10 +181,7 @@ async fn completed_status_requests_start_fresh_scans_and_prune_expired_entries()
+ #[tokio::test]
+ async fn completed_status_requests_are_not_reused_while_a_consumer_retains_them() {
+     let repository = TempDir::new().expect("create repository");
+-    let key = GitStatusKey {
+-        git: PathBuf::from("git"),
+-        repo_root: repository.path().to_path_buf(),
+-    };
++    let key = git_status_key(PathBuf::from("git"), repository.path()).await;
+     let scan_count = Arc::new(AtomicUsize::new(0));
+     let (release_sender, release_receiver) = tokio::sync::oneshot::channel();
+ 
+@@ -201,10 +223,7 @@ async fn completed_status_requests_are_not_reused_while_a_consumer_retains_them(
+ #[tokio::test]
+ async fn canceling_one_consumer_preserves_the_shared_status_scan() {
+     let repository = TempDir::new().expect("create repository");
+-    let key = GitStatusKey {
+-        git: PathBuf::from("git"),
+-        repo_root: repository.path().to_path_buf(),
+-    };
++    let key = git_status_key(PathBuf::from("git"), repository.path()).await;
+     let scan_count = Arc::new(AtomicUsize::new(0));
+     let (release_sender, release_receiver) = tokio::sync::oneshot::channel();
+ 
+@@ -256,10 +275,7 @@ async fn canceling_one_consumer_preserves_the_shared_status_scan() {
+ #[tokio::test]
+ async fn canceling_the_last_consumer_allows_a_fresh_status_scan() {
+     let repository = TempDir::new().expect("create repository");
+-    let key = GitStatusKey {
+-        git: PathBuf::from("git"),
+-        repo_root: repository.path().to_path_buf(),
+-    };
++    let key = git_status_key(PathBuf::from("git"), repository.path()).await;
+     let scan_count = Arc::new(AtomicUsize::new(0));
+     let first_key = key.clone();
+     let first_scan_count = Arc::clone(&scan_count);
 diff --git a/codex-rs/install-context/src/lib.rs b/codex-rs/install-context/src/lib.rs
 index 1a9be86a1169e701e07d07152a9dd9a9886be000..d8cf334d8a735ccbdaff263f54dfa4a3946baa8c 100644
 --- a/codex-rs/install-context/src/lib.rs

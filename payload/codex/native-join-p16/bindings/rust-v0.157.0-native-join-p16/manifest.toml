@@ -10,7 +10,7 @@ rust_toolchain = "1.95.0"
 rustc_commit = "59807616e1fa2540724bfbac14d7976d7e4a3860"
 build_target = "x86_64-pc-windows-msvc"
 source_hashes = "expected/source-hashes.json"
-source_hashes_sha256 = "5bdb70e1b49405c7146255c5c8ad8249b892cd1d0bb353498f64bf92c49f4545"
+source_hashes_sha256 = "805cfc2b4df1d4352fb815bd0c90853a79a3961146dfc4c14bd07de70a20fab8"
 preimage_absent = [
   "codex-rs/core/src/agent/completion.rs",
   "codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs",
@@ -36,11 +36,11 @@ sha256 = "3ee34a2685ded1c772e7bf2839920df9eb48f4c234316d53af008028a615991c"
 
 [[patches]]
 path = "patches/1000-core-adapter.patch"
-sha256 = "841546a23e34cf54232ab6b282d560b3e41cb626a43a4727cd51b7456207422a"
+sha256 = "cf84a0397493f238bd61e2e384086533ec9635bb2ab3f46c3e61d3743536ba9d"
 
 [[patches]]
 path = "patches/1100-tui-adapter.patch"
-sha256 = "63c977bfc3cb1abaaf3579a1e513368e38691703b746293c20e26304bb01e75c"
+sha256 = "943ed8099e376f71bca9d2453511888e41513f7b98531659fa36e97b9ade3168"
 
 [preimage]
 "codex-rs/config/src/config_toml.rs" = "e8494daf15bd00ab56525a56db6a2278088a255e7a4ca3b647acdc3d1f69e407"
@@ -70,6 +70,8 @@ sha256 = "63c977bfc3cb1abaaf3579a1e513368e38691703b746293c20e26304bb01e75c"
 "codex-rs/core/tests/suite/mod.rs" = "4dddce465550d90cd6983742d8d8ab4994c951e016826b8253b4a88779ed25b5"
 "codex-rs/core/tests/suite/multi_agent_resume.rs" = "ca50eedf18f8a59a798264d20693a29bac7027e4d46673f3845c1f12f229573e"
 "codex-rs/core/tests/suite/subagent_notifications.rs" = "6715472aea3370fb2064c3c5946c55d9e60176e12cccaa2fa61dfa5a94942165"
+"codex-rs/git-utils/src/status.rs" = "b2efac158bd7709878853f9c7212b74d3eca7e4cd32469fcb005b4c25489c5d1"
+"codex-rs/git-utils/src/status_tests.rs" = "e71745abeb47d95098c1aedd510159272efdd19c91c80a21570b6263ed15a765"
 "codex-rs/install-context/src/lib.rs" = "b7305f28586f61f7a3cc7d3c53c95dacabca05529b1ba3aa4b5e42d306db2ae5"
 "codex-rs/prompts/src/multi_agent_instructions.rs" = "d82cd8713ee61fedfd0d488782b4f253cc50ab88890890541c93d6224b3f3231"
 "codex-rs/rollout/src/policy.rs" = "9963db1dad94a26dbddcfd9792624ff975615c795bb212c12d0f9441db1ad395"

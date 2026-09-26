@@ -22,22 +22,25 @@ route remains 0.156.1; its payload and the shared p16 additions are unchanged.
   checksum validation and official Windows line endings. All 72 SQL inputs were
   checked against the integrity-verified official 0.157.0 Windows x64 executable,
   SHA256 `ed1c7b36e44536809c868864c833af8a857f56599a7a7fe23b908a1ba1093b1f`.
-- Retain the existing 39-step native contract. Add a shared-runtime completion
-  regression and extend fullscreen coverage for panel/composer boundaries when
-  a scrolled transcript is resized.
+- Scope shared Git status scans to their Tokio runtime so background metadata
+  queries cannot reuse timers or I/O belonging to a runtime that has shut down.
+- Extend the existing native contract to 40 steps with Git status regressions,
+  including a retained scan across runtime shutdown. Keep the shared-runtime
+  completion regression and fullscreen resize coverage for visible, hidden and
+  restored Live panels. Include Git utilities in formatting and Clippy checks.
 
 ## Verification and limits
 
 Local validation passed strict application of all four ordered patches to the
-pinned source, comparison of all 119 patched paths with the reviewed worktree,
+pinned source, comparison of all 121 patched paths with the reviewed worktree,
 family/catalog validation, previous-payload immutability, workflow guards, producer
 Python tests and formatting checks for the affected Rust packages. The existing
 source-dependent Python fixture was skipped; exact-source preflight ran separately.
 Of 73 paths with unchanged upstream preimages, 72 retain identical accepted-p16
 postimages; the approval fixture described below is the sole candidate-specific
 exception. Accepted payloads and shared patch files remain byte-identical.
-[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36227297103) passed
-quality and both Linux recovery jobs on `f7285bb`.
+[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36231311307) passed
+quality and both Linux recovery jobs on the previous candidate `c970734`.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
 one live completed item in both modes, zero on cold Legacy readback and one on cold
@@ -65,9 +68,9 @@ control. It now returns to latest before exercising reading-mode resize, while
 retaining the button, panel-boundary and selection assertions.
 
 The same run also logged a Tokio shutdown panic in a passing core follow-up test.
-That fixture now awaits its remaining parent thread's shutdown before returning;
-the fourth Windows run on `556a446` passed that step without the shutdown panic.
-The original failed log is retained.
+That fixture now awaits its remaining parent thread's shutdown before returning.
+The fourth and fifth runs did not log that panic, but it recurred in the sixth
+run; parent cleanup alone was insufficient. All original logs are retained.
 
 The fourth run failed the cold-root-resume fixture before reaching the TUI steps.
 Its three-thread session budget allows two resident children, so spawning a
@@ -86,7 +89,21 @@ The fixture now uses a portable `echo` probe with login profiles disabled and a
 bounded 30-second completion deadline in both the outer wait and the event helper.
 The real approval requests, exact-run result and request-count assertions remain
 intact. This changes the new binding's test adapter only; production approval and
-Join behavior are unchanged. Native confirmation is pending.
+Join behavior are unchanged. The sixth run on `c970734` passed this block with
+ten passes and the same pre-existing ignored isolated acceptance case.
+
+The sixth run passed 25 steps, then the Live panel test reported 35 passes and
+one failure. Its small-window fixture required a panel even when the layout's
+eight-row conversation reserve left no room for it. The fixture now tests visible
+24-row viewports, disappearance at eight rows, and restoration after growth,
+including cleared hit regions, composer preservation and reading-mode controls.
+
+The recurrent background panic exposed a process-wide Git status cache keyed
+only by executable and repository. Separate test runtimes use the same cwd and
+can share a timer-backed scan after one runtime shuts down. The candidate adds
+the runtime ID to the key and a deterministic regression that retains a pending
+scan across shutdown. Existing sharing and cancellation coverage remains; native
+confirmation is pending. Backtraces are enabled for any remaining panic.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.

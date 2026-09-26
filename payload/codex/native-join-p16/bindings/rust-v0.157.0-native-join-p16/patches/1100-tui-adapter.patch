@@ -1496,10 +1496,10 @@ index 18ba695600231b0dfea637e346af8258bdeae110..98542b9b360f4b41190e184dca60cd2f
                  && self.handle_composer_copy_event(tui, event, tui::Tui::copy_transcript_selection)
              {
 diff --git a/codex-rs/tui/src/app/owned_transcript_tests.rs b/codex-rs/tui/src/app/owned_transcript_tests.rs
-index c06fef4b58646ddaeaef67125d97f0ea3fd6c8d3..7a7bfe1fc9ee942e4e76246b660a4ae59c3e22f8 100644
+index c06fef4b58646ddaeaef67125d97f0ea3fd6c8d3..d43594267b834a7eecc8e3609b59c9c4c72d5e55 100644
 --- a/codex-rs/tui/src/app/owned_transcript_tests.rs
 +++ b/codex-rs/tui/src/app/owned_transcript_tests.rs
-@@ -32,6 +32,164 @@ fn user_cell(message: &str) -> Arc<dyn HistoryCell> {
+@@ -32,6 +32,173 @@ fn user_cell(message: &str) -> Arc<dyn HistoryCell> {
      })
  }
  
@@ -1628,23 +1628,32 @@ index c06fef4b58646ddaeaef67125d97f0ea3fd6c8d3..7a7bfe1fc9ee942e4e76246b660a4ae5
 +        &app.transcript_cells,
 +    );
 +    assert!(!app.transcript_view.is_following());
-+    for resized in [Size::new(80, 18), Size::new(60, 14)] {
++    for (resized, panel_visible) in [
++        (Size::new(80, 24), true),
++        (Size::new(60, 24), true),
++        (Size::new(60, 8), false),
++        (Size::new(60, 24), true),
++    ] {
 +        tui.screen_size_for_event(&TuiEvent::Resize(resized))?;
 +        let bottom = app.render_owned_transcript(&mut tui, resized)?;
-+        let panel = app
-+            .subagent_live_panel_frame
-+            .borrow()
-+            .panel_rect()
-+            .expect("live panel");
-+        assert_eq!(panel.bottom(), bottom.top());
-+        assert!(
-+            buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
-+                &tui.terminal,
-+            ))
-+            .contains("Back to bottom")
-+        );
++        let frame = app.subagent_live_panel_frame.borrow();
++        if panel_visible {
++            let panel = frame.panel_rect().expect("live panel");
++            assert_eq!(panel.bottom(), bottom.top());
++            assert!(panel.top() >= 8);
++            assert!(
++                buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
++                    &tui.terminal,
++                ))
++                .contains("Back to bottom")
++            );
++        } else {
++            assert!(frame.panel_rect().is_none());
++            assert!(frame.hit_regions().is_empty());
++        }
 +    }
 +    app.chat_widget.set_raw_output_mode(true);
++    tui.screen_size_for_event(&TuiEvent::Resize(size))?;
 +    app.render_owned_transcript(&mut tui, size)?;
 +    assert!(
 +        app.subagent_live_panel_frame
