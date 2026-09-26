@@ -1197,7 +1197,7 @@ index e2f943c7ab86da1da7079ab48b1d4c166be145a3..1e1d71e42d8a42d42e507429bd794899
  fn list_agents_tool_includes_path_prefix_and_agent_fields() {
      let ToolSpec::Function(ResponsesApiTool {
 diff --git a/codex-rs/core/src/tools/handlers/multi_agents_tests.rs b/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
-index 0bba76c7f209dd68bf7f89ce2a905d3925633d98..f581442844f9d9da232ed4c37596a193949eaab8 100644
+index 0bba76c7f209dd68bf7f89ce2a905d3925633d98..d9effbab20ceafad880d7996e6edc49bf2b208f1 100644
 --- a/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
 +++ b/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
 @@ -4,6 +4,9 @@ use crate::ThreadManager;
@@ -1303,7 +1303,7 @@ index 0bba76c7f209dd68bf7f89ce2a905d3925633d98..f581442844f9d9da232ed4c37596a193
  }
  
  #[tokio::test]
-@@ -1966,6 +2001,154 @@ async fn multi_agent_v2_followup_task_completion_notifies_parent_on_every_turn()
+@@ -1966,6 +2001,158 @@ async fn multi_agent_v2_followup_task_completion_notifies_parent_on_every_turn()
      assert_eq!(notifications.len(), 2);
  }
  
@@ -1453,12 +1453,16 @@ index 0bba76c7f209dd68bf7f89ce2a905d3925633d98..f581442844f9d9da232ed4c37596a193
 +        assert_eq!(manager.list_thread_ids().await, vec![root.thread_id]);
 +        assert_eq!(manager.captured_ops().len(), before_ops);
 +    }
++    root.thread
++        .shutdown_and_wait()
++        .await
++        .expect("shutdown fixture parent before the Tokio runtime exits");
 +}
 +
  #[tokio::test]
  async fn multi_agent_v2_followup_task_rejects_legacy_items_field() {
      let (mut session, mut turn) = make_session_and_context().await;
-@@ -2822,6 +3005,289 @@ async fn resume_agent_rejects_when_depth_limit_exceeded() {
+@@ -2822,6 +3009,289 @@ async fn resume_agent_rejects_when_depth_limit_exceeded() {
      );
  }
  

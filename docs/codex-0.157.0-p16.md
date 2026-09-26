@@ -54,7 +54,18 @@ The height helper now passes `None`, matching inline rendering; fullscreen
 rendering continues to pass its per-frame gap. All callers were checked, and the
 existing complete-TUI contract includes the inline panel placement regression.
 
-Rust compilation, the native contract, matching-binary cold-unplug acceptance and
-terminal observations still require passing results for the corrected candidate.
+The third attempt on `1f67659` built successfully on Windows ARM64, both Linux
+targets and both macOS targets. Windows x64 passed 25 contract steps; the Live
+panel step passed 35 tests and failed the new resize case. That fixture still had
+an active native text selection, which intentionally hides the return-to-bottom
+control. It now returns to latest before exercising reading-mode resize, while
+retaining the button, panel-boundary and selection assertions.
+
+The same run also logged a Tokio shutdown panic in a passing core follow-up test.
+That fixture now awaits its remaining parent thread's shutdown before returning;
+native revalidation must confirm the cleanup. The original failed log is retained.
+
+The corrected fixtures, full Windows contract, matching-binary cold-unplug
+acceptance and terminal observations still require passing native results.
 The official migration-byte check is not database round-trip acceptance. Evidence
 for the accepted 0.156.1 executable does not certify this candidate.
