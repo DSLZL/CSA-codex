@@ -40,7 +40,7 @@ sha256 = "cf84a0397493f238bd61e2e384086533ec9635bb2ab3f46c3e61d3743536ba9d"
 
 [[patches]]
 path = "patches/1100-tui-adapter.patch"
-sha256 = "943ed8099e376f71bca9d2453511888e41513f7b98531659fa36e97b9ade3168"
+sha256 = "47ce69216b256b6717044da68141c4b60dfbef8f46e24c40e9a10015460b4e64"
 
 [preimage]
 "codex-rs/config/src/config_toml.rs" = "e8494daf15bd00ab56525a56db6a2278088a255e7a4ca3b647acdc3d1f69e407"

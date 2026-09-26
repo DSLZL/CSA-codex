@@ -123,6 +123,24 @@
         "cargo",
         "test",
         "-p",
+        "codex-tui",
+        "--lib",
+        "--",
+        "--test-threads=1",
+        "--format=terse"
+      ],
+      "env": {
+        "NO_COLOR": "",
+        "TERM": "xterm-256color"
+      },
+      "name": "complete TUI library",
+      "output": "failure-only"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
         "codex-config",
         "--lib",
         "--",
@@ -468,24 +486,6 @@
         "--format=terse"
       ],
       "name": "CSA lossless Orbit",
-      "output": "failure-only"
-    },
-    {
-      "argv": [
-        "cargo",
-        "test",
-        "-p",
-        "codex-tui",
-        "--lib",
-        "--",
-        "--test-threads=1",
-        "--format=terse"
-      ],
-      "env": {
-        "NO_COLOR": "",
-        "TERM": "xterm-256color"
-      },
-      "name": "complete TUI library",
       "output": "failure-only"
     },
     {

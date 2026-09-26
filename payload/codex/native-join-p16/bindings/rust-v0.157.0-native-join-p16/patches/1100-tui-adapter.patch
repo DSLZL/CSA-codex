@@ -1718,7 +1718,7 @@ index c1c3994971e3cd3e0564c7cd85f16094fda48ccd..38cc2701f3b6e9c4fd74b8351f71438f
          .height
          .saturating_sub(chat_height)
 diff --git a/codex-rs/tui/src/app/session_lifecycle.rs b/codex-rs/tui/src/app/session_lifecycle.rs
-index 1ad29bfa688f791ae0922cf86496dee0ddcd71d9..eeccee4a70acd1455aabbd389f38667dcc26e6cb 100644
+index 1ad29bfa688f791ae0922cf86496dee0ddcd71d9..b2a70a9d92b293bf740a629784d945a63580b8fd 100644
 --- a/codex-rs/tui/src/app/session_lifecycle.rs
 +++ b/codex-rs/tui/src/app/session_lifecycle.rs
 @@ -298,10 +298,13 @@ impl App {
@@ -1808,6 +1808,23 @@ index 1ad29bfa688f791ae0922cf86496dee0ddcd71d9..eeccee4a70acd1455aabbd389f38667d
      /// Returns the adjacent thread id for keyboard navigation, backfilling from the server if the
      /// local cache has no neighbor.
      ///
+@@ -1256,6 +1280,16 @@ impl App {
+         tui: &mut tui::Tui,
+         app_server: &mut AppServerSession,
+         target_session: SessionTarget,
++    ) -> Result<AppRunControl> {
++        // Keep the large resume future out of keyboard and event-dispatch futures.
++        Box::pin(self.resume_target_session_inner(tui, app_server, target_session)).await
++    }
++
++    async fn resume_target_session_inner(
++        &mut self,
++        tui: &mut tui::Tui,
++        app_server: &mut AppServerSession,
++        target_session: SessionTarget,
+     ) -> Result<AppRunControl> {
+         if self.ignore_same_thread_resume(&target_session) {
+             self.agents_overview
 diff --git a/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap b/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap
 index 91094ce9a9282d13e7d3d0456ff4815ec01ab755..7f9781ea03e70cc50e98e00e9054300a763ebd06 100644
 --- a/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap
@@ -1877,7 +1894,7 @@ index 24242f3fc9abdf572f559cfa3a5a4b6382b58dfd..131e2391d769977c00bbec4e5de19657
          side_threads: HashMap::new(),
          abandoned_side_threads: HashSet::new(),
 diff --git a/codex-rs/tui/src/app/tests.rs b/codex-rs/tui/src/app/tests.rs
-index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..283c368ab853c8addfc30709c3b175d55bbabd0e 100644
+index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..1e58bd2932fae8d29bf7dfa67c144c7212ed782e 100644
 --- a/codex-rs/tui/src/app/tests.rs
 +++ b/codex-rs/tui/src/app/tests.rs
 @@ -383,14 +383,18 @@ async fn chat_widget_frame_reuses_active_cell_height_across_frame_passes() {
@@ -2944,7 +2961,29 @@ index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..283c368ab853c8addfc30709c3b175d5
  fn token_usage_notification(
      thread_id: ThreadId,
      turn_id: &str,
-@@ -8681,13 +9600,12 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
+@@ -7775,7 +8694,7 @@ async fn remote_resume_keeps_server_only_cwd_out_of_local_config() -> Result<()>
+         RuntimePermissionProfileOverride::from_restored_config(&prior_config),
+     );
+ 
+-    let control = Box::pin(app.resume_target_session(
++    let resume = app.resume_target_session(
+         &mut tui,
+         &mut app_server,
+         crate::resume_picker::SessionTarget {
+@@ -7784,8 +8703,10 @@ async fn remote_resume_keeps_server_only_cwd_out_of_local_config() -> Result<()>
+             cwd: None,
+             history_mode: None,
+         },
+-    ))
+-    .await?;
++    );
++    let size = std::mem::size_of_val(&resume);
++    assert!(size < 64 * 1024, "resume wrapper future is {size} bytes");
++    let control = resume.await?;
+ 
+     assert!(matches!(control, AppRunControl::Continue));
+     assert_eq!(app.harness_overrides.cwd, Some(remote_cwd));
+@@ -8681,13 +9602,12 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
                          turn_id: "turn-1".to_string(),
                          started_at_ms: 0,
                          item: ThreadItem::CollabAgentToolCall {
@@ -2962,7 +3001,7 @@ index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..283c368ab853c8addfc30709c3b175d5
                              model: None,
                              reasoning_effort: None,
                              agents_states: HashMap::new(),
-@@ -8701,17 +9619,17 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
+@@ -8701,17 +9621,17 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
          /*resume_restored_queue*/ false,
      );
  

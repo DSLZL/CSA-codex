@@ -28,6 +28,9 @@ route remains 0.156.1; its payload and the shared p16 additions are unchanged.
   including a retained scan across runtime shutdown. Keep the shared-runtime
   completion regression and fullscreen resize coverage for visible, hidden and
   restored Live panels. Include Git utilities in formatting and Clippy checks.
+- Heap-pin the shared session-resume flow so keyboard and event dispatch do not
+  retain its large future inline. Check its wrapper stays below 64 KiB, matching
+  upstream's existing startup/new-session approach. Run full TUI coverage early.
 
 ## Verification and limits
 
@@ -39,8 +42,8 @@ source-dependent Python fixture was skipped; exact-source preflight ran separate
 Of 73 paths with unchanged upstream preimages, 72 retain identical accepted-p16
 postimages; the approval fixture described below is the sole candidate-specific
 exception. Accepted payloads and shared patch files remain byte-identical.
-[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36231311307) passed
-quality and both Linux recovery jobs on the previous candidate `c970734`.
+[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36237655952) passed
+quality and both Linux recovery jobs on the previous candidate `2948495`.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
 one live completed item in both modes, zero on cold Legacy readback and one on cold
@@ -102,8 +105,18 @@ The recurrent background panic exposed a process-wide Git status cache keyed
 only by executable and repository. Separate test runtimes use the same cwd and
 can share a timer-backed scan after one runtime shuts down. The candidate adds
 the runtime ID to the key and a deterministic regression that retains a pending
-scan across shutdown. Existing sharing and cancellation coverage remains; native
-confirmation is pending. Backtraces are enabled for any remaining panic.
+scan across shutdown. The seventh run passed this regression, Native Join, Live
+panel and Orbit coverage without logging the previous shutdown/Shared panic.
+Backtraces remain enabled for any remaining panic.
+
+The seventh run passed 28 checks, then full TUI coverage aborted with
+`STATUS_STACK_OVERFLOW` in the attach-conflict/retry scenario. The shared resume
+future was embedded directly in its keyboard handler and other callers. The
+candidate now heap-pins that flow at the common resume boundary and checks the
+wrapper's size in an existing resume behavior test. The fatal abort did not
+identify the precise overflowing frame; native confirmation remains pending.
+All 40 contract steps and the 8 MiB test-stack setting remain. Full TUI now runs
+immediately after formatting and Git status checks to expose further failures early.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.
