@@ -28,22 +28,22 @@ route remains 0.156.1; its payload and the shared p16 additions are unchanged.
   including a retained scan across runtime shutdown. Keep the shared-runtime
   completion regression and fullscreen resize coverage for visible, hidden and
   restored Live panels. Include Git utilities in formatting and Clippy checks.
-- Heap-pin the shared session-resume flow so keyboard and event dispatch do not
-  retain its large future inline. Check its wrapper stays below 64 KiB, matching
-  upstream's existing startup/new-session approach. Run full TUI coverage early.
+- Heap-pin the complete attach-conflict/retry test scenario, following existing
+  upstream TUI fixtures, so Tokio's test wrapper retains a small future. Preserve
+  its assertions and run full TUI coverage early with the original 8 MiB stack.
 
 ## Verification and limits
 
 Local validation passed strict application of all four ordered patches to the
-pinned source, comparison of all 121 patched paths with the reviewed worktree,
+pinned source, comparison of all 122 patched paths with the reviewed worktree,
 family/catalog validation, previous-payload immutability, workflow guards, producer
 Python tests and formatting checks for the affected Rust packages. The existing
 source-dependent Python fixture was skipped; exact-source preflight ran separately.
 Of 73 paths with unchanged upstream preimages, 72 retain identical accepted-p16
 postimages; the approval fixture described below is the sole candidate-specific
 exception. Accepted payloads and shared patch files remain byte-identical.
-[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36241270112) passed
-quality and both Linux recovery jobs on candidate `44b7375`.
+[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36256105817) passed
+quality and both Linux recovery jobs on the preceding candidate `48ddc04`.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
 one live completed item in both modes, zero on cold Legacy readback and one on cold
@@ -112,8 +112,8 @@ Backtraces remain enabled for any remaining panic.
 The seventh run passed 28 checks, then full TUI coverage aborted with
 `STATUS_STACK_OVERFLOW` in the attach-conflict/retry scenario. The shared resume
 future was embedded directly in its keyboard handler and other callers. The
-candidate now heap-pins that flow at the common resume boundary and checks the
-wrapper's size in an existing resume behavior test. The fatal abort did not
+eighth candidate heap-pinned that flow at the common resume boundary and checked
+the wrapper's size in an existing resume behavior test. The fatal abort did not
 identify the precise overflowing frame.
 All 40 contract steps and the 8 MiB test-stack setting remain. Full TUI now runs
 immediately after formatting and Git status checks to expose further failures early.
@@ -130,6 +130,21 @@ future-size and execution-stage probes to that fixture and run it at 8 and 32 Mi
 Artifacts retain source identities, the instrumentation diff and each raw log
 with its exit code. These runs are diagnostic-only; neither instrumentation nor
 the larger stack changes the payload or satisfies the native acceptance gate.
+
+The [paired diagnostic run](https://github.com/DSLZL/CSA-codex/actions/runs/36256122903)
+confirmed the original selected test overflows at 8 MiB on both unpatched 0.157.0
+and the candidate. Heap-boxed diagnostic scenarios pass all assertions at 8 MiB
+on both variants, and also pass at 32 MiB. Their scenario futures measured 157,336
+and 139,264 bytes respectively. The aggregate run remains failed because it
+preserves the original failing executions.
+
+The candidate now wraps the complete original scenario in `Box::pin(async { ... })`,
+matching existing upstream fixtures. Removing only this wrapper and formatting
+restores the original fixture file exactly. A8's additional production resume
+wrapper and its size-only guard were removed; resume behavior returns to its
+previous implementation. The full native contract must verify this smaller fix
+without diagnostic instrumentation; the exact original overflowing frame remains
+unavailable.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.

@@ -1039,6 +1039,378 @@ index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..1a25d92df3077fca7d8805f89a6c6a81
 +    assert!(label.starts_with("$ 🧪e\u{301}测试"));
 +    assert!(label.ends_with("..."));
 +}
+diff --git a/codex-rs/tui/src/app/agents_overview_tests.rs b/codex-rs/tui/src/app/agents_overview_tests.rs
+index 182d7ac643e032768e8b2b399b84c8e4f27420c0..4f2d2e57e79c349ca44eaef55cabc2fe91fb33af 100644
+--- a/codex-rs/tui/src/app/agents_overview_tests.rs
++++ b/codex-rs/tui/src/app/agents_overview_tests.rs
+@@ -2331,189 +2331,193 @@ async fn command_center_handles_resume_failure_and_success() -> Result<()> {
+ 
+ #[tokio::test]
+ async fn command_center_attach_conflict_opens_read_only_and_retries() -> Result<()> {
+-    let mut app = Box::pin(make_test_app()).await;
+-    trust_fixture_folders(&mut app);
+-    std::fs::write(
+-        app.config.codex_home.join("config.toml"),
+-        "[tui]\nresume_cwd = \"current\"\n",
+-    )?;
+-    for cwd in [test_path_buf("/"), app.config.cwd.to_path_buf()] {
+-        crate::legacy_core::config::set_project_trust_level(
+-            app.config.codex_home.as_path(),
+-            &cwd,
+-            codex_protocol::config_types::TrustLevel::Trusted,
+-        )
+-        .map_err(std::io::Error::other)?;
+-    }
+-    let thread_id = ThreadId::from_string(
+-        &app_test_support::create_fake_rollout(
+-            app.config.codex_home.as_path(),
+-            "2025-01-05T12-00-00",
+-            "2025-01-05T12:00:00Z",
+-            "Saved task",
+-            Some(&app.config.model_provider_id),
+-            /*git_info*/ None,
+-        )
+-        .expect("saved task"),
+-    )?;
+-    let mut owner = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+-    Box::pin(owner.resume_thread(
+-        &app.local_settings,
+-        app.config.clone(),
+-        thread_id,
+-        crate::app_server_session::ResumeModelSettings::PreserveExistingThread,
+-    ))
+-    .await?;
+-    let thread = owner
+-        .thread_read(thread_id, /*include_turns*/ false)
++    // Keep the full scenario off Tokio's stack-pinned test future on Windows.
++    Box::pin(async {
++        let mut app = Box::pin(make_test_app()).await;
++        trust_fixture_folders(&mut app);
++        std::fs::write(
++            app.config.codex_home.join("config.toml"),
++            "[tui]\nresume_cwd = \"current\"\n",
++        )?;
++        for cwd in [test_path_buf("/"), app.config.cwd.to_path_buf()] {
++            crate::legacy_core::config::set_project_trust_level(
++                app.config.codex_home.as_path(),
++                &cwd,
++                codex_protocol::config_types::TrustLevel::Trusted,
++            )
++            .map_err(std::io::Error::other)?;
++        }
++        let thread_id = ThreadId::from_string(
++            &app_test_support::create_fake_rollout(
++                app.config.codex_home.as_path(),
++                "2025-01-05T12-00-00",
++                "2025-01-05T12:00:00Z",
++                "Saved task",
++                Some(&app.config.model_provider_id),
++                /*git_info*/ None,
++            )
++            .expect("saved task"),
++        )?;
++        let mut owner = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
++        Box::pin(owner.resume_thread(
++            &app.local_settings,
++            app.config.clone(),
++            thread_id,
++            crate::app_server_session::ResumeModelSettings::PreserveExistingThread,
++        ))
+         .await?;
+-    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+-    app.app_server_target = AppServerTarget::LocalDaemon {
+-        allow_embedded_fallback: true,
+-        endpoint: crate::resolve_remote_addr("ws://127.0.0.1:4500")?,
+-    };
+-    app.chat_widget.remote_connection =
+-        crate::status::remote_connection::remote_connection_status_value(
+-            &app.app_server_target,
+-            /*server_version*/ None,
++        let thread = owner
++            .thread_read(thread_id, /*include_turns*/ false)
++            .await?;
++        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
++        app.app_server_target = AppServerTarget::LocalDaemon {
++            allow_embedded_fallback: true,
++            endpoint: crate::resolve_remote_addr("ws://127.0.0.1:4500")?,
++        };
++        app.chat_widget.remote_connection =
++            crate::status::remote_connection::remote_connection_status_value(
++                &app.app_server_target,
++                /*server_version*/ None,
++            );
++        app.agents_overview
++            .threads
++            .insert(thread_id, Some(thread.clone()));
++        app.chat_widget.insert_str("Retained task draft");
++        app.agents_overview.input_states.insert(
++            thread_id,
++            app.chat_widget
++                .capture_thread_input_state()
++                .expect("task draft"),
+         );
+-    app.agents_overview
+-        .threads
+-        .insert(thread_id, Some(thread.clone()));
+-    app.chat_widget.insert_str("Retained task draft");
+-    app.agents_overview.input_states.insert(
+-        thread_id,
+-        app.chat_widget
+-            .capture_thread_input_state()
+-            .expect("task draft"),
+-    );
+-    app.agents_overview.dispatched_requests.insert(
+-        thread_id,
+-        vec![ServerRequest::ToolRequestUserInput {
+-            request_id: RequestId::Integer(42),
+-            params: ToolRequestUserInputParams {
+-                thread_id: thread_id.to_string(),
+-                turn_id: "turn".into(),
+-                item_id: "question".into(),
+-                questions: Vec::new(),
+-                is_blocking: true,
+-                auto_resolution_ms: None,
+-            },
+-        }],
+-    );
+-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+-    app.app_event_tx = AppEventSender::new(tx);
+-    let mut view = app.agents_overview_view(vec![thread], Some(thread_id));
+-    view.handle_key_event(KeyCode::Esc.into());
+-    app.chat_widget.show_bottom_pane_view(Box::new(view));
+-    let selection = app
+-        .chat_widget
+-        .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID);
+-    let mut tui = crate::tui::test_support::make_test_tui()?;
+-
+-    app.chat_widget.handle_key_event(KeyCode::Right.into());
+-    let event = rx.try_recv()?;
+-    assert!(
+-        matches!(event, AppEvent::SelectAgentsOverviewThread { thread_id: id } if id == thread_id)
+-    );
+-    Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
+-    assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
+-    assert!(app.chat_widget.is_external_writer_view());
+-    assert_eq!(
+-        app.thread_event_channels[&thread_id].attachment(),
+-        ThreadEventAttachment::ExternalWriter
+-    );
+-    assert_eq!(app.agents_overview.dispatched_requests[&thread_id].len(), 1);
+-    assert_eq!(
+-        app.chat_widget.composer_text_with_pending(),
+-        "Retained task draft"
+-    );
+-    let turns = app.thread_event_channels[&thread_id]
+-        .store
+-        .lock()
+-        .await
+-        .snapshot()
+-        .turns;
+-    assert!(serde_json::to_string(&turns)?.contains("Saved task"));
+-    insta::with_settings!({snapshot_path => "../snapshots"}, {
+-        insta::assert_snapshot!("agents_overview_attach_conflict", render_bottom_popup(&app.chat_widget, /*width*/ 96));
+-    });
+-
+-    app.handle_key_event(&mut tui, &mut server, KeyCode::Esc.into())
+-        .await;
+-
+-    assert_eq!(
+-        app.chat_widget
+-            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+-        selection
+-    );
++        app.agents_overview.dispatched_requests.insert(
++            thread_id,
++            vec![ServerRequest::ToolRequestUserInput {
++                request_id: RequestId::Integer(42),
++                params: ToolRequestUserInputParams {
++                    thread_id: thread_id.to_string(),
++                    turn_id: "turn".into(),
++                    item_id: "question".into(),
++                    questions: Vec::new(),
++                    is_blocking: true,
++                    auto_resolution_ms: None,
++                },
++            }],
++        );
++        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
++        app.app_event_tx = AppEventSender::new(tx);
++        let mut view = app.agents_overview_view(vec![thread], Some(thread_id));
++        view.handle_key_event(KeyCode::Esc.into());
++        app.chat_widget.show_bottom_pane_view(Box::new(view));
++        let selection = app
++            .chat_widget
++            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID);
++        let mut tui = crate::tui::test_support::make_test_tui()?;
+ 
+-    // Opening the displayed task returns to the same frozen snapshot without retrying.
+-    Box::pin(app.handle_event(
+-        &mut tui,
+-        &mut server,
+-        AppEvent::SelectAgentsOverviewThread { thread_id },
+-    ))
+-    .await?;
+-    assert!(app.chat_widget.no_modal_or_popup_active());
+-    assert!(app.chat_widget.is_external_writer_view());
+-    app.chat_widget.handle_paste(" should be ignored".into());
+-    assert_eq!(
+-        app.chat_widget.composer_text_with_pending(),
+-        "Retained task draft"
+-    );
+-    assert_eq!(
+-        app.thread_event_channels[&thread_id]
++        app.chat_widget.handle_key_event(KeyCode::Right.into());
++        let event = rx.try_recv()?;
++        assert!(
++            matches!(event, AppEvent::SelectAgentsOverviewThread { thread_id: id } if id == thread_id)
++        );
++        Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
++        assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
++        assert!(app.chat_widget.is_external_writer_view());
++        assert_eq!(
++            app.thread_event_channels[&thread_id].attachment(),
++            ThreadEventAttachment::ExternalWriter
++        );
++        assert_eq!(app.agents_overview.dispatched_requests[&thread_id].len(), 1);
++        assert_eq!(
++            app.chat_widget.composer_text_with_pending(),
++            "Retained task draft"
++        );
++        let turns = app.thread_event_channels[&thread_id]
+             .store
+             .lock()
+             .await
+             .snapshot()
+-            .turns,
+-        turns
+-    );
++            .turns;
++        assert!(serde_json::to_string(&turns)?.contains("Saved task"));
++        insta::with_settings!({snapshot_path => "../snapshots"}, {
++            insta::assert_snapshot!("agents_overview_attach_conflict", render_bottom_popup(&app.chat_widget, /*width*/ 96));
++        });
+ 
+-    // An explicit retry remains read-only while the other server owns the task.
+-    Box::pin(app.handle_key_event(&mut tui, &mut server, KeyCode::Char('r').into())).await;
+-    assert!(app.chat_widget.is_external_writer_view());
+-    assert_eq!(
+-        app.chat_widget.composer_text_with_pending(),
+-        "Retained task draft"
+-    );
+-    assert!(
+-        server
+-            .thread_loaded_list(codex_app_server_protocol::ThreadLoadedListParams {
+-                cursor: None,
+-                limit: None,
+-            })
+-            .await?
+-            .data
+-            .is_empty()
+-    );
++        app.handle_key_event(&mut tui, &mut server, KeyCode::Esc.into())
++            .await;
+ 
+-    // Buffered requests stay untouched while viewing; remove the synthetic request before retry.
+-    assert_eq!(
+-        app.agents_overview
+-            .dispatched_requests
+-            .remove(&thread_id)
+-            .unwrap()
+-            .len(),
+-        1
+-    );
+-    owner.shutdown().await?;
+-    Box::pin(app.handle_key_event(&mut tui, &mut server, KeyCode::Char('r').into())).await;
+-    assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
+-    assert!(!app.chat_widget.is_external_writer_view());
+-    assert_eq!(
+-        app.thread_event_channels[&thread_id].attachment(),
+-        ThreadEventAttachment::Live
+-    );
+-    assert_eq!(
+-        app.chat_widget.composer_text_with_pending(),
+-        "Retained task draft"
+-    );
+-    assert!(app.chat_widget.no_modal_or_popup_active());
+-    server.shutdown().await?;
+-    Ok(())
++        assert_eq!(
++            app.chat_widget
++                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
++            selection
++        );
++
++        // Opening the displayed task returns to the same frozen snapshot without retrying.
++        Box::pin(app.handle_event(
++            &mut tui,
++            &mut server,
++            AppEvent::SelectAgentsOverviewThread { thread_id },
++        ))
++        .await?;
++        assert!(app.chat_widget.no_modal_or_popup_active());
++        assert!(app.chat_widget.is_external_writer_view());
++        app.chat_widget.handle_paste(" should be ignored".into());
++        assert_eq!(
++            app.chat_widget.composer_text_with_pending(),
++            "Retained task draft"
++        );
++        assert_eq!(
++            app.thread_event_channels[&thread_id]
++                .store
++                .lock()
++                .await
++                .snapshot()
++                .turns,
++            turns
++        );
++
++        // An explicit retry remains read-only while the other server owns the task.
++        Box::pin(app.handle_key_event(&mut tui, &mut server, KeyCode::Char('r').into())).await;
++        assert!(app.chat_widget.is_external_writer_view());
++        assert_eq!(
++            app.chat_widget.composer_text_with_pending(),
++            "Retained task draft"
++        );
++        assert!(
++            server
++                .thread_loaded_list(codex_app_server_protocol::ThreadLoadedListParams {
++                    cursor: None,
++                    limit: None,
++                })
++                .await?
++                .data
++                .is_empty()
++        );
++
++        // Buffered requests stay untouched while viewing; remove the synthetic request before retry.
++        assert_eq!(
++            app.agents_overview
++                .dispatched_requests
++                .remove(&thread_id)
++                .unwrap()
++                .len(),
++            1
++        );
++        owner.shutdown().await?;
++        Box::pin(app.handle_key_event(&mut tui, &mut server, KeyCode::Char('r').into())).await;
++        assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
++        assert!(!app.chat_widget.is_external_writer_view());
++        assert_eq!(
++            app.thread_event_channels[&thread_id].attachment(),
++            ThreadEventAttachment::Live
++        );
++        assert_eq!(
++            app.chat_widget.composer_text_with_pending(),
++            "Retained task draft"
++        );
++        assert!(app.chat_widget.no_modal_or_popup_active());
++        server.shutdown().await?;
++        Ok(())
++    })
++    .await
+ }
+ 
+ #[tokio::test]
 diff --git a/codex-rs/tui/src/app/input.rs b/codex-rs/tui/src/app/input.rs
 index 4648b3de6bfa81ee57bda6149806ba36fc87f138..1e06f822d95087a9c0ceaea5f0b68e0fdf3f64ca 100644
 --- a/codex-rs/tui/src/app/input.rs
@@ -1718,7 +2090,7 @@ index c1c3994971e3cd3e0564c7cd85f16094fda48ccd..38cc2701f3b6e9c4fd74b8351f71438f
          .height
          .saturating_sub(chat_height)
 diff --git a/codex-rs/tui/src/app/session_lifecycle.rs b/codex-rs/tui/src/app/session_lifecycle.rs
-index 1ad29bfa688f791ae0922cf86496dee0ddcd71d9..b2a70a9d92b293bf740a629784d945a63580b8fd 100644
+index 1ad29bfa688f791ae0922cf86496dee0ddcd71d9..eeccee4a70acd1455aabbd389f38667dcc26e6cb 100644
 --- a/codex-rs/tui/src/app/session_lifecycle.rs
 +++ b/codex-rs/tui/src/app/session_lifecycle.rs
 @@ -298,10 +298,13 @@ impl App {
@@ -1808,23 +2180,6 @@ index 1ad29bfa688f791ae0922cf86496dee0ddcd71d9..b2a70a9d92b293bf740a629784d945a6
      /// Returns the adjacent thread id for keyboard navigation, backfilling from the server if the
      /// local cache has no neighbor.
      ///
-@@ -1256,6 +1280,16 @@ impl App {
-         tui: &mut tui::Tui,
-         app_server: &mut AppServerSession,
-         target_session: SessionTarget,
-+    ) -> Result<AppRunControl> {
-+        // Keep the large resume future out of keyboard and event-dispatch futures.
-+        Box::pin(self.resume_target_session_inner(tui, app_server, target_session)).await
-+    }
-+
-+    async fn resume_target_session_inner(
-+        &mut self,
-+        tui: &mut tui::Tui,
-+        app_server: &mut AppServerSession,
-+        target_session: SessionTarget,
-     ) -> Result<AppRunControl> {
-         if self.ignore_same_thread_resume(&target_session) {
-             self.agents_overview
 diff --git a/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap b/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap
 index 91094ce9a9282d13e7d3d0456ff4815ec01ab755..7f9781ea03e70cc50e98e00e9054300a763ebd06 100644
 --- a/codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__empty_state_animation_tests__fresh_thread_header.snap
@@ -1894,7 +2249,7 @@ index 24242f3fc9abdf572f559cfa3a5a4b6382b58dfd..131e2391d769977c00bbec4e5de19657
          side_threads: HashMap::new(),
          abandoned_side_threads: HashSet::new(),
 diff --git a/codex-rs/tui/src/app/tests.rs b/codex-rs/tui/src/app/tests.rs
-index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..1e58bd2932fae8d29bf7dfa67c144c7212ed782e 100644
+index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..d31c2bf20355e1ab2433a4bc3ecb6314bf75c023 100644
 --- a/codex-rs/tui/src/app/tests.rs
 +++ b/codex-rs/tui/src/app/tests.rs
 @@ -383,14 +383,18 @@ async fn chat_widget_frame_reuses_active_cell_height_across_frame_passes() {
@@ -2961,29 +3316,37 @@ index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..1e58bd2932fae8d29bf7dfa67c144c72
  fn token_usage_notification(
      thread_id: ThreadId,
      turn_id: &str,
-@@ -7775,7 +8694,7 @@ async fn remote_resume_keeps_server_only_cwd_out_of_local_config() -> Result<()>
+@@ -7775,17 +8694,18 @@ async fn remote_resume_keeps_server_only_cwd_out_of_local_config() -> Result<()>
          RuntimePermissionProfileOverride::from_restored_config(&prior_config),
      );
  
 -    let control = Box::pin(app.resume_target_session(
-+    let resume = app.resume_target_session(
-         &mut tui,
-         &mut app_server,
-         crate::resume_picker::SessionTarget {
-@@ -7784,8 +8703,10 @@ async fn remote_resume_keeps_server_only_cwd_out_of_local_config() -> Result<()>
-             cwd: None,
-             history_mode: None,
-         },
+-        &mut tui,
+-        &mut app_server,
+-        crate::resume_picker::SessionTarget {
+-            path: Some(rollout_path),
+-            thread_id: ThreadId::from_string(&thread_id)?,
+-            cwd: None,
+-            history_mode: None,
+-        },
 -    ))
 -    .await?;
-+    );
-+    let size = std::mem::size_of_val(&resume);
-+    assert!(size < 64 * 1024, "resume wrapper future is {size} bytes");
-+    let control = resume.await?;
++    let control = app
++        .resume_target_session(
++            &mut tui,
++            &mut app_server,
++            crate::resume_picker::SessionTarget {
++                path: Some(rollout_path),
++                thread_id: ThreadId::from_string(&thread_id)?,
++                cwd: None,
++                history_mode: None,
++            },
++        )
++        .await?;
  
      assert!(matches!(control, AppRunControl::Continue));
      assert_eq!(app.harness_overrides.cwd, Some(remote_cwd));
-@@ -8681,13 +9602,12 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
+@@ -8681,13 +9601,12 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
                          turn_id: "turn-1".to_string(),
                          started_at_ms: 0,
                          item: ThreadItem::CollabAgentToolCall {
@@ -3001,7 +3364,7 @@ index 4e17f2df3afded996ea6fcb5ba5eadf78c456350..1e58bd2932fae8d29bf7dfa67c144c72
                              model: None,
                              reasoning_effort: None,
                              agents_states: HashMap::new(),
-@@ -8701,17 +9621,17 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
+@@ -8701,17 +9620,17 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
          /*resume_restored_queue*/ false,
      );
  
