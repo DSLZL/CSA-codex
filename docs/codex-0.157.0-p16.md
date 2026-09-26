@@ -33,9 +33,11 @@ pinned source, comparison of all 119 patched paths with the reviewed worktree,
 family/catalog validation, previous-payload immutability, workflow guards, producer
 Python tests and formatting checks for the affected Rust packages. The existing
 source-dependent Python fixture was skipped; exact-source preflight ran separately.
-All 73 paths with unchanged upstream preimages retain identical accepted-p16
-postimages. [Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36139781340)
-also passed quality and both Linux recovery jobs.
+Of 73 paths with unchanged upstream preimages, 72 retain identical accepted-p16
+postimages; the approval fixture described below is the sole candidate-specific
+exception. Accepted payloads and shared patch files remain byte-identical.
+[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36227297103) passed
+quality and both Linux recovery jobs on `f7285bb`.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
 one live completed item in both modes, zero on cold Legacy readback and one on cold
@@ -72,8 +74,19 @@ Its three-thread session budget allows two resident children, so spawning a
 sibling can evict the completed worker and close its rollout writer. The fixture
 then tried to flush that closed writer and received `thread ... not found`.
 It now flushes the worker before spawning the sibling, keeping the residency
-budget, eviction behavior and cold-resume assertions unchanged. Native
-revalidation of this ordering fix is pending.
+budget, eviction behavior and cold-resume assertions unchanged. The fifth run on
+`f7285bb` passed this step.
+
+The fifth run passed 24 contract steps, then Native Join integration reported
+nine passed, one failed and one pre-existing isolated-CLI acceptance test ignored.
+The approved-child case timed out waiting for an event; rejection passed. The
+fixture gave Join completion 10 seconds, while Windows unified exec can use a
+10-second initial yield window before the child's final response and publication.
+The fixture now uses a portable `echo` probe with login profiles disabled and a
+bounded 30-second completion deadline in both the outer wait and the event helper.
+The real approval requests, exact-run result and request-count assertions remain
+intact. This changes the new binding's test adapter only; production approval and
+Join behavior are unchanged. Native confirmation is pending.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.

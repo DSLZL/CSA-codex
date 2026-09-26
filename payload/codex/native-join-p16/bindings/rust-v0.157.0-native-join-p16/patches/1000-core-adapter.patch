@@ -2005,6 +2005,71 @@ index 8b4d4ff2fc80ee12d5d5a65b5fa7b2939eda1c47..e13b3b761033b01dcd70a0f6ae6e40bd
  mod subagent_notifications;
  mod subagent_service_tier;
  mod token_budget;
+diff --git a/codex-rs/core/tests/suite/multi_agent_join.rs b/codex-rs/core/tests/suite/multi_agent_join.rs
+index 47eab9381e0ac630e5a87a0d336819ce92da056f..ebd04ef90376a9d370dd623f0fa7874053623866 100644
+--- a/codex-rs/core/tests/suite/multi_agent_join.rs
++++ b/codex-rs/core/tests/suite/multi_agent_join.rs
+@@ -66,6 +66,7 @@ use core_test_support::test_codex::local_selections;
+ use core_test_support::test_codex::test_codex;
+ use core_test_support::test_codex::turn_permission_fields;
+ use core_test_support::wait_for_event;
++use core_test_support::wait_for_event_with_timeout;
+ use pretty_assertions::assert_eq;
+ use serde_json::json;
+ use test_case::test_case;
+@@ -441,7 +442,8 @@ async fn run_native_join_approval_case(
+     .await;
+ 
+     let shell_args = json!({
+-        "cmd": "csa-native-join-approval-probe",
++        "cmd": "echo csa-native-join-approval-probe",
++        "login": false,
+         "sandbox_permissions": "require_escalated",
+         "justification": "Exercise child approval while the parent is joined."
+     })
+@@ -636,21 +638,28 @@ async fn run_native_join_approval_case(
+             decision,
+         })
+         .await?;
++    // Windows exec can use its full 10-second initial yield window. Leave time for
++    // process startup, the child's final response and Join publication as well.
++    let join_timeout = Duration::from_secs(30);
+     timeout(
+-        Duration::from_secs(10),
+-        wait_for_event(&test.codex, |event| {
+-            matches!(
+-                event,
+-                EventMsg::ItemCompleted(event)
+-                    if matches!(
+-                        &event.item,
+-                        TurnItem::CollabAgentToolCall(item)
+-                            if item.id == APPROVAL_JOIN_CALL_ID
+-                                && item.tool == CollabAgentTool::Wait
+-                                && item.status == CollabAgentToolCallStatus::Completed
+-                    )
+-            )
+-        }),
++        join_timeout,
++        wait_for_event_with_timeout(
++            &test.codex,
++            |event| {
++                matches!(
++                    event,
++                    EventMsg::ItemCompleted(event)
++                        if matches!(
++                            &event.item,
++                            TurnItem::CollabAgentToolCall(item)
++                                if item.id == APPROVAL_JOIN_CALL_ID
++                                    && item.tool == CollabAgentTool::Wait
++                                    && item.status == CollabAgentToolCallStatus::Completed
++                        )
++                )
++            },
++            join_timeout,
++        ),
+     )
+     .await
+     .expect("terminal child run should resolve Join after approval decision");
 diff --git a/codex-rs/core/tests/suite/multi_agent_resume.rs b/codex-rs/core/tests/suite/multi_agent_resume.rs
 index b263522d6fa644c096759e43eef1f5658010d889..cf77b445f73d1f8bd83f2f9b21b2b79f8dc5e42d 100644
 --- a/codex-rs/core/tests/suite/multi_agent_resume.rs
