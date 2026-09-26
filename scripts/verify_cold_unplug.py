@@ -886,6 +886,7 @@ def prepare_binaries(args: argparse.Namespace, root: Path, evidence: Path) -> tu
         ("0.153.2", "657a993cbee87acf52d14b758ce49dbd46d1b8eb"),
         ("0.154.0", "6b9826e3aa83b1a5947db50f4332cb9c65f1b340"),
         ("0.156.1", "b412ff32c417f855c2b2d1581b77058eed87c84b"),
+        ("0.157.0", "00c972ed5d6ff6499317fd41b7f23605b8e6850d"),
     }, "official Legacy presentation requires an exact reviewed upstream version and commit")
     require((repository / resolution["manifest_path"]).resolve() == paths["manifest"], "explicit manifest differs from the catalog route")
     require(paths["official_binary"] != paths["candidate_binary"], "official and candidate executable paths must differ")

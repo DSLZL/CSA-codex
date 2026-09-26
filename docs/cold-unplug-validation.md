@@ -80,7 +80,7 @@ Both Legacy and Paginated homes run. Native timeline pages arrive newest first,
 with entries in ascending order inside each page. The driver checks that order
 and stable ties before prepending older pages; it does not sort away corruption.
 Readback compares full prior item content and turn order, not just final text.
-For exact reviewed official 0.153.2, 0.154.0 and 0.156.1 Legacy readback only, omit known completed Wait display
+For exact reviewed official 0.153.2, 0.154.0, 0.156.1 and 0.157.0 Legacy readback only, omit known completed Wait display
 items associated with verified Join or ordinary `wait_agent` calls from the expected
 candidate view. Use actual fixture call IDs and verify each complete canonical
 call/result/Wait triple before allowing that display omission. Unknown or unfinished
@@ -99,6 +99,14 @@ modes, zero cold Legacy Wait items, and one cold Paginated Wait item. Both cold
 reads preserved canonical bytes and all four official processes exited normally.
 This diagnostic establishes the version-specific display rule; it does not mark
 the p16 candidate accepted.
+
+The 0.157.0 control is separately bound to upstream
+`00c972ed5d6ff6499317fd41b7f23605b8e6850d` and Windows executable SHA256
+`ed1c7b36e44536809c868864c833af8a857f56599a7a7fe23b908a1ba1093b1f`.
+On 2026-09-25, a fresh stock V1 fixture observed one live completed Wait in both
+modes, zero cold Legacy Wait items and one cold Paginated Wait item. Canonical
+bytes stayed unchanged and all four official processes exited normally. Candidate
+acceptance still requires its own complete matching-binary regression.
 
 Reprojection uses a separate SQLite directory. Native resume first prepares the
 projection and shuts down normally; 0.156.1 may append its own
