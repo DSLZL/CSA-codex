@@ -2006,7 +2006,7 @@ index 8b4d4ff2fc80ee12d5d5a65b5fa7b2939eda1c47..e13b3b761033b01dcd70a0f6ae6e40bd
  mod subagent_service_tier;
  mod token_budget;
 diff --git a/codex-rs/core/tests/suite/multi_agent_resume.rs b/codex-rs/core/tests/suite/multi_agent_resume.rs
-index b263522d6fa644c096759e43eef1f5658010d889..4282a919d6a222d67d48df1d442ed7b069acdd53 100644
+index b263522d6fa644c096759e43eef1f5658010d889..cf77b445f73d1f8bd83f2f9b21b2b79f8dc5e42d 100644
 --- a/codex-rs/core/tests/suite/multi_agent_resume.rs
 +++ b/codex-rs/core/tests/suite/multi_agent_resume.rs
 @@ -1,9 +1,12 @@
@@ -2210,7 +2210,25 @@ index b263522d6fa644c096759e43eef1f5658010d889..4282a919d6a222d67d48df1d442ed7b0
  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
  async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Result<()> {
      let server = start_mock_server().await;
-@@ -538,6 +708,10 @@ openai_base_url = "{redirected_base_url}"
+@@ -344,6 +514,9 @@ async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Resu
+         )
+     );
+ 
++    // Spawning the sibling can evict this completed worker and close its rollout writer.
++    worker_thread.flush_rollout().await?;
++
+     let sibling_spawn_args = serde_json::to_string(&json!({
+         "message": SIBLING_TASK,
+         "task_name": SIBLING_NAME,
+@@ -389,7 +562,6 @@ async fn cold_root_resume_restores_agent_identity_and_role_on_followup() -> Resu
+     })
+     .await;
+     sibling_thread.flush_rollout().await?;
+-    worker_thread.flush_rollout().await?;
+     initial.codex.flush_rollout().await?;
+     sibling_thread.shutdown_and_wait().await?;
+     worker_thread.shutdown_and_wait().await?;
+@@ -538,6 +710,10 @@ openai_base_url = "{redirected_base_url}"
      .await;
      assert!(followup_child_request.requests().iter().any(|request| {
          request.body_contains_text(FOLLOWUP_TASK)

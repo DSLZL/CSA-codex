@@ -2,8 +2,9 @@
 
 `rust-v0.157.0-native-join-p16` targets the official
 [`rust-v0.157.0`](https://github.com/openai/codex/releases/tag/rust-v0.157.0)
-at `00c972ed5d6ff6499317fd41b7f23605b8e6850d`, addressing
-[issue #18](https://github.com/DSLZL/CSA-codex/issues/18).
+at `00c972ed5d6ff6499317fd41b7f23605b8e6850d`. This candidate remains scoped to
+0.157.0; [issue #18](https://github.com/DSLZL/CSA-codex/issues/18) now tracks
+0.157.1 and is not resolved by this binding.
 The binding is a candidate with builds enabled and publication disabled. The accepted
 route remains 0.156.1; its payload and the shared p16 additions are unchanged.
 
@@ -63,7 +64,16 @@ retaining the button, panel-boundary and selection assertions.
 
 The same run also logged a Tokio shutdown panic in a passing core follow-up test.
 That fixture now awaits its remaining parent thread's shutdown before returning;
-native revalidation must confirm the cleanup. The original failed log is retained.
+the fourth Windows run on `556a446` passed that step without the shutdown panic.
+The original failed log is retained.
+
+The fourth run failed the cold-root-resume fixture before reaching the TUI steps.
+Its three-thread session budget allows two resident children, so spawning a
+sibling can evict the completed worker and close its rollout writer. The fixture
+then tried to flush that closed writer and received `thread ... not found`.
+It now flushes the worker before spawning the sibling, keeping the residency
+budget, eviction behavior and cold-resume assertions unchanged. Native
+revalidation of this ordering fix is pending.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.
