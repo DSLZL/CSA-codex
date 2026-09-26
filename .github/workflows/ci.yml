@@ -19,6 +19,10 @@ on:
         description: "Optional compatibility ID for unpatched Windows TUI diagnostics"
         type: string
         default: ""
+      tui_stack_diagnostic:
+        description: "Compare upstream/candidate stack probes for the selected compatibility ID"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,10 +34,14 @@ concurrency:
 
 jobs:
   upstream-tui-baseline:
-    name: Unpatched Windows TUI diagnostics
+    name: ${{ inputs.tui_stack_diagnostic && format('Windows TUI stack ({0})', matrix.source) || 'Unpatched Windows TUI diagnostics' }}
     if: github.event_name == 'workflow_dispatch' && inputs.upstream_tui_baseline != ''
     runs-on: windows-2025
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ${{ fromJSON(inputs.tui_stack_diagnostic && '["upstream","candidate"]' || '["upstream"]') }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -94,6 +102,7 @@ jobs:
         shell: pwsh
         run: '& "$env:SOURCE_ROOT/.github/actions/setup-msvc-env/setup-msvc-env.ps1" -Target x86_64-pc-windows-msvc'
       - name: Compare directory and trust tests without CSA patches
+        if: ${{ !inputs.tui_stack_diagnostic }}
         shell: bash
         env:
           BASELINE_MANIFEST: ${{ steps.authority.outputs.manifest_path }}
@@ -137,10 +146,20 @@ jobs:
           (evidence / "upstream-tui-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
           raise SystemExit(int(any(item["exit_code"] != 0 for item in results)))
           PY
+      - name: Compare original and instrumented attach-conflict stacks
+        if: inputs.tui_stack_diagnostic
+        shell: bash
+        env:
+          STACK_MANIFEST: ${{ steps.authority.outputs.manifest_path }}
+          STACK_VARIANT: ${{ matrix.source }}
+        run: |
+          python -u scripts/diagnose_tui_stack.py --manifest "$STACK_MANIFEST" \
+            --source "$SOURCE_ROOT" --evidence "$RUNNER_TEMP/c/upstream-tui-stack" \
+            --variant "$STACK_VARIANT"
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
-          name: upstream-tui-baseline
+          name: ${{ inputs.tui_stack_diagnostic && format('upstream-tui-stack-{0}', matrix.source) || 'upstream-tui-baseline' }}
           path: ${{ runner.temp }}/c/upstream-tui*
           if-no-files-found: warn
           retention-days: 7
@@ -161,6 +180,7 @@ jobs:
           python scripts/test_verify_release_asset_set.py
           python scripts/test_check_sccache_stats.py
           python scripts/test_compiler_cache_diagnostics.py
+          python scripts/test_diagnose_tui_stack.py
           python scripts/test_producer_tools.py
           python scripts/test_recover_sqlite_migrations.py
           python scripts/compat_catalog.py validate --repository .

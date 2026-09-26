@@ -42,8 +42,8 @@ source-dependent Python fixture was skipped; exact-source preflight ran separate
 Of 73 paths with unchanged upstream preimages, 72 retain identical accepted-p16
 postimages; the approval fixture described below is the sole candidate-specific
 exception. Accepted payloads and shared patch files remain byte-identical.
-[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36237655952) passed
-quality and both Linux recovery jobs on the previous candidate `2948495`.
+[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36241270112) passed
+quality and both Linux recovery jobs on candidate `44b7375`.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
 one live completed item in both modes, zero on cold Legacy readback and one on cold
@@ -114,9 +114,22 @@ The seventh run passed 28 checks, then full TUI coverage aborted with
 future was embedded directly in its keyboard handler and other callers. The
 candidate now heap-pins that flow at the common resume boundary and checks the
 wrapper's size in an existing resume behavior test. The fatal abort did not
-identify the precise overflowing frame; native confirmation remains pending.
+identify the precise overflowing frame.
 All 40 contract steps and the 8 MiB test-stack setting remain. Full TUI now runs
 immediately after formatting and Git status checks to expose further failures early.
+
+The [eighth Windows run](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/36241294268)
+on `44b7375` passed formatting and Git status isolation, then aborted in the same
+attach-conflict test with `0xc00000fd`. The resume wrapper alone did not resolve
+the overflow. Later checks and the executable build were not reached.
+
+Producer CI now provides an opt-in `tui_stack_diagnostic` mode with
+`upstream_tui_baseline=rust-v0.157.0-native-join-p16`. Independent upstream and
+candidate jobs first run the original selected test at 8 MiB, then add temporary
+future-size and execution-stage probes to that fixture and run it at 8 and 32 MiB.
+Artifacts retain source identities, the instrumentation diff and each raw log
+with its exit code. These runs are diagnostic-only; neither instrumentation nor
+the larger stack changes the payload or satisfies the native acceptance gate.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.
