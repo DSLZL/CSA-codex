@@ -28,9 +28,9 @@ route remains 0.156.1; its payload and the shared p16 additions are unchanged.
   including a retained scan across runtime shutdown. Keep the shared-runtime
   completion regression and fullscreen resize coverage for visible, hidden and
   restored Live panels. Include Git utilities in formatting and Clippy checks.
-- Heap-pin the complete attach-conflict/retry test scenario, following existing
-  upstream TUI fixtures, so Tokio's test wrapper retains a small future. Preserve
-  its assertions and run full TUI coverage early with the original 8 MiB stack.
+- Heap-pin complete command-center attach and resume-picker test scenarios,
+  following existing upstream TUI fixtures, so Tokio's test wrapper retains a
+  small future. Preserve assertions and run full TUI coverage early at 8 MiB.
 
 ## Verification and limits
 
@@ -42,8 +42,8 @@ source-dependent Python fixture was skipped; exact-source preflight ran separate
 Of 73 paths with unchanged upstream preimages, 72 retain identical accepted-p16
 postimages; the approval fixture described below is the sole candidate-specific
 exception. Accepted payloads and shared patch files remain byte-identical.
-[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36256105817) passed
-quality and both Linux recovery jobs on the preceding candidate `48ddc04`.
+[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36266265173) passed
+quality and both Linux recovery jobs on the preceding candidate `3cee16d`.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
 one live completed item in both modes, zero on cold Legacy readback and one on cold
@@ -138,13 +138,27 @@ on both variants, and also pass at 32 MiB. Their scenario futures measured 157,3
 and 139,264 bytes respectively. The aggregate run remains failed because it
 preserves the original failing executions.
 
-The candidate now wraps the complete original scenario in `Box::pin(async { ... })`,
+A10 wrapped the complete original scenario in `Box::pin(async { ... })`,
 matching existing upstream fixtures. Removing only this wrapper and formatting
 restores the original fixture file exactly. A8's additional production resume
 wrapper and its size-only guard were removed; resume behavior returns to its
 previous implementation. The full native contract must verify this smaller fix
 without diagnostic instrumentation; the exact original overflowing frame remains
 unavailable.
+
+The [A10 Windows run](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/36266282173)
+passed formatting and Git status isolation, then full TUI reached
+`command_center_handles_resume_failure_and_success` and aborted with another
+`STATUS_STACK_OVERFLOW`. Later checks and the executable build did not run.
+
+All four direct test callers of `apply_resume_picker_selection` in the overview
+module now heap-pin their complete scenarios: cancellation, active-session resume,
+round-trip input preservation, and failed/successful resume. The earlier
+attach-conflict wrapper remains. Removing these five wrappers and formatting
+restores the entire upstream fixture file exactly, including all original
+assertions and shutdowns. This change affects only test allocation; production
+resume behavior and the 40-step/8-MiB native contract remain unchanged. Full-suite
+confirmation is still required.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.

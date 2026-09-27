@@ -1040,13 +1040,468 @@ index 35d81abfe2937f25df9beb449eb2d8ba61caccd4..1a25d92df3077fca7d8805f89a6c6a81
 +    assert!(label.ends_with("..."));
 +}
 diff --git a/codex-rs/tui/src/app/agents_overview_tests.rs b/codex-rs/tui/src/app/agents_overview_tests.rs
-index 182d7ac643e032768e8b2b399b84c8e4f27420c0..4f2d2e57e79c349ca44eaef55cabc2fe91fb33af 100644
+index 182d7ac643e032768e8b2b399b84c8e4f27420c0..5c6bb7e2829f8286be2bb580d0a82719d604342c 100644
 --- a/codex-rs/tui/src/app/agents_overview_tests.rs
 +++ b/codex-rs/tui/src/app/agents_overview_tests.rs
-@@ -2331,189 +2331,193 @@ async fn command_center_handles_resume_failure_and_success() -> Result<()> {
+@@ -1990,62 +1990,67 @@ async fn restored_server_permission_profile_survives_cd_without_turn_override()
  
  #[tokio::test]
- async fn command_center_attach_conflict_opens_read_only_and_retries() -> Result<()> {
+ async fn cancelling_resume_picker_preserves_command_center_state() -> Result<()> {
+-    for primary_thread_id in [None, Some(ThreadId::new())] {
+-        let mut app = make_test_app().await;
+-        app.config.disable_paste_burst = true;
+-        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+-        app.app_event_tx = crate::app_event_sender::AppEventSender::new(event_tx);
+-        app.primary_thread_id = primary_thread_id;
+-        let threads = ["First task", "Second task"].map(|name| {
+-            overview_thread(
+-                ThreadId::new(),
+-                /*parent_thread_id*/ None,
+-                name,
+-                ThreadStatus::Idle,
+-            )
+-        });
+-        let selected = ThreadId::from_string(&threads[1].id).unwrap();
+-        let view = app.agents_overview_view(threads.into(), Some(selected));
+-        app.chat_widget.show_bottom_pane_view(Box::new(view));
+-        for key in [
+-            KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
+-            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+-            KeyEvent::new(KeyCode::Char('S'), KeyModifiers::NONE),
+-            KeyCode::Esc.into(),
+-        ] {
+-            app.chat_widget.handle_key_event(key);
+-        }
+-        let before = render_bottom_popup(&app.chat_widget, /*width*/ 96);
+-        let selection = app
+-            .chat_widget
+-            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID);
+-        while event_rx.try_recv().is_ok() {}
+-        app.chat_widget
+-            .handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+-        assert!(matches!(
+-            event_rx.try_recv(),
+-            Ok(AppEvent::OpenResumePicker)
+-        ));
+-        assert!(event_rx.try_recv().is_err());
+-        let mut tui = crate::tui::test_support::make_test_tui()?;
+-        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+-        for selection in [SessionSelection::StartFresh, SessionSelection::Exit] {
++    // Keep the full resume-picker scenario off Tokio's stack-pinned test future.
++    Box::pin(async {
++        for primary_thread_id in [None, Some(ThreadId::new())] {
++            let mut app = make_test_app().await;
++            app.config.disable_paste_burst = true;
++            let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
++            app.app_event_tx = crate::app_event_sender::AppEventSender::new(event_tx);
++            app.primary_thread_id = primary_thread_id;
++            let threads = ["First task", "Second task"].map(|name| {
++                overview_thread(
++                    ThreadId::new(),
++                    /*parent_thread_id*/ None,
++                    name,
++                    ThreadStatus::Idle,
++                )
++            });
++            let selected = ThreadId::from_string(&threads[1].id).unwrap();
++            let view = app.agents_overview_view(threads.into(), Some(selected));
++            app.chat_widget.show_bottom_pane_view(Box::new(view));
++            for key in [
++                KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
++                KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
++                KeyEvent::new(KeyCode::Char('S'), KeyModifiers::NONE),
++                KeyCode::Esc.into(),
++            ] {
++                app.chat_widget.handle_key_event(key);
++            }
++            let before = render_bottom_popup(&app.chat_widget, /*width*/ 96);
++            let selection = app
++                .chat_widget
++                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID);
++            while event_rx.try_recv().is_ok() {}
++            app.chat_widget
++                .handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+             assert!(matches!(
+-                app.apply_resume_picker_selection(&mut tui, &mut server, selection)
+-                    .await?,
+-                AppRunControl::Continue
++                event_rx.try_recv(),
++                Ok(AppEvent::OpenResumePicker)
+             ));
+-            app.chat_widget.pre_draw_tick();
+-            assert_eq!(render_bottom_popup(&app.chat_widget, /*width*/ 96), before);
++            assert!(event_rx.try_recv().is_err());
++            let mut tui = crate::tui::test_support::make_test_tui()?;
++            let mut server =
++                Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
++            for selection in [SessionSelection::StartFresh, SessionSelection::Exit] {
++                assert!(matches!(
++                    app.apply_resume_picker_selection(&mut tui, &mut server, selection)
++                        .await?,
++                    AppRunControl::Continue
++                ));
++                app.chat_widget.pre_draw_tick();
++                assert_eq!(render_bottom_popup(&app.chat_widget, /*width*/ 96), before);
++            }
++            server.shutdown().await?;
++            assert_eq!(
++                app.chat_widget
++                    .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
++                selection
++            );
+         }
+-        server.shutdown().await?;
+-        assert_eq!(
+-            app.chat_widget
+-                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+-            selection
+-        );
+-    }
+-    Ok(())
++        Ok(())
++    })
++    .await
+ }
+ 
+ #[tokio::test]
+@@ -2112,35 +2117,39 @@ async fn empty_command_center_can_open_resume_picker() {
+ 
+ #[tokio::test]
+ async fn resuming_active_session_closes_command_center() -> Result<()> {
+-    let mut app = make_test_app().await;
+-    let thread_id = ThreadId::new();
+-    app.active_thread_id = Some(thread_id);
+-    app.primary_thread_id = Some(thread_id);
+-    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+-    app.chat_widget.show_bottom_pane_view(Box::new(view));
+-    let mut tui = crate::tui::test_support::make_test_tui()?;
+-    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+-    assert!(matches!(
+-        app.apply_resume_picker_selection(
+-            &mut tui,
+-            &mut server,
+-            SessionSelection::Resume(SessionTarget {
+-                path: None,
+-                thread_id,
+-                cwd: None,
+-                history_mode: None,
+-            })
+-        )
+-        .await?,
+-        AppRunControl::Continue
+-    ));
+-    assert_eq!(
+-        app.chat_widget
+-            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+-        None
+-    );
+-    server.shutdown().await?;
+-    Ok(())
++    // Keep the full resume-picker scenario off Tokio's stack-pinned test future.
++    Box::pin(async {
++        let mut app = make_test_app().await;
++        let thread_id = ThreadId::new();
++        app.active_thread_id = Some(thread_id);
++        app.primary_thread_id = Some(thread_id);
++        let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
++        app.chat_widget.show_bottom_pane_view(Box::new(view));
++        let mut tui = crate::tui::test_support::make_test_tui()?;
++        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
++        assert!(matches!(
++            app.apply_resume_picker_selection(
++                &mut tui,
++                &mut server,
++                SessionSelection::Resume(SessionTarget {
++                    path: None,
++                    thread_id,
++                    cwd: None,
++                    history_mode: None,
++                })
++            )
++            .await?,
++            AppRunControl::Continue
++        ));
++        assert_eq!(
++            app.chat_widget
++                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
++            None
++        );
++        server.shutdown().await?;
++        Ok(())
++    })
++    .await
+ }
+ 
+ #[tokio::test]
+@@ -2160,360 +2169,373 @@ async fn resume_failure_keeps_command_center_available() {
+ 
+ #[tokio::test]
+ async fn resume_picker_round_trip_preserves_each_threads_input() -> Result<()> {
+-    let mut app = make_test_app().await;
+-    trust_fixture_folders(&mut app);
+-    std::fs::write(
+-        app.config.codex_home.join("config.toml"),
+-        "[tui]\nresume_cwd = \"current\"\n",
+-    )?;
+-    let mut targets = Vec::new();
+-    for (timestamp, name) in [
+-        ("2025-01-05T12-00-00", "First task"),
+-        ("2025-01-05T13-00-00", "Second task"),
+-    ] {
+-        let id = app_test_support::create_fake_rollout(
+-            app.config.codex_home.as_path(),
+-            timestamp,
+-            "2025-01-05T12:00:00Z",
+-            name,
+-            Some(&app.config.model_provider_id),
+-            /*git_info*/ None,
+-        )
+-        .expect("saved rollout");
+-        targets.push(SessionTarget {
+-            path: Some(app_test_support::rollout_path(
++    // Keep the full resume-picker scenario off Tokio's stack-pinned test future.
++    Box::pin(async {
++        let mut app = make_test_app().await;
++        trust_fixture_folders(&mut app);
++        std::fs::write(
++            app.config.codex_home.join("config.toml"),
++            "[tui]\nresume_cwd = \"current\"\n",
++        )?;
++        let mut targets = Vec::new();
++        for (timestamp, name) in [
++            ("2025-01-05T12-00-00", "First task"),
++            ("2025-01-05T13-00-00", "Second task"),
++        ] {
++            let id = app_test_support::create_fake_rollout(
+                 app.config.codex_home.as_path(),
+                 timestamp,
+-                &id,
+-            )),
+-            thread_id: ThreadId::from_string(&id)?,
+-            cwd: None,
+-            history_mode: None,
+-        });
+-    }
+-    let mut tui = crate::tui::test_support::make_test_tui()?;
+-    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+-    let mut expected_states = Vec::new();
+-    for target in targets.iter().chain(&targets) {
+-        let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+-        app.chat_widget.show_bottom_pane_view(Box::new(view));
+-        app.apply_resume_picker_selection(
+-            &mut tui,
+-            &mut server,
+-            SessionSelection::Resume(target.clone()),
+-        )
+-        .await?;
+-        assert_eq!(app.chat_widget.thread_id(), Some(target.thread_id));
+-        if expected_states.len() < targets.len() {
+-            assert_eq!(app.chat_widget.composer_text_with_pending(), "");
+-            assert!(app.chat_widget.queued_user_message_texts().is_empty());
+-            app.chat_widget.handle_server_notification(
+-                ServerNotification::TurnStarted(
+-                    codex_app_server_protocol::TurnStartedNotification {
+-                        thread_id: target.thread_id.to_string(),
+-                        turn: codex_app_server_protocol::Turn {
+-                            id: "turn-with-follow-up".to_string(),
+-                            items_view: codex_app_server_protocol::TurnItemsView::Full,
+-                            items: Vec::new(),
+-                            status: codex_app_server_protocol::TurnStatus::InProgress,
+-                            error: None,
+-                            started_at: None,
+-                            completed_at: None,
+-                            duration_ms: None,
++                "2025-01-05T12:00:00Z",
++                name,
++                Some(&app.config.model_provider_id),
++                /*git_info*/ None,
++            )
++            .expect("saved rollout");
++            targets.push(SessionTarget {
++                path: Some(app_test_support::rollout_path(
++                    app.config.codex_home.as_path(),
++                    timestamp,
++                    &id,
++                )),
++                thread_id: ThreadId::from_string(&id)?,
++                cwd: None,
++                history_mode: None,
++            });
++        }
++        let mut tui = crate::tui::test_support::make_test_tui()?;
++        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
++        let mut expected_states = Vec::new();
++        for target in targets.iter().chain(&targets) {
++            let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
++            app.chat_widget.show_bottom_pane_view(Box::new(view));
++            app.apply_resume_picker_selection(
++                &mut tui,
++                &mut server,
++                SessionSelection::Resume(target.clone()),
++            )
++            .await?;
++            assert_eq!(app.chat_widget.thread_id(), Some(target.thread_id));
++            if expected_states.len() < targets.len() {
++                assert_eq!(app.chat_widget.composer_text_with_pending(), "");
++                assert!(app.chat_widget.queued_user_message_texts().is_empty());
++                app.chat_widget.handle_server_notification(
++                    ServerNotification::TurnStarted(
++                        codex_app_server_protocol::TurnStartedNotification {
++                            thread_id: target.thread_id.to_string(),
++                            turn: codex_app_server_protocol::Turn {
++                                id: "turn-with-follow-up".to_string(),
++                                items_view: codex_app_server_protocol::TurnItemsView::Full,
++                                items: Vec::new(),
++                                status: codex_app_server_protocol::TurnStatus::InProgress,
++                                error: None,
++                                started_at: None,
++                                completed_at: None,
++                                duration_ms: None,
++                            },
+                         },
++                    ),
++                    /*replay_kind*/ None,
++                );
++                let follow_up = format!("Follow-up for {}", target.thread_id);
++                app.chat_widget.apply_external_edit(follow_up.clone());
++                app.chat_widget
++                    .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
++                assert_eq!(app.chat_widget.queued_user_message_texts(), vec![follow_up]);
++                app.chat_widget
++                    .apply_external_edit(format!("Draft for {}", target.thread_id));
++                let mut input_state = app.chat_widget.capture_thread_input_state().unwrap();
++                // Recovered follow-ups stay paused until the user explicitly submits them.
++                input_state.recovered_queue = true;
++                app.chat_widget.restore_thread_input_state(
++                    Some(input_state),
++                    crate::chatwidget::ThreadInputStateRestoreMode {
++                        preserve_in_flight_turn: false,
+                     },
+-                ),
+-                /*replay_kind*/ None,
+-            );
+-            let follow_up = format!("Follow-up for {}", target.thread_id);
+-            app.chat_widget.apply_external_edit(follow_up.clone());
+-            app.chat_widget
+-                .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+-            assert_eq!(app.chat_widget.queued_user_message_texts(), vec![follow_up]);
+-            app.chat_widget
+-                .apply_external_edit(format!("Draft for {}", target.thread_id));
+-            let mut input_state = app.chat_widget.capture_thread_input_state().unwrap();
+-            // Recovered follow-ups stay paused until the user explicitly submits them.
+-            input_state.recovered_queue = true;
+-            app.chat_widget.restore_thread_input_state(
+-                Some(input_state),
+-                crate::chatwidget::ThreadInputStateRestoreMode {
+-                    preserve_in_flight_turn: false,
+-                },
+-            );
+-            expected_states.push(app.chat_widget.capture_thread_input_state());
+-        } else {
+-            let index = targets
+-                .iter()
+-                .position(|t| t.thread_id == target.thread_id)
+-                .unwrap();
+-            assert_eq!(
+-                app.chat_widget.capture_thread_input_state(),
+-                expected_states[index]
+-            );
++                );
++                expected_states.push(app.chat_widget.capture_thread_input_state());
++            } else {
++                let index = targets
++                    .iter()
++                    .position(|t| t.thread_id == target.thread_id)
++                    .unwrap();
++                assert_eq!(
++                    app.chat_widget.capture_thread_input_state(),
++                    expected_states[index]
++                );
++            }
+         }
+-    }
+-    server.shutdown().await?;
+-    Ok(())
++        server.shutdown().await?;
++        Ok(())
++    })
++    .await
+ }
+ 
+ #[tokio::test]
+ async fn command_center_handles_resume_failure_and_success() -> Result<()> {
+-    let mut app = make_test_app().await;
+-    trust_fixture_folders(&mut app);
+-    std::fs::write(
+-        app.config.codex_home.join("config.toml"),
+-        "[tui]\nresume_cwd = \"current\"\n",
+-    )?;
+-    let timestamp = "2025-01-05T12-00-00";
+-    let id = app_test_support::create_fake_rollout(
+-        app.config.codex_home.as_path(),
+-        timestamp,
+-        "2025-01-05T12:00:00Z",
+-        "Saved task",
+-        Some(&app.config.model_provider_id),
+-        /*git_info*/ None,
+-    )
+-    .expect("saved rollout");
+-    let thread_id = ThreadId::from_string(&id)?;
+-    let path = app_test_support::rollout_path(app.config.codex_home.as_path(), timestamp, &id);
+-    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+-    app.chat_widget.show_bottom_pane_view(Box::new(view));
+-    let mut tui = crate::tui::test_support::make_test_tui()?;
+-    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+-    assert!(matches!(
+-        app.apply_resume_picker_selection(
+-            &mut tui,
+-            &mut server,
+-            SessionSelection::Resume(SessionTarget {
+-                path: None,
+-                thread_id: ThreadId::new(),
+-                cwd: None,
+-                history_mode: None,
+-            })
+-        )
+-        .await?,
+-        AppRunControl::Continue
+-    ));
+-    assert!(
+-        app.chat_widget
+-            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
+-            .is_some()
+-    );
+-    assert!(
+-        render_bottom_popup(&app.chat_widget, /*width*/ 96).contains("Unable to resume session")
+-    );
+-    app.chat_widget
+-        .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+-    assert!(matches!(
+-        app.apply_resume_picker_selection(
+-            &mut tui,
+-            &mut server,
+-            SessionSelection::Resume(SessionTarget {
+-                path: Some(path),
+-                thread_id,
+-                cwd: None,
+-                history_mode: None,
+-            })
+-        )
+-        .await?,
+-        AppRunControl::Continue
+-    ));
+-    assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
+-    assert_eq!(
+-        app.chat_widget
+-            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+-        None
+-    );
+-    server.shutdown().await?;
+-    Ok(())
+-}
+-
+-#[tokio::test]
+-async fn command_center_attach_conflict_opens_read_only_and_retries() -> Result<()> {
 -    let mut app = Box::pin(make_test_app()).await;
 -    trust_fixture_folders(&mut app);
 -    std::fs::write(
@@ -1063,13 +1518,24 @@ index 182d7ac643e032768e8b2b399b84c8e4f27420c0..4f2d2e57e79c349ca44eaef55cabc2fe
 -    }
 -    let thread_id = ThreadId::from_string(
 -        &app_test_support::create_fake_rollout(
--            app.config.codex_home.as_path(),
++    // Keep the full resume-picker scenario off Tokio's stack-pinned test future.
++    Box::pin(async {
++        let mut app = make_test_app().await;
++        trust_fixture_folders(&mut app);
++        std::fs::write(
++            app.config.codex_home.join("config.toml"),
++            "[tui]\nresume_cwd = \"current\"\n",
++        )?;
++        let timestamp = "2025-01-05T12-00-00";
++        let id = app_test_support::create_fake_rollout(
+             app.config.codex_home.as_path(),
 -            "2025-01-05T12-00-00",
--            "2025-01-05T12:00:00Z",
--            "Saved task",
--            Some(&app.config.model_provider_id),
--            /*git_info*/ None,
--        )
++            timestamp,
+             "2025-01-05T12:00:00Z",
+             "Saved task",
+             Some(&app.config.model_provider_id),
+             /*git_info*/ None,
+         )
 -        .expect("saved task"),
 -    )?;
 -    let mut owner = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
@@ -1082,41 +1548,7 @@ index 182d7ac643e032768e8b2b399b84c8e4f27420c0..4f2d2e57e79c349ca44eaef55cabc2fe
 -    .await?;
 -    let thread = owner
 -        .thread_read(thread_id, /*include_turns*/ false)
-+    // Keep the full scenario off Tokio's stack-pinned test future on Windows.
-+    Box::pin(async {
-+        let mut app = Box::pin(make_test_app()).await;
-+        trust_fixture_folders(&mut app);
-+        std::fs::write(
-+            app.config.codex_home.join("config.toml"),
-+            "[tui]\nresume_cwd = \"current\"\n",
-+        )?;
-+        for cwd in [test_path_buf("/"), app.config.cwd.to_path_buf()] {
-+            crate::legacy_core::config::set_project_trust_level(
-+                app.config.codex_home.as_path(),
-+                &cwd,
-+                codex_protocol::config_types::TrustLevel::Trusted,
-+            )
-+            .map_err(std::io::Error::other)?;
-+        }
-+        let thread_id = ThreadId::from_string(
-+            &app_test_support::create_fake_rollout(
-+                app.config.codex_home.as_path(),
-+                "2025-01-05T12-00-00",
-+                "2025-01-05T12:00:00Z",
-+                "Saved task",
-+                Some(&app.config.model_provider_id),
-+                /*git_info*/ None,
-+            )
-+            .expect("saved task"),
-+        )?;
-+        let mut owner = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-+        Box::pin(owner.resume_thread(
-+            &app.local_settings,
-+            app.config.clone(),
-+            thread_id,
-+            crate::app_server_session::ResumeModelSettings::PreserveExistingThread,
-+        ))
-         .await?;
+-        .await?;
 -    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
 -    app.app_server_target = AppServerTarget::LocalDaemon {
 -        allow_embedded_fallback: true,
@@ -1126,28 +1558,35 @@ index 182d7ac643e032768e8b2b399b84c8e4f27420c0..4f2d2e57e79c349ca44eaef55cabc2fe
 -        crate::status::remote_connection::remote_connection_status_value(
 -            &app.app_server_target,
 -            /*server_version*/ None,
-+        let thread = owner
-+            .thread_read(thread_id, /*include_turns*/ false)
-+            .await?;
++        .expect("saved rollout");
++        let thread_id = ThreadId::from_string(&id)?;
++        let path = app_test_support::rollout_path(app.config.codex_home.as_path(), timestamp, &id);
++        let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
++        app.chat_widget.show_bottom_pane_view(Box::new(view));
++        let mut tui = crate::tui::test_support::make_test_tui()?;
 +        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-+        app.app_server_target = AppServerTarget::LocalDaemon {
-+            allow_embedded_fallback: true,
-+            endpoint: crate::resolve_remote_addr("ws://127.0.0.1:4500")?,
-+        };
-+        app.chat_widget.remote_connection =
-+            crate::status::remote_connection::remote_connection_status_value(
-+                &app.app_server_target,
-+                /*server_version*/ None,
-+            );
-+        app.agents_overview
-+            .threads
-+            .insert(thread_id, Some(thread.clone()));
-+        app.chat_widget.insert_str("Retained task draft");
-+        app.agents_overview.input_states.insert(
-+            thread_id,
++        assert!(matches!(
++            app.apply_resume_picker_selection(
++                &mut tui,
++                &mut server,
++                SessionSelection::Resume(SessionTarget {
++                    path: None,
++                    thread_id: ThreadId::new(),
++                    cwd: None,
++                    history_mode: None,
++                })
++            )
++            .await?,
++            AppRunControl::Continue
++        ));
++        assert!(
 +            app.chat_widget
-+                .capture_thread_input_state()
-+                .expect("task draft"),
++                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
++                .is_some()
++        );
++        assert!(
++            render_bottom_popup(&app.chat_widget, /*width*/ 96)
++                .contains("Unable to resume session")
          );
 -    app.agents_overview
 -        .threads
@@ -1155,7 +1594,7 @@ index 182d7ac643e032768e8b2b399b84c8e4f27420c0..4f2d2e57e79c349ca44eaef55cabc2fe
 -    app.chat_widget.insert_str("Retained task draft");
 -    app.agents_overview.input_states.insert(
 -        thread_id,
--        app.chat_widget
+         app.chat_widget
 -            .capture_thread_input_state()
 -            .expect("task draft"),
 -    );
@@ -1213,12 +1652,98 @@ index 182d7ac643e032768e8b2b399b84c8e4f27420c0..4f2d2e57e79c349ca44eaef55cabc2fe
 -
 -    app.handle_key_event(&mut tui, &mut server, KeyCode::Esc.into())
 -        .await;
--
++            .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
++        assert!(matches!(
++            app.apply_resume_picker_selection(
++                &mut tui,
++                &mut server,
++                SessionSelection::Resume(SessionTarget {
++                    path: Some(path),
++                    thread_id,
++                    cwd: None,
++                    history_mode: None,
++                })
++            )
++            .await?,
++            AppRunControl::Continue
++        ));
++        assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
++        assert_eq!(
++            app.chat_widget
++                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
++            None
++        );
++        server.shutdown().await?;
++        Ok(())
++    })
++    .await
++}
+ 
 -    assert_eq!(
 -        app.chat_widget
 -            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
 -        selection
 -    );
++#[tokio::test]
++async fn command_center_attach_conflict_opens_read_only_and_retries() -> Result<()> {
++    // Keep the full scenario off Tokio's stack-pinned test future on Windows.
++    Box::pin(async {
++        let mut app = Box::pin(make_test_app()).await;
++        trust_fixture_folders(&mut app);
++        std::fs::write(
++            app.config.codex_home.join("config.toml"),
++            "[tui]\nresume_cwd = \"current\"\n",
++        )?;
++        for cwd in [test_path_buf("/"), app.config.cwd.to_path_buf()] {
++            crate::legacy_core::config::set_project_trust_level(
++                app.config.codex_home.as_path(),
++                &cwd,
++                codex_protocol::config_types::TrustLevel::Trusted,
++            )
++            .map_err(std::io::Error::other)?;
++        }
++        let thread_id = ThreadId::from_string(
++            &app_test_support::create_fake_rollout(
++                app.config.codex_home.as_path(),
++                "2025-01-05T12-00-00",
++                "2025-01-05T12:00:00Z",
++                "Saved task",
++                Some(&app.config.model_provider_id),
++                /*git_info*/ None,
++            )
++            .expect("saved task"),
++        )?;
++        let mut owner = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
++        Box::pin(owner.resume_thread(
++            &app.local_settings,
++            app.config.clone(),
++            thread_id,
++            crate::app_server_session::ResumeModelSettings::PreserveExistingThread,
++        ))
++        .await?;
++        let thread = owner
++            .thread_read(thread_id, /*include_turns*/ false)
++            .await?;
++        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
++        app.app_server_target = AppServerTarget::LocalDaemon {
++            allow_embedded_fallback: true,
++            endpoint: crate::resolve_remote_addr("ws://127.0.0.1:4500")?,
++        };
++        app.chat_widget.remote_connection =
++            crate::status::remote_connection::remote_connection_status_value(
++                &app.app_server_target,
++                /*server_version*/ None,
++            );
++        app.agents_overview
++            .threads
++            .insert(thread_id, Some(thread.clone()));
++        app.chat_widget.insert_str("Retained task draft");
++        app.agents_overview.input_states.insert(
++            thread_id,
++            app.chat_widget
++                .capture_thread_input_state()
++                .expect("task draft"),
++        );
 +        app.agents_overview.dispatched_requests.insert(
 +            thread_id,
 +            vec![ServerRequest::ToolRequestUserInput {
