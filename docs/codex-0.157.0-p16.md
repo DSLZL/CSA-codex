@@ -28,22 +28,22 @@ route remains 0.156.1; its payload and the shared p16 additions are unchanged.
   including a retained scan across runtime shutdown. Keep the shared-runtime
   completion regression and fullscreen resize coverage for visible, hidden and
   restored Live panels. Include Git utilities in formatting and Clippy checks.
-- Heap-pin complete command-center attach and resume-picker test scenarios,
+- Heap-pin complete command-center attach, resume-picker and root-switch test scenarios,
   following existing upstream TUI fixtures, so Tokio's test wrapper retains a
   small future. Preserve assertions and run full TUI coverage early at 8 MiB.
 
 ## Verification and limits
 
 Local validation passed strict application of all four ordered patches to the
-pinned source, comparison of all 122 patched paths with the reviewed worktree,
+pinned source, comparison of all 124 patched paths with the reviewed worktree,
 family/catalog validation, previous-payload immutability, workflow guards, producer
 Python tests and formatting checks for the affected Rust packages. The existing
 source-dependent Python fixture was skipped; exact-source preflight ran separately.
 Of 73 paths with unchanged upstream preimages, 72 retain identical accepted-p16
 postimages; the approval fixture described below is the sole candidate-specific
 exception. Accepted payloads and shared patch files remain byte-identical.
-[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36266265173) passed
-quality and both Linux recovery jobs on the preceding candidate `3cee16d`.
+[Producer CI](https://github.com/DSLZL/CSA-codex/actions/runs/36287524455) passed
+quality and both Linux recovery jobs on the preceding candidate `c7c1910`.
 
 A fresh official V1 control confirms the same version-specific Wait presentation:
 one live completed item in both modes, zero on cold Legacy readback and one on cold
@@ -151,14 +151,26 @@ passed formatting and Git status isolation, then full TUI reached
 `command_center_handles_resume_failure_and_success` and aborted with another
 `STATUS_STACK_OVERFLOW`. Later checks and the executable build did not run.
 
-All four direct test callers of `apply_resume_picker_selection` in the overview
-module now heap-pin their complete scenarios: cancellation, active-session resume,
-round-trip input preservation, and failed/successful resume. The earlier
-attach-conflict wrapper remains. Removing these five wrappers and formatting
-restores the entire upstream fixture file exactly, including all original
-assertions and shutdowns. This change affects only test allocation; production
-resume behavior and the 40-step/8-MiB native contract remain unchanged. Full-suite
-confirmation is still required.
+A11 heap-pinned all four direct test callers of `apply_resume_picker_selection`
+in the overview module: cancellation, active-session resume, round-trip input
+preservation, and failed/successful resume. It retained the attach-conflict wrapper.
+Removing those five wrappers and formatting restored the entire upstream fixture
+file exactly, including all original assertions and shutdowns.
+
+The [A11 Windows run](https://github.com/DSLZL/CSA-codex-windows-x64/actions/runs/36287536812)
+passed formatting and Git status isolation, then full TUI aborted in
+`overview_selection_applies_user_permissions_only_to_unloaded_threads` with
+`STATUS_STACK_OVERFLOW`. Later checks and the executable build did not run.
+
+The shared selection entry already heap-pins its attachment future. A12 applies
+the complete-scenario pattern to all 13 direct root-switch test callers across
+overview, background defaults, permission selection and request-level history
+fixtures. The safety-buffering helper is already heap-pinned by both callers.
+Removing only the 13 new wrappers and formatting restores all four fixture files
+to their A11 bytes; string literals and snapshots are independently checked.
+Only these test postimages change from A11. Production behavior, test attributes,
+all 40 contract steps and the 8 MiB test stack remain unchanged. The failing frame
+is still unidentified; A12 requires full native confirmation.
 
 The corrected fixtures, full Windows contract, matching-binary cold-unplug
 acceptance and terminal observations still require passing native results.

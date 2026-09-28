@@ -10,7 +10,7 @@ rust_toolchain = "1.95.0"
 rustc_commit = "59807616e1fa2540724bfbac14d7976d7e4a3860"
 build_target = "x86_64-pc-windows-msvc"
 source_hashes = "expected/source-hashes.json"
-source_hashes_sha256 = "5ca7fb58130e418355b2d9ab77c1ae67142fd9a7826945c260870a4fd2be6edb"
+source_hashes_sha256 = "9d766a7058e4702878d34f9d4d0feb79c76f11baaeed5d741c9e6a2cf8997744"
 preimage_absent = [
   "codex-rs/core/src/agent/completion.rs",
   "codex-rs/core/src/tools/handlers/multi_agents_v2/join.rs",
@@ -40,7 +40,7 @@ sha256 = "cf84a0397493f238bd61e2e384086533ec9635bb2ab3f46c3e61d3743536ba9d"
 
 [[patches]]
 path = "patches/1100-tui-adapter.patch"
-sha256 = "5609110959441b9f2956ac80d1f3a471a0ef55bdf9e85ab8b2502420b2fe16bf"
+sha256 = "06b99a8d8e238f097f8b20187ccdaecaeefbdfb63c3ae1d6cca053e916764179"
 
 [preimage]
 "codex-rs/config/src/config_toml.rs" = "e8494daf15bd00ab56525a56db6a2278088a255e7a4ca3b647acdc3d1f69e407"
@@ -96,7 +96,9 @@ sha256 = "5609110959441b9f2956ac80d1f3a471a0ef55bdf9e85ab8b2502420b2fe16bf"
 "codex-rs/tui/src/app/startup.rs" = "4bd30ed7af11ba470e2dd1fc71a2ebb4d4a13b4d548d6a2f779df60594b98fef"
 "codex-rs/tui/src/app/test_support.rs" = "821862a4a1f9f12b6891b3b13d9916e69f79d08cad92263cfa1ac409a2b9d81c"
 "codex-rs/tui/src/app/tests.rs" = "31ca90f75418dece71ba96039c8dcf6e193d92b4561709e74f3294a04eff8691"
+"codex-rs/tui/src/app/tests/background_task_defaults_tests.rs" = "584f2f7ce294cd893310c229cde5303ef8b9ae9328ed25410bcfc9b31b46319e"
 "codex-rs/tui/src/app/tests/key_chords.rs" = "6254c2f25398c49eba071b3f68c8066e781b7fb2be1f16629bdf9d2e7223fafb"
+"codex-rs/tui/src/app/tests/permission_selection_tests.rs" = "0743ae56fe955cbead1b750a896a7d7965a21e65a9857a1714163550eae1ebfd"
 "codex-rs/tui/src/app/tests/safety_buffering.rs" = "d2daf107f872e1be713cf4d251a8823e2806ae2f9910b94d86d5fb3dd8c99d51"
 "codex-rs/tui/src/app/tests/session_lifecycle_requests.rs" = "5d3f45fd87131d49bb7579f717caf94c760e6493501a82dd454c9a64d0957537"
 "codex-rs/tui/src/app/tests/snapshots/codex_tui__app__tests__realtime_requests__voice_buffered_replay_reconciles_captions.snap" = "8cb588bd6e795d2f5e74eadcb3d17a084878f4fa7b9b11d36f1973df073f4191"
